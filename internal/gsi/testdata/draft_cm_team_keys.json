@@ -1,0 +1,37 @@
+{
+  "provider": { "name": "Dota 2", "appid": 570, "version": 47, "timestamp": 1754231000 },
+  "auth": { "token": "cmnet-local" },
+  "map": {
+    "name": "start",
+    "matchid": "8123456789",
+    "game_time": 0,
+    "clock_time": -75,
+    "daytime": true,
+    "nightstalker_night": false,
+    "game_state": "DOTA_GAMERULES_STATE_HERO_SELECTION",
+    "paused": false,
+    "win_team": "none",
+    "customgamename": "",
+    "radiant_score": 0,
+    "dire_score": 0,
+    "ward_purchase_cooldown": 0
+  },
+  "draft": {
+    "activeteam": 3,
+    "pick": false,
+    "activeteam_time_remaining": 25,
+    "radiant_bonus_time": 130,
+    "dire_bonus_time": 130,
+    "team2": {
+      "home_team": true,
+      "pick0_id": 8, "pick0_class": "juggernaut",
+      "ban0_id": 74, "ban0_class": "invoker",
+      "ban1_id": 41, "ban1_class": "faceless_void"
+    },
+    "team3": {
+      "home_team": false,
+      "pick0_id": 26, "pick0_class": "lion",
+      "ban0_id": 86, "ban0_class": "rubick"
+    }
+  }
+}

@@ -64,6 +64,45 @@ type Live struct {
 	ClockTime int    `json:"clockTime"` // game clock in seconds; negative before the horn
 	GameState string `json:"gameState"` // GSI map.game_state (e.g. DOTA_GAMERULES_STATE_GAME_IN_PROGRESS)
 	Daytime   bool   `json:"daytime"`   // GSI map.daytime
+
+	// The rest of what the client actually sends. Display only, always: none of
+	// it may reach the scoring path. Two friends watching the same draft have
+	// different live telemetry — one is playing, one may not be — and a score that
+	// depended on it would differ between them, which is the guarantee §6 exists
+	// to hold.
+	MatchID      string `json:"matchId,omitempty"`
+	RadiantScore int    `json:"radiantScore,omitempty"`
+	DireScore    int    `json:"direScore,omitempty"`
+	Paused       bool   `json:"paused,omitempty"`
+
+	// Our own player's line, when the client sends one. Absent while spectating
+	// and during the draft itself.
+	Self *SelfState `json:"self,omitempty"`
+}
+
+// SelfState is the local player's own performance, straight from GSI.
+//
+// "Local player" is the whole scope of it: while playing, Dota reports only our
+// own row. The opponents' numbers are not withheld by us, they are not sent.
+type SelfState struct {
+	HeroID   int    `json:"heroId,omitempty"`
+	HeroName string `json:"heroName,omitempty"`
+	Level    int    `json:"level,omitempty"`
+	Alive    bool   `json:"alive"`
+	// RespawnSeconds is meaningful only while dead.
+	RespawnSeconds int `json:"respawnSeconds,omitempty"`
+	BuybackCost    int `json:"buybackCost,omitempty"`
+	BuybackCooldown int `json:"buybackCooldown,omitempty"`
+
+	Kills    int `json:"kills"`
+	Deaths   int `json:"deaths"`
+	Assists  int `json:"assists"`
+	LastHits int `json:"lastHits,omitempty"`
+	Denies   int `json:"denies,omitempty"`
+	GPM      int `json:"gpm,omitempty"`
+	XPM      int `json:"xpm,omitempty"`
+	NetWorth int `json:"netWorth,omitempty"`
+	Gold     int `json:"gold,omitempty"`
 }
 
 // Picks implements View.

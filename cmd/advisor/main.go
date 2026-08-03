@@ -85,6 +85,7 @@ type homeFlags struct {
 	firstPick    string
 	useGSI       bool
 	gsiAddr      string
+	gsiToken     string
 	windowDays   int
 	minRankTier  int
 	maxRankTier  int
@@ -108,6 +109,7 @@ func (h *homeFlags) bind(cmd *cobra.Command) {
 	f.StringVar(&h.firstPick, "first-pick", "radiant", "team that picks first: radiant|dire")
 	f.BoolVar(&h.useGSI, "gsi", false, "use Dota GSI for live draft state in the scan screen")
 	f.StringVar(&h.gsiAddr, "gsi-addr", "127.0.0.1:53000", "local GSI HTTP listen address")
+	f.StringVar(&h.gsiToken, "gsi-token", "", "shared secret Dota echoes back; when set, events without it are rejected (RESTART Dota after changing)")
 	f.IntVar(&h.windowDays, "window-days", 31, "recency window in days (T-N)")
 	f.IntVar(&h.minRankTier, "min-rank-tier", 40, "min avg_rank_tier (40=Archon,50=Legend,60=Ancient,70=Divine,80=Immortal)")
 	f.IntVar(&h.maxRankTier, "max-rank-tier", 85, "max avg_rank_tier")
@@ -225,13 +227,15 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		// in Dota's gamestate_integration dir the game never sends events and the TUI
 		// hangs forever on "waiting". Best-effort: a failure here (e.g. Dota dir not
 		// found) is reported but does not block manual fallback.
-		if path, err := gsi.Install("", h.gsiAddr, ""); err != nil {
+		if path, err := gsi.Install("", h.gsiAddr, h.gsiToken); err != nil {
 			fmt.Fprintln(os.Stderr, "warning: could not auto-install GSI config:", err)
 			fmt.Fprintln(os.Stderr, "  run 'advisor gsi-install --cfg-dir <dota cfg dir>' manually, then RESTART Dota.")
 		} else {
 			fmt.Fprintln(os.Stderr, "GSI config installed:", path, "(RESTART Dota if it was running for it to load)")
 		}
-		srv := gsi.NewServer(h.gsiAddr)
+		// The token is checked, not merely written: without it the endpoint accepted
+		// a POST from anything on the machine that could reach the port.
+		srv := gsi.NewServerWithToken(h.gsiAddr, h.gsiToken)
 		go func() { _ = srv.Start(cmd.Context()) }()
 		gsiEvents = srv.Events()
 	}
