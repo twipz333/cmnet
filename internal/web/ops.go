@@ -220,6 +220,7 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 	// The local address book: who we have scouted or played with, so a teammate is
 	// a click rather than a profile URL pasted again.
 	mux.HandleFunc("/api/players", s.handleKnownPlayers)
+	mux.HandleFunc("/api/players/add", s.mutate(s.addPlayer))
 	mux.HandleFunc("/api/players/forget", s.mutate(s.forgetPlayer))
 	mux.HandleFunc("/api/players/pin", s.mutate(s.pinPlayer))
 
@@ -512,6 +513,23 @@ func (s *Server) handleKnownPlayers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, struct {
 		Players []session.KnownPlayer `json:"players"`
 	}{players})
+}
+
+func (s *Server) addPlayer(r *http.Request) (string, error) {
+	var req struct {
+		Ref  string `json:"ref"`
+		Ally bool   `json:"ally"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	if s.shell.AddPlayer == nil {
+		return "", fmt.Errorf("adding a player is not available in this build")
+	}
+	if strings.TrimSpace(req.Ref) == "" {
+		return "", fmt.Errorf("give an account id or a profile URL")
+	}
+	return s.shell.AddPlayer(strings.TrimSpace(req.Ref), req.Ally)
 }
 
 func (s *Server) forgetPlayer(r *http.Request) (string, error) {

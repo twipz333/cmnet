@@ -986,6 +986,11 @@ async function loadKnownPlayers() {
   }
 }
 
+// rosterSelection is who is ticked right now. Kept outside the render so a
+// refresh — which happens on a timer and after every action — does not clear a
+// selection the user is halfway through making.
+const rosterSelection = new Set();
+
 function renderKnownPlayers(players, error) {
   const host = $('known-players');
   host.textContent = '';
@@ -995,25 +1000,71 @@ function renderKnownPlayers(players, error) {
   }
   if (!players.length) {
     host.append(el('li', 'why',
-      'пока пусто — после первой разведки игроки появятся здесь автоматически'));
+      'пусто — добавь игрока по id или ссылке выше, либо запусти разведку, и он появится здесь'));
     return;
   }
+  // Forget ticks for rows that are no longer shown, otherwise a filter change
+  // would silently scout somebody invisible.
+  const shown = new Set(players.map((p) => p.accountId));
+  for (const id of Array.from(rosterSelection)) {
+    if (!shown.has(id)) rosterSelection.delete(id);
+  }
+
   for (const p of players) {
     const li = el('li', 'known');
     if (p.pinned) li.classList.add('pinned');
+    if (p.inSnapshot) li.classList.add('in-snapshot');
 
-    const name = el('span', 'known-name', p.persona || String(p.accountId));
-    li.append(name);
+    const tick = document.createElement('input');
+    tick.type = 'checkbox';
+    tick.className = 'known-tick';
+    tick.checked = rosterSelection.has(p.accountId);
+    tick.onchange = () => {
+      if (tick.checked) rosterSelection.add(p.accountId);
+      else rosterSelection.delete(p.accountId);
+      updateRosterTools();
+    };
+    li.append(tick);
+
+    li.append(el('span', 'known-name', p.persona || String(p.accountId)));
     li.append(el('span', 'known-role', p.role === 'ally' ? 'союзник' : 'враг'));
+    if (p.inSnapshot) {
+      li.append(el('span', 'known-in', p.inSnapshot === 'ally' ? 'в составе' : 'в разведке'));
+    }
     if (p.heroes) li.append(el('span', 'known-cached', 'в кэше: ' + p.heroes + ' героев'));
     if (p.lastSeen) li.append(el('span', 'known-seen', ago(p.lastSeen)));
 
-    // Clicking the row fills the field; the buttons are separate so a stray click
-    // never deletes anybody.
-    li.addEventListener('click', () => addToScoutField(p));
+    // Clicking the row toggles the tick — the whole row is a bigger target than
+    // the box, and picking five people is the common action here.
+    li.addEventListener('click', (e) => {
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+      tick.checked = !tick.checked;
+      tick.onchange();
+    });
+
+    if (p.inSnapshot) {
+      const out = el('button', 'small', 'убрать из состава');
+      out.title = 'Вынуть из снапшота. В списке игрок останется.';
+      out.onclick = async (e) => {
+        e.stopPropagation();
+        await post('/api/stats/remove-player',
+          { accountId: p.accountId, ally: p.inSnapshot === 'ally' });
+        loadKnownPlayers();
+        loadStats();
+      };
+      li.append(out);
+    } else {
+      const into = el('button', 'small', 'в состав');
+      into.title = 'Разведать этого игрока и добавить в снапшот';
+      into.onclick = async (e) => {
+        e.stopPropagation();
+        await scoutPlayers([p.accountId], p.role === 'ally');
+      };
+      li.append(into);
+    }
 
     const pin = el('button', 'small', p.pinned ? 'открепить' : 'закрепить');
-    pin.title = 'Закреплённые не удаляются автоматической чисткой';
+    pin.title = 'Закреплённые не удаляются автоматической чисткой списка';
     pin.onclick = async (e) => {
       e.stopPropagation();
       await post('/api/players/pin', { accountId: p.accountId, pinned: !p.pinned });
@@ -1021,29 +1072,43 @@ function renderKnownPlayers(players, error) {
     };
     li.append(pin);
 
-    const forget = el('button', 'small danger', 'забыть');
-    forget.title = 'Убрать из списка и удалить кэш по этому игроку';
+    const forget = el('button', 'small danger', 'удалить');
+    forget.title = 'Убрать из списка вместе с накопленной по нему статистикой';
     forget.onclick = async (e) => {
       e.stopPropagation();
+      const who = p.persona || p.accountId;
+      if (!window.confirm('Удалить ' + who + ' из списка? Накопленная по нему статистика тоже удалится.\n\n'
+        + 'Чтобы просто вынуть из текущего состава, есть «убрать из состава».')) return;
       await post('/api/players/forget', { accountId: p.accountId });
+      rosterSelection.delete(p.accountId);
       loadKnownPlayers();
     };
     li.append(forget);
 
     host.append(li);
   }
+  updateRosterTools();
 }
 
-// addToScoutField appends an account to the enemy or ally input, without
-// duplicating one that is already there.
-function addToScoutField(p) {
-  const field = $(p.role === 'ally' ? 'allies-players' : 'scout-players');
-  if (!field) return;
-  const parts = field.value.split(/[\s,]+/).filter(Boolean);
-  const id = String(p.accountId);
-  if (!parts.includes(id)) parts.push(id);
-  field.value = parts.join(', ');
-  field.focus();
+// updateRosterTools keeps the bulk buttons honest about how many are ticked.
+function updateRosterTools() {
+  const n = rosterSelection.size;
+  const allies = $('btn-roster-allies');
+  const enemies = $('btn-roster-enemies');
+  if (!allies || !enemies) return;
+  allies.disabled = n === 0;
+  enemies.disabled = n === 0;
+  allies.textContent = n ? 'Скаутить выбранных (' + n + ') как союзников'
+    : 'Скаутить выбранных как союзников';
+}
+
+// scoutPlayers runs the scout for a set of accounts. One request, so the whole
+// stack becomes a single job rather than five.
+async function scoutPlayers(ids, ally) {
+  if (!ids.length) return;
+  await post(ally ? '/api/ops/scout-allies' : '/api/ops/scout',
+    { players: ids.join(',') });
+  loadKnownPlayers();
 }
 
 // ago renders a unix timestamp as a coarse "how long ago", which is all this list
@@ -1104,6 +1169,27 @@ document.addEventListener('DOMContentLoaded', () => {
       const a = btn.dataset.action;
       if (a === 'stats-refresh') { loadStats(); return; }
       if (a === 'players-refresh') { loadKnownPlayers(); return; }
+      if (a === 'roster-scout-allies') {
+        await scoutPlayers(Array.from(rosterSelection), true);
+        return;
+      }
+      if (a === 'roster-scout-enemies') {
+        await scoutPlayers(Array.from(rosterSelection), false);
+        return;
+      }
+      if (a === 'roster-select-none') {
+        rosterSelection.clear();
+        loadKnownPlayers();
+        return;
+      }
+      if (a === 'player-add') {
+        const ref = $('player-ref').value.trim();
+        if (!ref) return;
+        await post('/api/players/add', { ref, ally: $('player-add-role').value === 'ally' });
+        $('player-ref').value = '';
+        loadKnownPlayers();
+        return;
+      }
       if (a === 'corpus-refresh') { loadCorpus(); loadCorpusMeta(); return; }
       const build = ACTIONS[a];
       const [path, payload] = build ? build() : ['/api/' + a, {}];

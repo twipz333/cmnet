@@ -1439,6 +1439,9 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 	if err != nil {
 		return "", err
 	}
+	if fresh.Layer2 != nil {
+		cachePlayerAffinity(o.dbPath, fresh.Layer2.Players, o.windowDays)
+	}
 	l2, l3 := 0, 0
 	err = editSnapshot(o.outPath, func(snap *scout.OpponentSnapshot) error {
 		snap.FrozenAt = fresh.FrozenAt
@@ -1470,6 +1473,9 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 	}
 	resolved := resolvePlayersAs(ctx, players, o.dbPath, cache.RoleAlly, log)
 	allies := scout.BuildLayer2(ctx, scout.NewOpenDotaSource(), resolved, o.windowDays, log)
+	if allies != nil {
+		cachePlayerAffinity(o.dbPath, allies.Players, o.windowDays)
+	}
 	n := 0
 	if err := editSnapshot(o.outPath, func(snap *scout.OpponentSnapshot) error {
 		snap.Allies = mergeLayer2(snap.Allies, allies) // accumulate, don't replace

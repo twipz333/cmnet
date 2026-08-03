@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -198,7 +200,10 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 			return opCorpusMeta(h.bundlePath, h.dbPath)
 		},
 		KnownPlayers: func(role string) ([]session.KnownPlayer, error) {
-			return opKnownPlayers(h.dbPath, role)
+			return opKnownPlayers(h.dbPath, h.snapshotPath, role)
+		},
+		AddPlayer: func(ref string, ally bool) (string, error) {
+			return opAddPlayer(cmd.Context(), h.dbPath, ref, ally)
 		},
 		ForgetPlayer: func(accountID int64) (string, error) {
 			return opForgetPlayer(h.dbPath, accountID)
@@ -288,7 +293,26 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 }
 
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
+	// Ctrl+C asks for a stop rather than taking one. Without this the process was
+	// killed outright: whatever the collection pass had not yet committed was
+	// lost, the queue never got to write out its final log lines, and the job row
+	// stayed marked running until the next start recovered it.
+	//
+	// A second Ctrl+C gives up waiting — a hung source must not be able to hold
+	// the terminal hostage.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		fmt.Fprintln(os.Stderr, "\nstopping: finishing the current step, press Ctrl+C again to quit now…")
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		fmt.Fprintln(os.Stderr, "quitting without finishing")
+		os.Exit(130) // 128 + SIGINT, the shell convention
+	}()
+
+	if err := newRootCmd().ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

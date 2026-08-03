@@ -427,6 +427,26 @@ func (s *Store) LastJobLog(jobID int64) (JobLogEntry, bool, error) {
 	return e, true, nil
 }
 
+// maxLinesPerJob bounds how much of one job's log is kept.
+//
+// A sync emits several hundred lines per pass and a long one thousands, so the
+// history is dominated by a handful of chatty jobs. The tail is what anyone
+// actually reads — the summary, and whatever went wrong near the end — so the
+// oldest lines of an over-long job are dropped rather than the job itself.
+const maxLinesPerJob = 2000
+
+// TrimJobLog drops the oldest lines of a job that has produced too many.
+func (s *Store) TrimJobLog(jobID int64, keep int) error {
+	if keep <= 0 {
+		keep = maxLinesPerJob
+	}
+	_, err := s.db.Exec(
+		`DELETE FROM job_log WHERE job_id = ? AND seq <= (
+			SELECT MAX(seq) - ? FROM job_log WHERE job_id = ?
+		 )`, jobID, keep, jobID)
+	return err
+}
+
 // TrimJobs deletes finished jobs beyond the newest keep, so a machine collecting
 // for months does not accumulate an unbounded log. Cascades to job_log.
 func (s *Store) TrimJobs(keep int) error {

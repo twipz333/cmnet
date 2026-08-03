@@ -66,6 +66,9 @@ type ShellConfig struct {
 	// PinPlayer keeps an account out of the automatic pruning — the regular five
 	// stay, the long tail of one-off opponents does not.
 	PinPlayer func(accountID int64, pinned bool) (string, error)
+	// AddPlayer files an account in the book without scouting it, so a stack can
+	// be assembled once and reused. ref is an id or a profile URL.
+	AddPlayer func(ref string, ally bool) (string, error)
 
 	// BuildScan loads the bundle (+snapshot) and returns the draft-screen config.
 	BuildScan func() (Config, error)
@@ -160,6 +163,14 @@ type KnownPlayer struct {
 	// repeat scout cheap, and worth showing so "cached" is visible rather than
 	// merely claimed.
 	Heroes int `json:"heroes"`
+	// InSnapshot is "ally", "enemy" or "" — whether this player is part of the
+	// CURRENT lineup, as opposed to merely being known.
+	//
+	// The two are deliberately different things. The snapshot is who we are
+	// drafting with or against today; the book is everyone we have ever played
+	// with. Taking someone out of today's lineup must not make us forget who they
+	// are, which is exactly the confusion the first version created.
+	InSnapshot string `json:"inSnapshot,omitempty"`
 }
 
 // StatsHero is a hero reference with optional per-player stats.

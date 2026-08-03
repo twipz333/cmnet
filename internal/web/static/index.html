@@ -155,12 +155,27 @@
            snapshot: a nickname there would change its hash and split the file
            teammates blend on. -->
       <div class="panel">
-        <h2>Известные игроки</h2>
-        <p class="why">Кого уже скаутили или с кем играли. Клик добавляет в поле рядом —
-          ссылку на профиль каждый раз брать не нужно. «В кэше» — сколько героев уже
-          подтянуто: повторная разведка такого игрока быстрее. Список локальный и в
-          снапшот не попадает.</p>
-        <div class="row">
+        <h2>Список игроков</h2>
+        <p class="why">Постоянная записная книжка: все, с кем играли или кого скаутили.
+          Она не про текущий матч — из неё <b>набирается состав на сегодня</b>. Отметь
+          нужных и нажми «Скаутить выбранных»: разведка соберёт их и положит в снапшот.
+          «В составе» — кто сейчас в снапшоте; «убрать» вынимает из состава, но
+          <b>оставляет в списке</b>, чтобы завтра его можно было вернуть одним кликом.
+          Список локальный, в снапшот не попадает и на другие машины не уезжает.</p>
+
+        <div class="row roster-add">
+          <input id="player-ref" type="text" placeholder="id или ссылка на профиль — добавить в список">
+          <select id="player-add-role">
+            <option value="ally">союзник</option>
+            <option value="enemy">враг</option>
+          </select>
+          <button data-action="player-add">Добавить</button>
+        </div>
+
+        <div class="row roster-tools">
+          <button data-action="roster-scout-allies" id="btn-roster-allies">Скаутить выбранных как союзников</button>
+          <button data-action="roster-scout-enemies" id="btn-roster-enemies">…как врагов</button>
+          <button data-action="roster-select-none" class="small">Снять выбор</button>
           <button data-action="players-refresh" class="small">Обновить</button>
           <label class="op-filter">показывать
             <select id="players-role">

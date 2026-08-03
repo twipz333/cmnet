@@ -600,16 +600,20 @@ func (q *Queue) SetOnChange(fn func()) {
 
 // logger batches a job's lines. A sync emits thousands; one transaction each made
 // logging cost more than the work being logged.
+// logTrimEvery is how many lines may accumulate between trims of one job's log.
+const logTrimEvery = 500
+
 type logger struct {
 	q     *Queue
 	jobID int64
 
-	mu      sync.Mutex
-	seq     int64
-	pending []cache.JobLogEntry
-	closed  bool
-	flushed chan struct{}
-	timer   *time.Timer
+	mu        sync.Mutex
+	seq       int64
+	trimmedAt int64
+	pending   []cache.JobLogEntry
+	closed    bool
+	flushed   chan struct{}
+	timer     *time.Timer
 }
 
 func (q *Queue) newLogger(jobID int64) *logger {
@@ -675,6 +679,18 @@ func (l *logger) flush() {
 	}
 	if err := l.q.st.AppendJobLogBatch(batch); err == nil {
 		l.q.changed()
+	}
+	// Checked on the batch boundary rather than per line: a job that runs for an
+	// hour must not accumulate an unbounded log, and this costs one statement per
+	// few dozen lines.
+	l.mu.Lock()
+	over := l.seq-l.trimmedAt > logTrimEvery
+	if over {
+		l.trimmedAt = l.seq
+	}
+	l.mu.Unlock()
+	if over {
+		_ = l.q.st.TrimJobLog(l.jobID, 0)
 	}
 }
 

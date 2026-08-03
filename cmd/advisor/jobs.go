@@ -160,6 +160,17 @@ func (r *runner) Close() error { return r.st.Close() }
 // that is still queued is not queued again.
 const backfillEvery = 20 * time.Minute
 
+// keepFinishedJobs is how many completed jobs stay in the history.
+//
+// Sized against what a person scrolls, not against what a disk holds: past a few
+// dozen the list is archaeology, and the per-job log cap is what actually bounds
+// the size.
+const keepFinishedJobs = 60
+
+// trimEvery is how often finished history is pruned while running. Doing it only
+// at exit meant a machine left collecting for a week accumulated everything.
+const trimEvery = 10 * time.Minute
+
 // Run drives the queue until ctx ends, trimming history on the way out.
 func (r *runner) Run(ctx context.Context) {
 	if r.token != "" {
@@ -169,10 +180,25 @@ func (r *runner) Run(ctx context.Context) {
 	// this is a no-op after the first run — every portrait is already on disk and
 	// the handler skips it without a request.
 	_, _ = r.q.Enqueue(jobAssets, jobs.PriorityBackground, "", true)
+	go r.trimPeriodically(ctx)
 	r.q.Run(ctx)
 	// Bounded history: a machine that collects for months would otherwise keep every
 	// line of every pass forever.
-	_ = r.st.TrimJobs(200)
+	_ = r.st.TrimJobs(keepFinishedJobs)
+}
+
+// trimPeriodically prunes finished job history while the app runs.
+func (r *runner) trimPeriodically(ctx context.Context) {
+	t := time.NewTicker(trimEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			_ = r.st.TrimJobs(keepFinishedJobs)
+		}
+	}
 }
 
 // proposeBackfill offers a backfill pass on a slow timer. It only proposes: the
