@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dota 2 Draft Advisor</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">DRAFT ADVISOR</div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="draft" class="tab active">Драфт</button>
+      <button data-tab="data" class="tab">Данные</button>
+      <button data-tab="scout" class="tab">Разведка</button>
+      <button data-tab="stats" class="tab">Статистика</button>
+    </nav>
+    <div id="step" class="step"></div>
+  </header>
+
+  <!-- Long-running operation log; visible on every tab while an op runs. -->
+  <section id="op-banner" class="op-banner" hidden>
+    <div class="op-head">
+      <span id="op-name"></span>
+      <button data-action="ops/cancel" class="danger">Отменить</button>
+    </div>
+    <pre id="op-log" class="op-log"></pre>
+  </section>
+
+  <main>
+    <!-- ---------------- DRAFT ---------------- -->
+    <div class="screen" id="screen-draft">
+      <div class="controls">
+        <button data-action="side" title="Сменить нашу сторону">Сторона: <b id="our-team">—</b></button>
+        <button data-action="first-pick" title="Сменить first pick (сбрасывает драфт)">FP: <b id="first-pick">—</b></button>
+        <button data-action="step-team" title="Чей текущий шаг">Шаг: команда</button>
+        <button data-action="step-action" title="Пик или бан на текущем шаге">Шаг: пик/бан</button>
+        <button data-action="undo" id="btn-undo">Undo</button>
+        <button data-action="redo" id="btn-redo">Redo</button>
+        <button data-action="reload" title="Перечитать бандл и снапшот с диска">Перезагрузить</button>
+      </div>
+
+      <div id="gsi-note" class="notice" hidden></div>
+
+      <div id="draft-missing" class="panel warn-panel" hidden>
+        <h2>Драфт недоступен</h2>
+        <div id="draft-missing-msg" class="why"></div>
+        <div class="why">Обучи модель на вкладке «Данные» — бандл появится, и экран заработает.</div>
+      </div>
+
+      <div class="cols">
+        <section class="col col-picker">
+          <div class="panel">
+            <h2>Герои</h2>
+            <input id="hero-filter" type="search" placeholder="фильтр…" autocomplete="off">
+            <ul id="hero-list" class="hero-list"></ul>
+          </div>
+          <div class="panel" id="enemy-panel" hidden>
+            <h2>Добавить врага на лету</h2>
+            <div class="row">
+              <input id="enemy-url" type="text" placeholder="account id или ссылка на профиль">
+              <button data-action="enemy">Добавить</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="col col-board">
+          <div class="panel board">
+            <h2>Доска</h2>
+            <div id="board"></div>
+          </div>
+          <div id="panels"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ---------------- DATA ---------------- -->
+    <div class="screen" id="screen-data" hidden>
+      <div class="panel">
+        <h2>Кэш матчей</h2>
+        <p class="why">Инкрементально подтягивает CM-матчи в локальный SQLite. Модель при этом
+          не меняется — после синка нужен Train.</p>
+        <button data-action="ops/sync" id="btn-sync">Синхронизировать данные</button>
+      </div>
+      <div class="panel">
+        <h2>Обучение</h2>
+        <p class="why">Обучает модели слоя 1 из кэша и пересобирает бандл. По завершении
+          драфт-экран сам подхватит новый бандл.</p>
+        <button data-action="ops/train" id="btn-train">Обучить модель</button>
+      </div>
+      <div class="panel">
+        <h2>Последний результат</h2>
+        <div id="op-result" class="why">—</div>
+      </div>
+
+      <div class="panel corpus-head">
+        <h2>Что собрано</h2>
+        <p class="why">Картина локального кэша: сколько накоплено, чего именно и когда
+          приходило. Обновляется при открытии вкладки и после каждого синка.</p>
+        <button data-action="corpus-refresh">Обновить</button>
+      </div>
+      <div id="corpus"></div>
+    </div>
+
+    <!-- ---------------- SCOUT ---------------- -->
+    <div class="screen" id="screen-scout" hidden>
+      <div class="panel">
+        <h2>Разведка соперников (слои 2–3)</h2>
+        <p class="why">ID или ссылки на профили через запятую либо пробел. Достаточно одного
+          резолвнутого врага — из его матча поднимется драфт всей команды.</p>
+        <div class="row">
+          <input id="scout-players" type="text" placeholder="123456789, https://stratz.com/players/…">
+          <button data-action="ops/scout" id="btn-scout">Скаутить врагов</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Разведка союзников</h2>
+        <p class="why">Комфорт-герои нашей команды — персонализируют наши пик-рекомендации.</p>
+        <div class="row">
+          <input id="allies-players" type="text" placeholder="id или ссылки через запятую">
+          <button data-action="ops/scout-allies" id="btn-allies">Скаутить союзников</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- STATS ---------------- -->
+    <div class="screen" id="screen-stats" hidden>
+      <div class="panel">
+        <h2>Снапшот</h2>
+        <div id="stats-path" class="why">—</div>
+        <button data-action="stats-refresh">Обновить</button>
+        <button data-action="stats/clear-layer3" class="danger" id="btn-clear3">Очистить драфты ивента (слой 3)</button>
+      </div>
+      <div class="panel">
+        <h2>Враги (слой 2)</h2>
+        <div id="stats-enemies"></div>
+      </div>
+      <div class="panel">
+        <h2>Союзники</h2>
+        <div id="stats-allies"></div>
+      </div>
+      <div class="panel">
+        <h2>Наш пул героев</h2>
+        <p class="why">Через запятую — id или имена. Пустая строка очищает пул.</p>
+        <div class="row">
+          <input id="pool-input" type="text" placeholder="Axe, Lifestealer, 74">
+          <button data-action="stats/hero-pool">Сохранить пул</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Правила советов (#10)</h2>
+        <p class="why">DSL: <code>axe, lifestealer | ursa =&gt; buy Eul / Lotus</code></p>
+        <textarea id="rules-input" rows="8" spellcheck="false"></textarea>
+        <button data-action="stats/item-rules">Сохранить правила</button>
+      </div>
+    </div>
+  </main>
+
+  <footer id="statusbar" class="statusbar"></footer>
+
+  <div id="matchups" class="modal" hidden>
+    <div class="modal-body">
+      <button class="modal-close" data-close>✕</button>
+      <h2 id="matchups-title">Матчапы</h2>
+      <div id="matchups-body"></div>
+    </div>
+  </div>
+
+  <!-- charts.js first: app.js calls into it when the Data tab opens. -->
+  <script src="/charts.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

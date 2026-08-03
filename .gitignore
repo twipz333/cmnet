@@ -1,0 +1,36 @@
+# build artifacts
+/advisor
+/advisor.exe
+/advisor_native
+*.exe
+*.exe~
+
+# local data / generated artifacts
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.db.autolock
+bundle.json
+bundle.json.bak
+snapshot.json
+snapshot.json.bak
+sync.log
+_d.json
+
+# pairstats cached STRATZ pulls and generated reports
+pairstats-cache/
+pairstats*.html
+pairstats*.png
+
+# graphify knowledge graph output
+graphify-out/
+
+# tooling runtime state
+.omc/
+.agents/
+.claude/settings.local.json
+
+# local config (may contain the STRATZ token)
+config.yaml
+config.yaml.bak
