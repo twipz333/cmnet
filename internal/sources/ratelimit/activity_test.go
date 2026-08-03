@@ -128,3 +128,62 @@ func activityFor(t *testing.T, source string) Activity {
 	t.Fatalf("no activity recorded for %q", source)
 	return Activity{}
 }
+
+// The chart needs a continuous timeline: a second in which nothing happened must
+// come back as a zero, not be omitted. A chart that closes the gaps compresses a
+// pause into nothing and makes a stalled source look busy.
+func TestSeriesReturnsContinuousTimeline(t *testing.T) {
+	ResetForTest()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewClient(New(Window{N: 1000, Per: time.Second}))
+	c.Source = "TestAPI"
+	for i := 0; i < 3; i++ {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatalf("do: %v", err)
+		}
+		resp.Body.Close()
+	}
+
+	// Wait for the second those requests landed in to close, since the series
+	// deliberately excludes the second still filling.
+	time.Sleep(1100 * time.Millisecond)
+
+	series := Series("TestAPI", 10)
+	if len(series) != 10 {
+		t.Fatalf("series has %d samples, want 10 including the empty seconds", len(series))
+	}
+	for i := 1; i < len(series); i++ {
+		if series[i].Sec != series[i-1].Sec+1 {
+			t.Fatalf("timeline jumps at %d: %d then %d", i, series[i-1].Sec, series[i].Sec)
+		}
+	}
+	total := 0
+	for _, s := range series {
+		total += s.Requests
+	}
+	if total != 3 {
+		t.Errorf("series recorded %d requests, want 3", total)
+	}
+}
+
+// The window is bounded: this is a liveness readout, not a metrics store, and a
+// run that lasts days must not grow it.
+func TestSeriesWindowIsCapped(t *testing.T) {
+	ResetForTest()
+	stateFor("TestAPI") // materialise the source without any traffic
+
+	if got := len(Series("TestAPI", 10_000)); got != historySeconds {
+		t.Errorf("series length = %d for an over-large request, want the %d-second cap",
+			got, historySeconds)
+	}
+	if historySeconds != 300 {
+		t.Errorf("history window = %ds, want 300 (five minutes)", historySeconds)
+	}
+}

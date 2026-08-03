@@ -718,6 +718,102 @@ function spanLabel(from, to) {
 
 let corpusLoading = false;
 
+// trafficChart draws one source's recent request rate, one bar per second.
+//
+// Stacked rather than three lines: rate-limited and failed responses are a SUBSET
+// of the second's traffic, and drawing them as separate series invites reading a
+// second with 10 requests and 10 failures as 20 events. Empty seconds are drawn
+// as empty slots, never skipped — a pause is the thing worth seeing, and a chart
+// that closes the gap makes a stalled source look busy.
+function trafficChart(samples, width) {
+  const W = width || 720, H = 46, padT = 2, padB = 10;
+  const root = svg('svg', {
+    viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'viz', role: 'img',
+    'aria-label': 'Запросы по секундам',
+  });
+  if (!samples || !samples.length) return root;
+
+  const plotH = H - padT - padB;
+  const slot = W / samples.length;
+  // Never thinner than a hairline, never wider than the slot minus its gap: at
+  // five minutes of seconds the bars are sub-pixel on a narrow panel, and a
+  // rounded-up width would overlap the neighbour and read as solid fill.
+  const barW = Math.max(1, Math.min(slot - 0.5, slot * 0.8));
+  const max = Math.max(1, ...samples.map((s) => s.requests));
+
+  // A baseline, so an all-empty window still reads as a chart rather than a void.
+  root.append(svg('line', {
+    x1: 0, y1: padT + plotH + 0.5, x2: W, y2: padT + plotH + 0.5, class: 'viz-grid',
+  }));
+
+  samples.forEach((s, i) => {
+    if (!s.requests && !s.failures && !s.rateLimited) return;
+    const x = i * slot;
+    const h = Math.max(1, (s.requests / max) * plotH);
+    const y = padT + plotH - h;
+
+    // Trouble is drawn at the BOTTOM of its own bar, so a bad second reads as a
+    // bar with a red foot rather than as a separate mark somewhere else.
+    const bad = Math.min(s.requests, s.failures + s.rateLimited);
+    const badH = bad ? Math.max(1, (bad / max) * plotH) : 0;
+
+    const tip = [
+      secLabel(s.sec),
+      'запросов: ' + num(s.requests),
+    ];
+    if (s.rateLimited) tip.push('429: ' + num(s.rateLimited));
+    if (s.failures) tip.push('ошибок: ' + num(s.failures));
+    if (s.slowestMs) tip.push('самый долгий: ' + fmtMs(s.slowestMs));
+
+    root.append(hoverable(svg('rect', {
+      x, y, width: barW, height: h, fill: VIZ.cat[0], class: 'viz-mark',
+    }), tip));
+    if (badH > 0) {
+      root.append(svg('rect', {
+        x, y: padT + plotH - badH, width: barW, height: badH,
+        fill: s.rateLimited ? '#e0b562' : '#e06a6a',
+      }));
+    }
+  });
+  return root;
+}
+
+// fmtMs renders a duration the way this panel talks about latency.
+function fmtMs(ms) {
+  if (ms < 1000) return ms + ' мс';
+  return (ms / 1000).toFixed(1) + ' с';
+}
+
+// secLabel is a wall-clock time for one bucket.
+function secLabel(sec) {
+  const d = new Date(sec * 1000);
+  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// trafficSummary is the sentence under the chart: the numbers a reader would
+// otherwise have to estimate from bar heights.
+function trafficSummary(samples) {
+  if (!samples || !samples.length) return 'нет данных за последние минуты';
+  let total = 0, peak = 0, bad = 0, slowest = 0, active = 0;
+  for (const s of samples) {
+    total += s.requests;
+    bad += s.failures + s.rateLimited;
+    if (s.requests > peak) peak = s.requests;
+    if (s.slowestMs > slowest) slowest = s.slowestMs;
+    if (s.requests) active++;
+  }
+  if (!total) return 'за последние ' + Math.round(samples.length / 60) + ' мин запросов не было';
+  const parts = [
+    'всего ' + num(total),
+    'пик ' + num(peak) + '/с',
+    'в среднем ' + (total / samples.length).toFixed(1) + '/с',
+    'секунд с активностью ' + num(active) + ' из ' + num(samples.length),
+  ];
+  if (slowest) parts.push('самый долгий ' + fmtMs(slowest));
+  if (bad) parts.push('проблемных ответов ' + num(bad));
+  return parts.join(' · ');
+}
+
 // --- what our own corpus says ------------------------------------------------
 //
 // The bundle carries two answers to "what is strong at position 3": STRATZ's

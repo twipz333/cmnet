@@ -413,7 +413,8 @@ code { font: 12px ui-monospace, Consolas, monospace; color: var(--accent); }
   font-size: 12px;
   flex-wrap: wrap;
 }
-.src-row + .src-row { border-top: 1px solid var(--line); }
+.src-card + .src-card { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.src-summary { margin-top: 2px; font-variant-numeric: tabular-nums; }
 .src-name { font-weight: 600; min-width: 84px; font-size: 13px; }
 .src-state { color: var(--fg); }
 .src-state.warnish { color: var(--warn); }

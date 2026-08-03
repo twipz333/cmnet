@@ -487,9 +487,12 @@ func (s *Server) handleCorpusMeta(w http.ResponseWriter, r *http.Request) {
 // it, the draft screen has no use for it, and the frame is rebuilt several times
 // a second.
 func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
+	// With the per-second history: this endpoint is polled by the one screen that
+	// draws the chart, unlike the live frame, which asks several times a second and
+	// has no use for it.
 	writeJSON(w, http.StatusOK, struct {
 		Sources []ratelimit.Activity `json:"sources"`
-	}{ratelimit.Snapshot()})
+	}{ratelimit.SnapshotWithSeries(intParam(r, "seconds", 0))})
 }
 
 // --- known players ------------------------------------------------------------

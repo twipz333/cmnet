@@ -888,11 +888,13 @@ let sourcesTimer = null;
 function startSourcesPolling() {
   if (sourcesTimer !== null) return;
   loadSources();
-  // Two seconds: this is a liveness readout, and the numbers it shows change on
-  // that scale. It is also the only thing on the page that polls.
+  // Once a second, matching the resolution of the data: the chart is per-second
+  // buckets, so a slower poll would make it advance in visible jerks. The payload
+  // is a few hundred integers from a server on this machine, and the timer stops
+  // the moment the screen is left.
   sourcesTimer = setInterval(() => {
     if (activeTab === 'data') loadSources(); else stopSourcesPolling();
-  }, 2000);
+  }, 1000);
 }
 
 function stopSourcesPolling() {
@@ -913,6 +915,9 @@ async function loadSources() {
 
 function renderSources(list) {
   const host = $('sources');
+  // Repainting drops the element the tooltip was anchored to, which would leave
+  // it stranded over an empty spot until the next mouse move.
+  hideTip();
   host.textContent = '';
   if (!list.length) {
     host.append(el('div', 'why', 'ни одного запроса за этот запуск'));
@@ -945,7 +950,14 @@ function renderSources(list) {
     if (a.lastErr) row.append(el('span', 'src-err off', a.lastErr));
     else if (a.lastStatus) row.append(el('span', 'src-counters', 'последний ответ: ' + a.lastStatus));
 
-    host.append(row);
+    const card = el('div', 'src-card');
+    card.append(row);
+    // The chart is the same data as the counters, over time: the counters say how
+    // much has happened since start-up, this says whether anything is happening
+    // now — which is the actual question when a job goes quiet.
+    card.append(trafficChart(a.recent, chartWidth(host)));
+    card.append(el('div', 'src-summary why', trafficSummary(a.recent)));
+    host.append(card);
   }
 }
 

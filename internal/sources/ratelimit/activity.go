@@ -33,6 +33,46 @@ type Activity struct {
 	LastStatus int `json:"lastStatus"`
 	// LastErr is the most recent transport error, if any.
 	LastErr string `json:"lastErr,omitempty"`
+	// Recent is the per-second history the chart draws. Filled by SnapshotWithSeries.
+	Recent []Sample `json:"recent,omitempty"`
+}
+
+// Sample is one second of traffic to a source.
+//
+// Per second rather than per request: a sync makes thousands of calls, and the
+// question the chart answers ("is it moving, and how fast") is about rate, not
+// about individual requests. A fixed-size ring of seconds also means the memory
+// cost is known in advance and does not grow with a long collection run.
+type Sample struct {
+	// Sec is the unix second this bucket covers.
+	Sec int64 `json:"sec"`
+	// Requests is how many requests STARTED in this second.
+	Requests int `json:"requests"`
+	// Failures and RateLimited are subsets of the responses that landed in it, so
+	// a bar can show trouble as a share of the traffic rather than as a
+	// separate series nobody can line up by eye.
+	Failures    int `json:"failures"`
+	RateLimited int `json:"rateLimited"`
+	// SlowestMs is the longest response observed in this second, which is what
+	// turns "many requests" into "many requests, all of them crawling".
+	SlowestMs int `json:"slowestMs"`
+}
+
+// historySeconds is how much of the recent past the chart keeps: five minutes.
+//
+// Long enough to see a rate-limit pause begin and end and to judge whether a
+// collection pass is holding its rate; short enough that this stays a liveness
+// readout rather than a metrics store. The ring is fixed-size, so the cost is a
+// few kilobytes per source and does not grow with a run that lasts days.
+const historySeconds = 300
+
+// bucket is one second of the ring.
+type bucket struct {
+	sec         int64
+	requests    int
+	failures    int
+	rateLimited int
+	slowestMs   int
 }
 
 // registry tracks per-source activity for the whole process.
@@ -48,6 +88,7 @@ var registry = struct {
 
 type sourceState struct {
 	inFlight     map[int64]time.Time // request id -> started
+	ring         [historySeconds]bucket
 	nextID       int64
 	waitingUntil time.Time
 	requests     int64
@@ -69,6 +110,22 @@ func stateFor(source string) *sourceState {
 	return st
 }
 
+// bucketFor returns the ring slot for a unix second, resetting it when it still
+// holds an older second.
+//
+// A ring indexed by (second mod size) needs no shifting and no allocation, and a
+// gap in traffic costs nothing: the stale slot is simply reset the moment it is
+// reused, so an idle minute reads as zeros rather than as ancient data.
+//
+// Callers must hold registry.mu.
+func (st *sourceState) bucketFor(sec int64) *bucket {
+	b := &st.ring[sec%historySeconds]
+	if b.sec != sec {
+		*b = bucket{sec: sec}
+	}
+	return b
+}
+
 // beginRequest records a request going out and returns its id.
 func beginRequest(source string) int64 {
 	if source == "" {
@@ -79,8 +136,10 @@ func beginRequest(source string) int64 {
 	defer registry.mu.Unlock()
 	st.nextID++
 	id := st.nextID
-	st.inFlight[id] = time.Now()
+	now := time.Now()
+	st.inFlight[id] = now
 	st.requests++
+	st.bucketFor(now.Unix()).requests++
 	return id
 }
 
@@ -92,14 +151,31 @@ func endRequest(source string, id int64, status int, err error) {
 	st := stateFor(source)
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
+
+	now := time.Now()
+	// Attributed to the second the response LANDED, not the one the request left
+	// in: a slow call belongs where its cost showed up, and the started-in count
+	// already records the other end.
+	b := st.bucketFor(now.Unix())
+	if started, ok := st.inFlight[id]; ok {
+		if ms := int(now.Sub(started).Milliseconds()); ms > b.slowestMs {
+			b.slowestMs = ms
+		}
+	}
 	delete(st.inFlight, id)
 	if status > 0 {
 		st.lastStatus = status
 	}
+	if status == 429 {
+		b.rateLimited++
+	}
 	if err != nil {
 		st.failures++
 		st.lastErr = err.Error()
-	} else if status > 0 && status < 400 {
+		b.failures++
+	} else if status >= 400 {
+		b.failures++
+	} else if status > 0 {
 		st.lastErr = ""
 	}
 }
@@ -119,6 +195,38 @@ func noteRetry(source string, d time.Duration, rateLimited bool) {
 	if until := time.Now().Add(d); until.After(st.waitingUntil) {
 		st.waitingUntil = until
 	}
+}
+
+// Series returns the last n seconds for a source, oldest first, including the
+// seconds in which nothing happened.
+//
+// Gaps are returned as explicit zero samples rather than omitted: a chart that
+// skips empty seconds compresses a pause into nothing and makes a stalled source
+// look busy.
+func Series(source string, n int) []Sample {
+	if n <= 0 || n > historySeconds {
+		n = historySeconds
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+
+	st := registry.src[source]
+	if st == nil {
+		return nil
+	}
+	// The current second is excluded: it is still filling, and a half-counted bar
+	// at the leading edge reads as a drop in traffic.
+	end := time.Now().Unix() - 1
+	out := make([]Sample, 0, n)
+	for sec := end - int64(n) + 1; sec <= end; sec++ {
+		s := Sample{Sec: sec}
+		if b := &st.ring[((sec%historySeconds)+historySeconds)%historySeconds]; b.sec == sec {
+			s.Requests, s.Failures = b.requests, b.failures
+			s.RateLimited, s.SlowestMs = b.rateLimited, b.slowestMs
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // Snapshot returns the current activity per source, ordered by name so the UI
@@ -192,4 +300,16 @@ func ResetForTest() {
 	registry.mu.Lock()
 	registry.src = map[string]*sourceState{}
 	registry.mu.Unlock()
+}
+
+// SnapshotWithSeries is Snapshot plus the per-second history each source.
+//
+// Separate from Snapshot because the series is only wanted by the one screen that
+// draws it; the banner asks several times a second and has no use for it.
+func SnapshotWithSeries(seconds int) []Activity {
+	out := Snapshot()
+	for i := range out {
+		out[i].Recent = Series(out[i].Source, seconds)
+	}
+	return out
 }
