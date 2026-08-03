@@ -65,7 +65,7 @@ func (m Match) IsCaptainsMode() bool { return m.GameMode == 2 }
 // HasMatch reports whether a match is already cached.
 func (s *Store) HasMatch(id int64) (bool, error) {
 	var one int
-	err := s.db.QueryRow("SELECT 1 FROM matches WHERE match_id = ?", id).Scan(&one)
+	err := s.rd.QueryRow("SELECT 1 FROM matches WHERE match_id = ?", id).Scan(&one)
 	switch {
 	case err == nil:
 		return true, nil
@@ -81,7 +81,7 @@ func (s *Store) HasMatch(id int64) (bool, error) {
 // public_matches bulk). Used by sync to skip re-fetching CM drafts it already has.
 func (s *Store) MatchHasBans(id int64) (bool, error) {
 	var one int
-	err := s.db.QueryRow(
+	err := s.rd.QueryRow(
 		"SELECT 1 FROM pick_bans WHERE match_id = ? AND is_pick = 0 LIMIT 1", id,
 	).Scan(&one)
 	switch {
@@ -119,7 +119,7 @@ func (s *Store) MatchIsComplete(id int64, requirePlayers bool) (bool, error) {
 	// A full roster, not merely some rows: a half-written participant list is what
 	// this check exists to catch, and "at least one" would call it complete.
 	var n int
-	if err := s.db.QueryRow(
+	if err := s.rd.QueryRow(
 		"SELECT COUNT(*) FROM match_players WHERE match_id = ?", id).Scan(&n); err != nil {
 		return false, err
 	}
@@ -256,7 +256,7 @@ func validRoster(ps []MatchPlayer) bool {
 // the cache is empty. Used as the incremental sync watermark.
 func (s *Store) MaxStartTime() (int64, error) {
 	var t *int64
-	if err := s.db.QueryRow("SELECT MAX(start_time) FROM matches").Scan(&t); err != nil {
+	if err := s.rd.QueryRow("SELECT MAX(start_time) FROM matches").Scan(&t); err != nil {
 		return 0, err
 	}
 	if t == nil {
@@ -270,7 +270,7 @@ func (s *Store) MaxStartTime() (int64, error) {
 // new data has arrived to be worth retraining on.
 func (s *Store) CountMatches() (int64, error) {
 	var n int64
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM matches").Scan(&n); err != nil {
+	if err := s.rd.QueryRow("SELECT COUNT(*) FROM matches").Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -279,7 +279,7 @@ func (s *Store) CountMatches() (int64, error) {
 // Matches returns all cached matches with their pick/bans, ordered by start_time
 // then match_id (deterministic), optionally limited to start_time >= since.
 func (s *Store) Matches(since int64) ([]Match, error) {
-	rows, err := s.db.Query(
+	rows, err := s.rd.Query(
 		`SELECT match_id, start_time, radiant_win, avg_mmr, patch, game_mode, rank_tier, source
 		 FROM matches WHERE start_time >= ? ORDER BY start_time, match_id`,
 		since,
@@ -327,7 +327,7 @@ func (s *Store) attachPlayers(matches []Match, since int64) error {
 	if len(matches) == 0 {
 		return nil
 	}
-	rows, err := s.db.Query(
+	rows, err := s.rd.Query(
 		`SELECT mp.match_id, mp.player_slot, mp.account_id, mp.hero_id, mp.is_radiant,
 		        mp.position, mp.pos_source
 		 FROM match_players mp
@@ -363,7 +363,7 @@ func (s *Store) attachPlayers(matches []Match, since int64) error {
 }
 
 func (s *Store) pickBans(matchID int64) ([]PickBan, error) {
-	rows, err := s.db.Query(
+	rows, err := s.rd.Query(
 		`SELECT ord, hero_id, is_pick, team FROM pick_bans WHERE match_id = ? ORDER BY ord`,
 		matchID,
 	)

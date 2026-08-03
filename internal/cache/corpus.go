@@ -121,7 +121,7 @@ func (s *Store) CorpusStats(windowDays int) (CorpusStats, error) {
 		)`, fullRoster); err != nil {
 		return st, err
 	}
-	if err = s.db.QueryRow("SELECT COALESCE(MIN(start_time), 0), COALESCE(MAX(start_time), 0) FROM matches").
+	if err = s.rd.QueryRow("SELECT COALESCE(MIN(start_time), 0), COALESCE(MAX(start_time), 0) FROM matches").
 		Scan(&st.OldestStart, &st.NewestStart); err != nil {
 		return st, err
 	}
@@ -149,7 +149,7 @@ func (s *Store) CorpusStats(windowDays int) (CorpusStats, error) {
 
 func (s *Store) scalar(query string, args ...any) (int64, error) {
 	var n int64
-	if err := s.db.QueryRow(query, args...).Scan(&n); err != nil {
+	if err := s.rd.QueryRow(query, args...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("%s: %w", query, err)
 	}
 	return n, nil
@@ -163,7 +163,7 @@ func (s *Store) sourceCounts() ([]SourceCount, error) {
 	// its ban rows, so COUNT(*) counts draft ACTIONS and the "matches" column comes
 	// out several times the size of the table. (It did, on the first run of this
 	// screen: three sources summed to 117k rows over a 51k-row table.)
-	rows, err := s.db.Query(`
+	rows, err := s.rd.Query(`
 		SELECT COALESCE(NULLIF(m.source, ''), 'unknown') AS src,
 		       COUNT(*),
 		       SUM(CASE WHEN EXISTS(
@@ -192,7 +192,7 @@ func (s *Store) sourceCounts() ([]SourceCount, error) {
 // on this number, so seeing the shape of the distribution is what tells the user
 // whether raising it would leave anything to train on.
 func (s *Store) rankBuckets() ([]RankBucket, error) {
-	rows, err := s.db.Query(`
+	rows, err := s.rd.Query(`
 		SELECT CASE WHEN rank_tier IS NULL THEN ? ELSE (rank_tier / 10) * 10 END AS bucket,
 		       COUNT(*)
 		FROM matches
@@ -259,7 +259,7 @@ func (s *Store) dailyCounts(column string, windowDays int) ([]DayCount, error) {
 
 	// EXISTS rather than a join, for the same reason as sourceCounts: a join would
 	// count ban rows and report a day as several times busier than it was.
-	rows, err := s.db.Query(`
+	rows, err := s.rd.Query(`
 		SELECT m.`+column+`,
 		       EXISTS(SELECT 1 FROM pick_bans b WHERE b.match_id = m.match_id AND b.is_pick = 0)
 		FROM matches m
@@ -308,7 +308,7 @@ func (s *Store) topHeroes(picks bool, limit int) ([]HeroCount, error) {
 	if picks {
 		isPick = 1
 	}
-	rows, err := s.db.Query(`
+	rows, err := s.rd.Query(`
 		SELECT b.hero_id, COALESCE(NULLIF(h.localized, ''), h.name, ''), COUNT(*) AS n
 		FROM pick_bans b
 		LEFT JOIN heroes h ON h.id = b.hero_id

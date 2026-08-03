@@ -35,7 +35,7 @@ func (s *Store) UpsertHeroes(heroes []Hero) error {
 
 // Heroes returns all cached heroes ordered by id (deterministic).
 func (s *Store) Heroes() ([]Hero, error) {
-	rows, err := s.db.Query("SELECT id, name, localized FROM heroes ORDER BY id")
+	rows, err := s.rd.Query("SELECT id, name, localized FROM heroes ORDER BY id")
 	if err != nil {
 		return nil, err
 	}

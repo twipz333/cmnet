@@ -52,7 +52,7 @@ func (s *Store) Players(ids []int64) (map[int64]Player, error) {
 	}
 	// Prepared once and executed per id: the list is a handful of scouted players,
 	// so this stays simpler than building a variadic IN clause.
-	stmt, err := s.db.Prepare("SELECT account_id, persona, fetched_at FROM players WHERE account_id = ?")
+	stmt, err := s.rd.Prepare("SELECT account_id, persona, fetched_at FROM players WHERE account_id = ?")
 	if err != nil {
 		return nil, err
 	}
