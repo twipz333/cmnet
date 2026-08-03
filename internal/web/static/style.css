@@ -392,6 +392,24 @@ code { font: 12px ui-monospace, Consolas, monospace; color: var(--accent); }
 /* The calendar's scale strip: swatches only, no text between them. */
 .viz-swatch-strip { vertical-align: middle; }
 
+/* --- hero portraits ---------------------------------------------------------
+
+   Sized in the layout so a missing image leaves no hole: the element removes
+   itself on error and the text label — which was always the real content — closes
+   up. Dota's portraits are 16:9, cropped to a square would decapitate half the
+   roster, so they stay wide. */
+.hero-icon {
+  width: 32px;
+  height: 18px;
+  object-fit: cover;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 6px;
+  flex: none;
+}
+.hero-cell { display: inline-flex; align-items: center; gap: 0; min-width: 0; }
+.chip .hero-icon { width: 26px; height: 15px; margin-right: 5px; }
+
 /* --- known players ---------------------------------------------------------- */
 
 .known-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }

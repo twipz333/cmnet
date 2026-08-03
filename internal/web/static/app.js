@@ -41,11 +41,29 @@ function el(tag, cls, text) {
 
 function $(id) { return document.getElementById(id); }
 
+// heroIcon returns a portrait element for a hero, or null when images are not
+// cached yet.
+//
+// The image is served by our own HTTP endpoint from a local directory — the page
+// never references a CDN, so it works with no network at all. A portrait that has
+// not been downloaded 404s, and the element removes itself: the text label beside
+// it was always the real content, and the picture is decoration on top of it.
+function heroIcon(id) {
+  const img = document.createElement('img');
+  img.className = 'hero-icon';
+  img.loading = 'lazy';
+  img.alt = '';
+  img.src = '/assets/heroes/' + id + '.png';
+  img.onerror = () => img.remove();
+  return img;
+}
+
 // heroItem is one clickable row: rank, hero name, a value and an optional note.
 function heroItem(rank, id, value, note, extra) {
   const row = el('div', 'item');
   row.append(el('span', 'rank', rank === null ? '' : String(rank)));
-  const mid = el('span');
+  const mid = el('span', 'hero-cell');
+  mid.append(heroIcon(id));
   mid.append(el('b', null, heroName(id)));
   if (note) {
     mid.append(document.createTextNode(' '));
@@ -190,7 +208,9 @@ function sideRow(side, cls, picks, bans) {
     row.append(el('span', 'label', label));
     const box = el('span', 'board-heroes');
     ids.forEach((id) => {
-      const chip = el('span', 'chip' + (isBan ? ' ban' : '') + ' name', heroName(id));
+      const chip = el('span', 'chip' + (isBan ? ' ban' : '') + ' name');
+      chip.append(heroIcon(id));
+      chip.append(document.createTextNode(heroName(id)));
       chip.onclick = () => openMatchups(id);
       box.append(chip);
     });

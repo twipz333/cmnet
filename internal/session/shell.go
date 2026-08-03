@@ -71,6 +71,11 @@ type ShellConfig struct {
 	// the queue preempts a background pass when a manual request outranks it.
 	Auto *Auto
 
+	// AssetsDir is where cached hero portraits and avatars live, or "" when images
+	// are unavailable. The web front end serves the directory read-only; the page
+	// never reaches out to a CDN itself, so it keeps working with no network.
+	AssetsDir string
+
 	// Jobs is the work queue every long operation runs through, or nil in builds
 	// and tests that wire the operations directly. Front ends read it to show what
 	// is in flight and to page through a job's log; they never execute work

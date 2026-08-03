@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	// Aliased: this package already has an embed.FS called assets for the static UI.
+	assetstore "cmnet/internal/assets"
 	"cmnet/internal/draft"
 	"cmnet/internal/objectives"
 	"cmnet/internal/recommender"
@@ -283,6 +285,16 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/first-pick", s.mutate(s.doFirstPick))
 	mux.HandleFunc("/api/enemy", s.mutate(s.doAddEnemy))
 	mux.HandleFunc("/api/reload", s.mutate(s.doReload))
+	// Cached images, served from disk. The page must never reference a CDN: it is
+	// opened from a local server and has to work with no network at all, which is
+	// also how a laptop behaves on a Battle Cup night more often than one would
+	// like. A missing file 404s and the UI falls back to its text chip.
+	if s.shell.AssetsDir != "" {
+		st, err := assetstore.New(s.shell.AssetsDir)
+		if err == nil {
+			mux.Handle("/assets/", st.Handler("/assets/"))
+		}
+	}
 	s.routeOps(mux)
 	return sameSiteOnly(mux)
 }

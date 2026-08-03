@@ -18,6 +18,7 @@ const (
 	jobScout       = jobs.KindScout
 	jobScoutAllies = jobs.KindScoutAllies
 	jobBackfill    = jobs.KindBackfill
+	jobAssets      = jobs.KindAssets
 )
 
 // runner owns the job queue and turns the app's operations into queued work.
@@ -103,6 +104,17 @@ func newRunner(h homeFlags) (*runner, error) {
 		},
 		MaxAttempts: 1,
 	})
+	// Images touch nothing any other job writes, so they download alongside
+	// whatever else is running.
+	q.Register(jobs.Spec{
+		Kind:      jobAssets,
+		Resources: []jobs.Resource{jobs.ResAssets},
+		Handler: func(ctx context.Context, j cache.Job, log jobs.Log) (string, error) {
+			return opFetchAssets(ctx, h.dbPath, progressOf(log))
+		},
+		MaxAttempts: 2,
+		RetryDelay:  2 * time.Minute,
+	})
 	q.Register(jobs.Spec{
 		Kind:      jobScout,
 		Resources: []jobs.Resource{jobs.ResSnapshot},
@@ -152,6 +164,10 @@ func (r *runner) Run(ctx context.Context) {
 	if r.token != "" {
 		go r.proposeBackfill(ctx)
 	}
+	// One image pass per start. The set only changes when Valve adds a hero, so
+	// this is a no-op after the first run — every portrait is already on disk and
+	// the handler skips it without a request.
+	_, _ = r.q.Enqueue(jobAssets, jobs.PriorityBackground, "", true)
 	r.q.Run(ctx)
 	// Bounded history: a machine that collects for months would otherwise keep every
 	// line of every pass forever.

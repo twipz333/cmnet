@@ -171,6 +171,7 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		GSI:         h.useGSI,
 		Token:       true, // sync no longer needs a token (OpenDota-only)
 		Jobs:        run.Queue(),
+		AssetsDir:   assetsDirFor(h.dbPath),
 		Train:       run.manualTrain(),
 		Scout:       run.scoutOp(jobScout),
 		ScoutAllies: run.scoutOp(jobScoutAllies),

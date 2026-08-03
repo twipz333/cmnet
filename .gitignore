@@ -23,6 +23,9 @@ pairstats-cache/
 pairstats*.html
 pairstats*.png
 
+# downloaded hero/item/avatar images (re-fetchable, and not ours to redistribute)
+assets/
+
 # graphify knowledge graph output
 graphify-out/
 
