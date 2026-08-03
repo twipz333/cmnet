@@ -659,6 +659,11 @@ func stratzDetailToCacheMatch(m *stratz.MatchDetail) (cache.Match, bool) {
 		ID:         m.ID,
 		StartTime:  m.StartDateTime,
 		RadiantWin: m.DidRadiantWin,
+		LobbyType:  m.LobbyType,
+	}
+	if m.DurationSeconds > 0 {
+		d := m.DurationSeconds
+		out.Duration = &d
 	}
 	for _, pb := range m.PickBans {
 		team := 1
@@ -705,6 +710,20 @@ func stratzPlayers(ps []stratz.MatchPlayer) []cache.MatchPlayer {
 			row.Position = &pos
 			row.PosSource = cache.PosSourceStratz
 		}
+		// Performance is stamped with its source only when the source actually sent
+		// it. A match whose detail predates this collection keeps NULLs, and
+		// stats_source is what tells the two apart downstream.
+		if p.HasStats() {
+			win := p.IsVictory
+			row.Lane = p.Lane
+			row.IsVictory = &win
+			row.Kills, row.Deaths, row.Assists = p.Kills, p.Deaths, p.Assists
+			row.GPM, row.XPM = p.GoldPerMinute, p.ExperiencePerMin
+			row.LastHits, row.Denies = p.NumLastHits, p.NumDenies
+			row.Networth, row.HeroDamage, row.TowerDamage = p.Networth, p.HeroDamage, p.TowerDamage
+			row.Imp = p.Imp
+			row.StatsSource = cache.StatsSourceStratz
+		}
 		out = append(out, row)
 	}
 	return out
@@ -721,6 +740,17 @@ func detailToCacheMatch(m *opendota.Match) (cache.Match, bool) {
 		ID:         m.MatchID,
 		StartTime:  m.StartTime,
 		RadiantWin: m.RadiantWin,
+		RankTier:   m.AvgRankTier,
+	}
+	if m.Duration > 0 {
+		d := m.Duration
+		out.Duration = &d
+	}
+	if m.Patch > 0 {
+		out.Patch = strconv.Itoa(m.Patch)
+	}
+	if m.LobbyType > 0 {
+		out.LobbyType = strconv.Itoa(m.LobbyType)
 	}
 	for _, pb := range m.PickBans {
 		out.PickBans = append(out.PickBans, cache.PickBan{
@@ -730,7 +760,50 @@ func detailToCacheMatch(m *opendota.Match) (cache.Match, bool) {
 			Team:   pb.Team,
 		})
 	}
+	out.Players = opendotaPlayers(m.Players)
 	return out, true
+}
+
+// opendotaPlayers converts OpenDota participants into cache rows.
+//
+// This path used to drop them entirely: the response was decoded and the roster
+// thrown away, so every match collected without a STRATZ token was stored as a
+// draft with no players — no roles, no accounts, nothing for the per-player
+// aggregates to read. Matches whose detail arrived this way were systematically
+// incomplete and nothing said so.
+func opendotaPlayers(ps []opendota.MatchPlayer) []cache.MatchPlayer {
+	if len(ps) == 0 {
+		return nil
+	}
+	out := make([]cache.MatchPlayer, 0, len(ps))
+	for _, p := range ps {
+		row := cache.MatchPlayer{
+			PlayerSlot: p.PlayerSlot,
+			HeroID:     p.HeroID,
+			IsRadiant:  p.Radiant,
+		}
+		// Anonymous accounts arrive as 0; stored as NULL so a JOIN cannot merge every
+		// hidden profile into one imaginary player.
+		if p.AccountID > 0 {
+			id := p.AccountID
+			row.AccountID = &id
+		}
+		if p.Position >= 1 && p.Position <= 5 {
+			pos := p.Position
+			row.Position = &pos
+			row.PosSource = cache.PosSourceOpenDota
+		}
+		if p.HasStats() {
+			row.IsVictory = p.Win
+			row.Kills, row.Deaths, row.Assists = p.Kills, p.Deaths, p.Assists
+			row.GPM, row.XPM = p.GoldPerMin, p.XPPerMin
+			row.LastHits, row.Denies = p.LastHits, p.Denies
+			row.Networth, row.HeroDamage, row.TowerDamage = p.NetWorth, p.HeroDamage, p.TowerDamage
+			row.StatsSource = cache.StatsSourceOpenDota
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // metaInt reads an int64 meta value, defaulting to 0 when absent/invalid.

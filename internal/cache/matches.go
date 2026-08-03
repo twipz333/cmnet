@@ -26,10 +26,40 @@ type MatchPlayer struct {
 	IsRadiant  bool
 	Position   *int   // 1..5, nil unknown
 	PosSource  string // "stratz" | "" unknown
+
+	// How the game went for this player. All optional: a match cached before the
+	// pipeline collected performance keeps NULLs, and a nil is "not collected"
+	// rather than zero — a support really can end on no tower damage, and folding
+	// the two together poisons every average taken over the column.
+	Lane        string // SAFE_LANE / MID_LANE / OFF_LANE / ROAMING / JUNGLE, "" unknown
+	IsVictory   *bool
+	Kills       *int
+	Deaths      *int
+	Assists     *int
+	GPM         *int
+	XPM         *int
+	LastHits    *int
+	Denies      *int
+	Networth    *int
+	HeroDamage  *int
+	TowerDamage *int
+	Imp         *int
+	StatsSource string // "stratz" | "" (not collected)
 }
 
-// PosSource values recorded on participants.
-const PosSourceStratz = "stratz"
+// HasStats reports whether performance was recorded for this participant.
+func (p MatchPlayer) HasStats() bool { return p.StatsSource != "" }
+
+// PosSource / StatsSource values recorded on participants. Kept apart because the
+// two sources measure differently: STRATZ infers a 1-5 position, OpenDota reports
+// a lane, and an aggregate that pools them without knowing which is which is
+// comparing two different claims.
+const (
+	PosSourceStratz     = "stratz"
+	PosSourceOpenDota   = "opendota"
+	StatsSourceStratz   = "stratz"
+	StatsSourceOpenDota = "opendota"
+)
 
 // Match is a cached match with its draft and provenance.
 type Match struct {
@@ -38,6 +68,10 @@ type Match struct {
 	RadiantWin bool
 	AvgMMR     *int // nil if unknown
 	Patch      string
+	// Duration in seconds and the lobby it was played in. Both optional: only the
+	// detail path reports them, and the bulk scan never will.
+	Duration  *int
+	LobbyType string
 	PickBans   []PickBan
 	// Players is the participant list (roles + accounts). Empty for matches cached
 	// before the pipeline recorded it, and for sources that do not report it — the
@@ -138,20 +172,27 @@ func (s *Store) UpsertMatch(m Match) error {
 	}
 	defer tx.Rollback()
 
+	// COALESCE on the optional columns so a cheaper source cannot erase what a
+	// richer one already stored: the bulk scan re-sees matches whose detail was
+	// fetched earlier, and plain assignment would blank their duration and lobby on
+	// every pass.
 	if _, err := tx.Exec(
-		`INSERT INTO matches(match_id, start_time, radiant_win, avg_mmr, patch, fetched_at, game_mode, rank_tier, source)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO matches(match_id, start_time, radiant_win, avg_mmr, patch, fetched_at,
+		                     game_mode, rank_tier, source, duration, lobby_type)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(match_id) DO UPDATE SET
 		   start_time = excluded.start_time,
 		   radiant_win = excluded.radiant_win,
-		   avg_mmr = excluded.avg_mmr,
-		   patch = excluded.patch,
+		   avg_mmr = COALESCE(excluded.avg_mmr, matches.avg_mmr),
+		   patch = CASE WHEN excluded.patch = '' THEN matches.patch ELSE excluded.patch END,
 		   fetched_at = excluded.fetched_at,
 		   game_mode = excluded.game_mode,
-		   rank_tier = excluded.rank_tier,
-		   source = excluded.source`,
+		   rank_tier = COALESCE(excluded.rank_tier, matches.rank_tier),
+		   source = excluded.source,
+		   duration = COALESCE(excluded.duration, matches.duration),
+		   lobby_type = CASE WHEN excluded.lobby_type = '' THEN matches.lobby_type ELSE excluded.lobby_type END`,
 		m.ID, m.StartTime, b2i(m.RadiantWin), m.AvgMMR, m.Patch, time.Now().Unix(),
-		m.GameMode, m.RankTier, m.Source,
+		m.GameMode, m.RankTier, m.Source, m.Duration, m.LobbyType,
 	); err != nil {
 		return err
 	}
@@ -196,12 +237,24 @@ func upsertPlayers(tx *sql.Tx, m Match) error {
 	if !validRoster(m.Players) {
 		return nil
 	}
+	// A roster written by a source that reports no performance must not erase
+	// performance a richer source already stored: re-caching a match through the
+	// picks-only path would otherwise silently strip its stats. Carry the existing
+	// numbers forward for any participant the new roster has none for.
+	players, err := mergeExistingStats(tx, m.ID, m.Players)
+	if err != nil {
+		return err
+	}
+	m.Players = players
 	if _, err := tx.Exec("DELETE FROM match_players WHERE match_id = ?", m.ID); err != nil {
 		return err
 	}
 	stmt, err := tx.Prepare(
-		`INSERT INTO match_players(match_id, player_slot, account_id, hero_id, is_radiant, position, pos_source)
-		 VALUES(?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO match_players(match_id, player_slot, account_id, hero_id, is_radiant,
+		                           position, pos_source, lane, is_victory, kills, deaths, assists,
+		                           gpm, xpm, last_hits, denies, networth, hero_damage,
+		                           tower_damage, imp, stats_source)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return err
@@ -209,11 +262,99 @@ func upsertPlayers(tx *sql.Tx, m Match) error {
 	defer stmt.Close()
 	for _, p := range m.Players {
 		if _, err := stmt.Exec(m.ID, p.PlayerSlot, p.AccountID, p.HeroID,
-			b2i(p.IsRadiant), p.Position, p.PosSource); err != nil {
+			b2i(p.IsRadiant), p.Position, p.PosSource, p.Lane, b2iPtr(p.IsVictory),
+			p.Kills, p.Deaths, p.Assists, p.GPM, p.XPM, p.LastHits, p.Denies,
+			p.Networth, p.HeroDamage, p.TowerDamage, p.Imp, p.StatsSource); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// mergeExistingStats fills in performance fields from the rows already stored, for
+// participants the incoming roster reports none for.
+//
+// Keyed on hero rather than slot: the two sources agree on which hero was on which
+// side, but a re-fetch can legitimately renumber slots, and matching the wrong row
+// would attribute one player's game to another.
+func mergeExistingStats(tx *sql.Tx, matchID int64, in []MatchPlayer) ([]MatchPlayer, error) {
+	needs := false
+	for _, p := range in {
+		if !p.HasStats() {
+			needs = true
+			break
+		}
+	}
+	if !needs {
+		return in, nil
+	}
+
+	rows, err := tx.Query(
+		`SELECT hero_id, lane, is_victory, kills, deaths, assists, gpm, xpm, last_hits,
+		        denies, networth, hero_damage, tower_damage, imp, stats_source
+		 FROM match_players WHERE match_id = ? AND stats_source <> '' ORDER BY player_slot`,
+		matchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	prev := map[int]MatchPlayer{}
+	for rows.Next() {
+		var hero int
+		var p MatchPlayer
+		var win *int
+		if err := rows.Scan(&hero, &p.Lane, &win, &p.Kills, &p.Deaths, &p.Assists,
+			&p.GPM, &p.XPM, &p.LastHits, &p.Denies, &p.Networth, &p.HeroDamage,
+			&p.TowerDamage, &p.Imp, &p.StatsSource); err != nil {
+			return nil, err
+		}
+		p.IsVictory = i2bPtr(win)
+		prev[hero] = p
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(prev) == 0 {
+		return in, nil
+	}
+
+	out := make([]MatchPlayer, len(in))
+	copy(out, in)
+	for i := range out {
+		if out[i].HasStats() {
+			continue
+		}
+		old, ok := prev[out[i].HeroID]
+		if !ok {
+			continue
+		}
+		out[i].Lane, out[i].IsVictory = old.Lane, old.IsVictory
+		out[i].Kills, out[i].Deaths, out[i].Assists = old.Kills, old.Deaths, old.Assists
+		out[i].GPM, out[i].XPM = old.GPM, old.XPM
+		out[i].LastHits, out[i].Denies = old.LastHits, old.Denies
+		out[i].Networth, out[i].HeroDamage, out[i].TowerDamage = old.Networth, old.HeroDamage, old.TowerDamage
+		out[i].Imp, out[i].StatsSource = old.Imp, old.StatsSource
+	}
+	return out, nil
+}
+
+// i2bPtr converts an optional 0/1 back to an optional bool.
+func i2bPtr(v *int) *bool {
+	if v == nil {
+		return nil
+	}
+	b := *v != 0
+	return &b
+}
+
+// b2iPtr converts an optional bool to an optional 0/1, preserving "unknown".
+func b2iPtr(b *bool) *int {
+	if b == nil {
+		return nil
+	}
+	v := b2i(*b)
+	return &v
 }
 
 // validRoster reports whether a participant list is a complete 5v5 on Valve's own
@@ -252,6 +393,56 @@ func validRoster(ps []MatchPlayer) bool {
 	return true
 }
 
+// MatchesMissingStats returns ids of cached matches that carry a draft but no
+// per-player performance, newest first.
+//
+// This is the backlog the backfill job works through. Collection changed under a
+// running cache: matches stored before performance was recorded look complete to
+// every other check (they have their bans, they have their roster), so nothing
+// would ever go back for the missing half unless it is asked for explicitly.
+func (s *Store) MatchesMissingStats(since int64, limit int) ([]int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.rd.Query(
+		`SELECT m.match_id FROM matches m
+		 WHERE m.start_time >= ?
+		   AND EXISTS (SELECT 1 FROM pick_bans pb WHERE pb.match_id = m.match_id)
+		   AND NOT EXISTS (
+		         SELECT 1 FROM match_players mp
+		         WHERE mp.match_id = m.match_id AND mp.stats_source <> '')
+		 ORDER BY m.start_time DESC, m.match_id DESC
+		 LIMIT ?`, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// StatsCoverage reports how many cached matches in the window carry per-player
+// performance, and how many have a draft at all — the Data screen's answer to
+// "how much of this is the richer kind".
+func (s *Store) StatsCoverage(since int64) (withStats, withDraft int64, err error) {
+	err = s.rd.QueryRow(
+		`SELECT
+		   (SELECT COUNT(*) FROM matches m WHERE m.start_time >= ?
+		      AND EXISTS (SELECT 1 FROM match_players mp
+		                  WHERE mp.match_id = m.match_id AND mp.stats_source <> '')),
+		   (SELECT COUNT(*) FROM matches m WHERE m.start_time >= ?
+		      AND EXISTS (SELECT 1 FROM pick_bans pb WHERE pb.match_id = m.match_id))`,
+		since, since).Scan(&withStats, &withDraft)
+	return withStats, withDraft, err
+}
+
 // MaxStartTime returns the newest cached match start_time (unix seconds), or 0 if
 // the cache is empty. Used as the incremental sync watermark.
 func (s *Store) MaxStartTime() (int64, error) {
@@ -280,7 +471,8 @@ func (s *Store) CountMatches() (int64, error) {
 // then match_id (deterministic), optionally limited to start_time >= since.
 func (s *Store) Matches(since int64) ([]Match, error) {
 	rows, err := s.rd.Query(
-		`SELECT match_id, start_time, radiant_win, avg_mmr, patch, game_mode, rank_tier, source
+		`SELECT match_id, start_time, radiant_win, avg_mmr, patch, game_mode, rank_tier, source,
+		        duration, lobby_type
 		 FROM matches WHERE start_time >= ? ORDER BY start_time, match_id`,
 		since,
 	)
@@ -294,7 +486,7 @@ func (s *Store) Matches(since int64) ([]Match, error) {
 		var m Match
 		var rw int
 		if err := rows.Scan(&m.ID, &m.StartTime, &rw, &m.AvgMMR, &m.Patch,
-			&m.GameMode, &m.RankTier, &m.Source); err != nil {
+			&m.GameMode, &m.RankTier, &m.Source, &m.Duration, &m.LobbyType); err != nil {
 			return nil, err
 		}
 		m.RadiantWin = rw != 0
@@ -329,7 +521,9 @@ func (s *Store) attachPlayers(matches []Match, since int64) error {
 	}
 	rows, err := s.rd.Query(
 		`SELECT mp.match_id, mp.player_slot, mp.account_id, mp.hero_id, mp.is_radiant,
-		        mp.position, mp.pos_source
+		        mp.position, mp.pos_source, mp.lane, mp.is_victory, mp.kills, mp.deaths,
+		        mp.assists, mp.gpm, mp.xpm, mp.last_hits, mp.denies, mp.networth,
+		        mp.hero_damage, mp.tower_damage, mp.imp, mp.stats_source
 		 FROM match_players mp
 		 JOIN matches m ON m.match_id = mp.match_id
 		 WHERE m.start_time >= ?
@@ -346,11 +540,15 @@ func (s *Store) attachPlayers(matches []Match, since int64) error {
 		var id int64
 		var p MatchPlayer
 		var isRad int
+		var win *int
 		if err := rows.Scan(&id, &p.PlayerSlot, &p.AccountID, &p.HeroID, &isRad,
-			&p.Position, &p.PosSource); err != nil {
+			&p.Position, &p.PosSource, &p.Lane, &win, &p.Kills, &p.Deaths, &p.Assists,
+			&p.GPM, &p.XPM, &p.LastHits, &p.Denies, &p.Networth, &p.HeroDamage,
+			&p.TowerDamage, &p.Imp, &p.StatsSource); err != nil {
 			return err
 		}
 		p.IsRadiant = isRad != 0
+		p.IsVictory = i2bPtr(win)
 		byMatch[id] = append(byMatch[id], p)
 	}
 	if err := rows.Err(); err != nil {

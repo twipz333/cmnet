@@ -181,10 +181,14 @@ func FilterMatches(matches []cache.Match, patch string, minMMR, minRankTier int)
 	}
 	out := make([]cache.Match, 0, len(matches))
 	for _, m := range matches {
-		if patch != "" && m.Patch != patch {
+		// "Unknown passes" applies to every one of these, not just rank. avg_mmr was
+		// never written by any collector and patch only started being recorded with
+		// the richer detail fetch, so demanding a value here did not narrow the
+		// training set — it emptied it, silently, while the flag looked honoured.
+		if patch != "" && m.Patch != "" && m.Patch != patch {
 			continue
 		}
-		if minMMR > 0 && (m.AvgMMR == nil || *m.AvgMMR < minMMR) {
+		if minMMR > 0 && m.AvgMMR != nil && *m.AvgMMR < minMMR {
 			continue
 		}
 		if minRankTier > 0 && m.RankTier != nil && *m.RankTier < minRankTier {

@@ -112,6 +112,41 @@ const baselineVersion = 1
 var migrations = []migration{
 	{1, "provenance columns on matches", migrateProvenance},
 	{2, "job queue and job log", migrateJobs},
+	{3, "per-player match performance", migrateMatchStats},
+}
+
+// migrateMatchStats widens a cached match from a bag of heroes into a record of a
+// game: how long it ran, what lobby it was, and how each participant did.
+//
+// Every column is NULLable and none of them participates in roster validation.
+// That is deliberate: matches cached before this migration keep NULLs forever
+// (their detail was never fetched), and a source that omits one field must not
+// cost us the nine it did send. stats_source records where the numbers came from,
+// the same way pos_source already does for positions — without it "not collected"
+// and "genuinely zero" are the same row.
+func migrateMatchStats(tx *sql.Tx) error {
+	if err := addColumns(tx, "matches", []struct{ name, ddl string }{
+		{"duration", "ALTER TABLE matches ADD COLUMN duration INTEGER"},
+		{"lobby_type", "ALTER TABLE matches ADD COLUMN lobby_type TEXT NOT NULL DEFAULT ''"},
+	}); err != nil {
+		return err
+	}
+	return addColumns(tx, "match_players", []struct{ name, ddl string }{
+		{"lane", "ALTER TABLE match_players ADD COLUMN lane TEXT NOT NULL DEFAULT ''"},
+		{"is_victory", "ALTER TABLE match_players ADD COLUMN is_victory INTEGER"},
+		{"kills", "ALTER TABLE match_players ADD COLUMN kills INTEGER"},
+		{"deaths", "ALTER TABLE match_players ADD COLUMN deaths INTEGER"},
+		{"assists", "ALTER TABLE match_players ADD COLUMN assists INTEGER"},
+		{"gpm", "ALTER TABLE match_players ADD COLUMN gpm INTEGER"},
+		{"xpm", "ALTER TABLE match_players ADD COLUMN xpm INTEGER"},
+		{"last_hits", "ALTER TABLE match_players ADD COLUMN last_hits INTEGER"},
+		{"denies", "ALTER TABLE match_players ADD COLUMN denies INTEGER"},
+		{"networth", "ALTER TABLE match_players ADD COLUMN networth INTEGER"},
+		{"hero_damage", "ALTER TABLE match_players ADD COLUMN hero_damage INTEGER"},
+		{"tower_damage", "ALTER TABLE match_players ADD COLUMN tower_damage INTEGER"},
+		{"imp", "ALTER TABLE match_players ADD COLUMN imp INTEGER"},
+		{"stats_source", "ALTER TABLE match_players ADD COLUMN stats_source TEXT NOT NULL DEFAULT ''"},
+	})
 }
 
 // schemaVersion is the version a fully migrated database reports.

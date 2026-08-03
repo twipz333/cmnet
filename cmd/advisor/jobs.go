@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"cmnet/internal/cache"
 	"cmnet/internal/jobs"
@@ -16,6 +17,7 @@ const (
 	jobTrain       = jobs.KindTrain
 	jobScout       = jobs.KindScout
 	jobScoutAllies = jobs.KindScoutAllies
+	jobBackfill    = jobs.KindBackfill
 )
 
 // runner owns the job queue and turns the app's operations into queued work.
@@ -28,6 +30,9 @@ const (
 type runner struct {
 	q  *jobs.Queue
 	st *cache.Store
+	// token is remembered only to decide whether the STRATZ-only upkeep is worth
+	// proposing at all; the handlers read it from the flags like everything else.
+	token string
 }
 
 // newRunner opens the queue's own handle on the cache and registers the handlers.
@@ -79,6 +84,25 @@ func newRunner(h homeFlags) (*runner, error) {
 		},
 		MaxAttempts: 1,
 	})
+	// Backfill shares the merge resource with sync — both spend the same STRATZ
+	// budget and write the same tables — so the two take turns instead of racing.
+	q.Register(jobs.Spec{
+		Kind:      jobBackfill,
+		Resources: []jobs.Resource{jobs.ResMatchMerge},
+		Handler: func(ctx context.Context, j cache.Job, log jobs.Log) (string, error) {
+			var p backfillPayload
+			if err := decodePayload(j.Payload, &p); err != nil {
+				return "", err
+			}
+			return opBackfillStats(ctx, backfillOpts{
+				dbPath:     h.dbPath,
+				token:      h.token,
+				windowDays: h.windowDays,
+				limit:      p.Limit,
+			}, progressOf(log))
+		},
+		MaxAttempts: 1,
+	})
 	q.Register(jobs.Spec{
 		Kind:      jobScout,
 		Resources: []jobs.Resource{jobs.ResSnapshot},
@@ -106,7 +130,7 @@ func newRunner(h homeFlags) (*runner, error) {
 		MaxAttempts: 1,
 	})
 
-	return &runner{q: q, st: st}, nil
+	return &runner{q: q, st: st, token: h.token}, nil
 }
 
 // Queue exposes the queue for the front ends.
@@ -115,12 +139,39 @@ func (r *runner) Queue() *jobs.Queue { return r.q }
 // Close releases the queue's database handle.
 func (r *runner) Close() error { return r.st.Close() }
 
+// backfillEvery is how often the queue is offered another stats backfill pass.
+//
+// Slow on purpose. The backlog is finite — it is the matches cached before
+// performance was collected — so this is a trickle that drains it over days
+// without competing with live collection for the daily quota. Deduped, so a pass
+// that is still queued is not queued again.
+const backfillEvery = 20 * time.Minute
+
 // Run drives the queue until ctx ends, trimming history on the way out.
 func (r *runner) Run(ctx context.Context) {
+	if r.token != "" {
+		go r.proposeBackfill(ctx)
+	}
 	r.q.Run(ctx)
 	// Bounded history: a machine that collects for months would otherwise keep every
 	// line of every pass forever.
 	_ = r.st.TrimJobs(200)
+}
+
+// proposeBackfill offers a backfill pass on a slow timer. It only proposes: the
+// queue decides when to run it, and the resource rules keep it out of the way of
+// whatever the user is doing.
+func (r *runner) proposeBackfill(ctx context.Context) {
+	t := time.NewTicker(backfillEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			_, _ = r.q.Enqueue(jobBackfill, jobs.PriorityBackground, "", true)
+		}
+	}
 }
 
 // syncPayload lets a caller override the per-pass caps. Empty fields fall back to
@@ -134,6 +185,11 @@ type syncPayload struct {
 
 type playersPayload struct {
 	Players []string `json:"players"`
+}
+
+// backfillPayload caps one backfill pass; zero means the default.
+type backfillPayload struct {
+	Limit int `json:"limit,omitempty"`
 }
 
 func decodePayload(s string, v any) error {

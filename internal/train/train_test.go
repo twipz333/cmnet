@@ -68,16 +68,28 @@ func TestFilterMatches(t *testing.T) {
 		mkMatch(2, 2, true, "7.35", &mmr, []int{1}, []int{2}),
 		mkMatch(3, 3, true, "7.36", &low, []int{1}, []int{2}),
 		mkMatch(4, 4, true, "7.36", nil, []int{1}, []int{2}),
+		mkMatch(5, 5, true, "", nil, []int{1}, []int{2}), // predates provenance entirely
 	}
 	byPatch := FilterMatches(matches, "7.36", 0, 0)
-	if len(byPatch) != 3 {
-		t.Errorf("patch filter kept %d, want 3", len(byPatch))
+	// Three tagged 7.36, plus the untagged one: an unknown patch passes, exactly as
+	// an unknown rank does. Most of a mature cache carries no patch tag at all, and
+	// excluding it would leave the filter looking honoured while training on nothing.
+	if len(byPatch) != 4 {
+		t.Errorf("patch filter kept %d, want 4 (unknown patch must pass)", len(byPatch))
 	}
 	byMMR := FilterMatches(matches, "", 5000, 0)
-	if len(byMMR) != 2 { // only the two with mmr=6000 (nil and low excluded)
-		t.Errorf("mmr filter kept %d, want 2", len(byMMR))
+	// Only the genuinely low match is dropped. avg_mmr is never written by any
+	// collector, so requiring a value here dropped the entire corpus — the flag did
+	// not narrow the training set, it emptied it.
+	if len(byMMR) != 4 {
+		t.Errorf("mmr filter kept %d, want 4 (unknown MMR must pass, 3000 must not)", len(byMMR))
 	}
-	if len(FilterMatches(matches, "", 0, 0)) != 4 {
+	for _, m := range byMMR {
+		if m.ID == 3 {
+			t.Error("a match below the MMR floor survived the filter")
+		}
+	}
+	if len(FilterMatches(matches, "", 0, 0)) != 5 {
 		t.Error("no-op filter must keep all")
 	}
 }

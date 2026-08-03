@@ -32,17 +32,42 @@ type pickBanRaw struct {
 	Order  int  `json:"order"` // draft order
 }
 
+// playerRaw mirrors one entry of the match's players array.
+//
+// The performance fields are pointers because OpenDota omits them for unparsed
+// matches, and "absent" is a different fact from zero — a support finishing on no
+// tower damage is a real row, a match nobody parsed is not.
 type playerRaw struct {
-	AccountID  int64 `json:"account_id"`
-	PlayerSlot int   `json:"player_slot"` // <128 => radiant
+	AccountID   int64 `json:"account_id"`
+	PlayerSlot  int   `json:"player_slot"` // <128 => radiant
+	HeroID      int   `json:"hero_id"`
+	Win         *int  `json:"win"`
+	Kills       *int  `json:"kills"`
+	Deaths      *int  `json:"deaths"`
+	Assists     *int  `json:"assists"`
+	GoldPerMin  *int  `json:"gold_per_min"`
+	XPPerMin    *int  `json:"xp_per_min"`
+	LastHits    *int  `json:"last_hits"`
+	Denies      *int  `json:"denies"`
+	NetWorth    *int  `json:"net_worth"`
+	HeroDamage  *int  `json:"hero_damage"`
+	TowerDamage *int  `json:"tower_damage"`
+	// LaneRole is OpenDota's own 1-4 role guess (1 safe, 2 mid, 3 off, 4 jungle),
+	// present only on parsed matches. It is not the same scale as STRATZ positions,
+	// so it is mapped rather than copied.
+	LaneRole *int `json:"lane_role"`
 }
 
 // matchRaw mirrors the subset of GET /matches/{id} we cache.
 type matchRaw struct {
 	MatchID    int64        `json:"match_id"`
 	StartTime  int64        `json:"start_time"`
+	Duration   int          `json:"duration"`
 	RadiantWin bool         `json:"radiant_win"`
 	GameMode   int          `json:"game_mode"` // 2 == Captains Mode
+	LobbyType  int          `json:"lobby_type"`
+	Patch      int          `json:"patch"`
+	AvgRank    *int         `json:"avg_rank_tier"`
 	PicksBans  []pickBanRaw `json:"picks_bans"`
 	Players    []playerRaw  `json:"players"`
 }
@@ -55,20 +80,46 @@ type PickBan struct {
 	Order  int
 }
 
-// MatchPlayer identifies a participant and which side they were on.
+// MatchPlayer identifies a participant, which side they were on, and how the game
+// went for them when the match was parsed.
 type MatchPlayer struct {
-	AccountID int64
-	Radiant   bool
+	AccountID  int64
+	PlayerSlot int
+	HeroID     int
+	Radiant    bool
+	// Position is 1-5 when derivable from OpenDota's lane_role, 0 otherwise.
+	Position    int
+	Win         *bool
+	Kills       *int
+	Deaths      *int
+	Assists     *int
+	GoldPerMin  *int
+	XPPerMin    *int
+	LastHits    *int
+	Denies      *int
+	NetWorth    *int
+	HeroDamage  *int
+	TowerDamage *int
 }
+
+// HasStats reports whether the match was parsed well enough to carry performance.
+func (p MatchPlayer) HasStats() bool { return p.Kills != nil || p.GoldPerMin != nil }
 
 // Match is the detailed match data we extract from OpenDota.
 type Match struct {
 	MatchID    int64
 	StartTime  int64
+	Duration   int
 	RadiantWin bool
 	GameMode   int
-	PickBans   []PickBan
-	Players    []MatchPlayer
+	LobbyType  int
+	// Patch is OpenDota's numeric patch id, or 0 when absent.
+	Patch int
+	// AvgRankTier is the match's average rank on the 10-85 medal scale, nil when
+	// OpenDota does not report one (unranked, or too few public profiles).
+	AvgRankTier *int
+	PickBans    []PickBan
+	Players     []MatchPlayer
 }
 
 // Match fetches detailed match data including picks_bans (GET /matches/{id}).
@@ -78,10 +129,14 @@ func (c *Client) Match(ctx context.Context, id int64) (*Match, error) {
 		return nil, err
 	}
 	m := &Match{
-		MatchID:    raw.MatchID,
-		StartTime:  raw.StartTime,
-		RadiantWin: raw.RadiantWin,
-		GameMode:   raw.GameMode,
+		MatchID:     raw.MatchID,
+		StartTime:   raw.StartTime,
+		Duration:    raw.Duration,
+		RadiantWin:  raw.RadiantWin,
+		GameMode:    raw.GameMode,
+		LobbyType:   raw.LobbyType,
+		Patch:       raw.Patch,
+		AvgRankTier: raw.AvgRank,
 	}
 	for _, pb := range raw.PicksBans {
 		m.PickBans = append(m.PickBans, PickBan{
@@ -92,12 +147,48 @@ func (c *Client) Match(ctx context.Context, id int64) (*Match, error) {
 		})
 	}
 	for _, p := range raw.Players {
-		m.Players = append(m.Players, MatchPlayer{
-			AccountID: p.AccountID,
-			Radiant:   p.PlayerSlot < 128,
-		})
+		mp := MatchPlayer{
+			AccountID:   p.AccountID,
+			PlayerSlot:  p.PlayerSlot,
+			HeroID:      p.HeroID,
+			Radiant:     p.PlayerSlot < 128,
+			Position:    positionFromLaneRole(p.LaneRole),
+			Kills:       p.Kills,
+			Deaths:      p.Deaths,
+			Assists:     p.Assists,
+			GoldPerMin:  p.GoldPerMin,
+			XPPerMin:    p.XPPerMin,
+			LastHits:    p.LastHits,
+			Denies:      p.Denies,
+			NetWorth:    p.NetWorth,
+			HeroDamage:  p.HeroDamage,
+			TowerDamage: p.TowerDamage,
+		}
+		if p.Win != nil {
+			w := *p.Win != 0
+			mp.Win = &w
+		}
+		m.Players = append(m.Players, mp)
 	}
 	return m, nil
+}
+
+// positionFromLaneRole maps OpenDota's lane_role onto the 1-5 position scale.
+//
+// The two do not line up: lane_role says which LANE a player was in (1 safe,
+// 2 mid, 3 off, 4 jungle), while a position also encodes whether they were the
+// core or the support of that lane — information OpenDota simply does not carry
+// here. Only mid is unambiguous. Rather than guess a carry from a support and
+// poison every per-position aggregate with it, the ambiguous lanes report 0 and
+// the row is stored with no position at all, which the aggregates already skip.
+func positionFromLaneRole(role *int) int {
+	if role == nil {
+		return 0
+	}
+	if *role == 2 {
+		return 2
+	}
+	return 0
 }
 
 // PlayerHero is one row of GET /players/{id}/heroes.
