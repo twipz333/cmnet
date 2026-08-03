@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"cmnet/internal/cache"
@@ -232,10 +233,44 @@ func pick(override, fallback int) int {
 }
 
 // progressOf adapts a job logger to the plain progress callback the operations
-// were written against. Phases are not invented here: an operation that wants them
-// can log through the queue directly later.
+// were written against, deriving the phase and level from the line itself.
+//
+// The operations already prefix their output by area — "cm: ...", "bulk: ...",
+// "stratz: ...", "heroes: ...", "warn: ..." — and have done since before the job
+// log existed. Reading that convention gives every line a phase and a level
+// without touching forty call sites, and without inventing a taxonomy: the
+// prefixes are what the code already says about itself.
+//
+// Only a short, single-word prefix counts, so a line like "training: 12000
+// samples, 3 features: ok" is not chopped at its second colon.
 func progressOf(log jobs.Log) func(string) {
-	return func(line string) { log(cache.LogInfo, "", line) }
+	return func(line string) {
+		phase, level := classifyLine(line)
+		log(level, phase, line)
+	}
+}
+
+// maxPhaseLen bounds what counts as a prefix rather than prose.
+const maxPhaseLen = 12
+
+// classifyLine extracts the phase and level from an operation's log line.
+func classifyLine(line string) (phase, level string) {
+	level = cache.LogInfo
+	i := strings.Index(line, ": ")
+	if i <= 0 || i > maxPhaseLen {
+		return "", level
+	}
+	prefix := line[:i]
+	if strings.ContainsAny(prefix, " 	") {
+		return "", level
+	}
+	switch prefix {
+	case "warn", "warning":
+		return "", cache.LogWarn
+	case "error", "err", "failed":
+		return "", cache.LogError
+	}
+	return prefix, level
 }
 
 // enqueueAndFollow is the shape ShellConfig expects: run the operation, stream its

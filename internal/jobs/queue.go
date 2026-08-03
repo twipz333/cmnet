@@ -104,9 +104,10 @@ type runState struct {
 	done   chan struct{}
 	// The tail of the log, kept here so the live UI frame does not read it back out
 	// of SQLite several times a second. Guarded by Queue.mu.
-	lastLine string
-	lastSeq  int64
-	lastAt   int64 // unix millis
+	lastLine  string
+	lastPhase string
+	lastSeq   int64
+	lastAt    int64 // unix millis
 }
 
 // Options configure a queue.
@@ -519,6 +520,18 @@ func (q *Queue) Note(id int64, level, text string) error {
 	return q.st.AppendJobLog(id, level, "", text)
 }
 
+// Phase reports what a running job is currently doing, or "" when it has not
+// said. This is the difference between "sync is running" and "sync is on its
+// public Captains Mode band", which is the question a user watching it has.
+func (q *Queue) Phase(id int64) string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if rs, ok := q.running[id]; ok {
+		return rs.lastPhase
+	}
+	return ""
+}
+
 // Log returns a page of a job's log after seq.
 func (q *Queue) Log(id, afterSeq int64, limit int) ([]cache.JobLogEntry, error) {
 	return q.st.JobLog(id, afterSeq, limit)
@@ -635,6 +648,12 @@ func (l *logger) log(level, phase, text string) {
 	l.q.mu.Lock()
 	if rs, ok := l.q.running[l.jobID]; ok {
 		rs.lastLine, rs.lastSeq, rs.lastAt = text, seq, at
+		// A line with no phase does not clear the last one: operations emit plenty
+		// of unprefixed detail inside a phase, and blanking the label on each of
+		// those would make it flicker.
+		if phase != "" {
+			rs.lastPhase = phase
+		}
 	}
 	l.q.mu.Unlock()
 	if full {

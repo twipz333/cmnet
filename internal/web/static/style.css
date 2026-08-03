@@ -404,6 +404,32 @@ code { font: 12px ui-monospace, Consolas, monospace; color: var(--accent); }
 }
 .startup[hidden] { display: none; }
 
+/* Per-source liveness rows. */
+.src-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.src-row + .src-row { border-top: 1px solid var(--line); }
+.src-name { font-weight: 600; min-width: 84px; font-size: 13px; }
+.src-state { color: var(--fg); }
+.src-state.warnish { color: var(--warn); }
+.src-counters { color: var(--dim); font-variant-numeric: tabular-nums; }
+.src-err { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The phase chip in a job row: what the job is doing right now, as opposed to
+   which job it is. */
+.job-phase {
+  color: var(--accent);
+  background: var(--panel-2);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
 /* --- hero portraits ---------------------------------------------------------
 
    Sized in the layout so a missing image leaves no hole: the element removes

@@ -17,6 +17,9 @@ type Client struct {
 	Limiter    *Limiter
 	MaxRetries int           // retry attempts on transient errors
 	BaseDelay  time.Duration // base for exponential backoff
+	// Source names the API for the activity registry ("STRATZ", "OpenDota").
+	// Empty disables tracking, which is what tests and one-off clients want.
+	Source string
 }
 
 // NewClient builds a Client with sane defaults around the given limiter.
@@ -48,10 +51,16 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 			req.Body = body
 		}
 
+		// Tracked around the call itself, so "how long has this been outstanding"
+		// is a real measurement rather than a guess made from the last log line.
+		id := beginRequest(c.Source)
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
+			endRequest(c.Source, id, 0, err)
 			lastErr = err
-			if waitErr := sleep(ctx, c.backoff(attempt, 0)); waitErr != nil {
+			d := c.backoff(attempt, 0)
+			noteRetry(c.Source, d, false)
+			if waitErr := sleep(ctx, d); waitErr != nil {
 				return nil, waitErr
 			}
 			continue
@@ -59,16 +68,21 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+			status := resp.StatusCode
 			drainClose(resp)
-			lastErr = fmt.Errorf("http %d from %s", resp.StatusCode, req.URL)
+			endRequest(c.Source, id, status, nil)
+			lastErr = fmt.Errorf("http %d from %s", status, req.URL)
 			if attempt == c.MaxRetries {
 				break
 			}
-			if waitErr := sleep(ctx, c.backoff(attempt, retryAfter)); waitErr != nil {
+			d := c.backoff(attempt, retryAfter)
+			noteRetry(c.Source, d, status == http.StatusTooManyRequests)
+			if waitErr := sleep(ctx, d); waitErr != nil {
 				return nil, waitErr
 			}
 			continue
 		}
+		endRequest(c.Source, id, resp.StatusCode, nil)
 		return resp, nil
 	}
 	return nil, fmt.Errorf("request failed after %d retries: %w", c.MaxRetries, lastErr)

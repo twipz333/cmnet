@@ -28,6 +28,8 @@ type Client struct {
 // New returns a Client using the documented OpenDota rate limit.
 func New() *Client {
 	rc := ratelimit.NewClient(ratelimit.OpenDotaLimiter())
+	// Named so the UI can say which API it is waiting on rather than "something".
+	rc.Source = "OpenDota"
 	// Hard cap for the heaviest endpoint, /matches/{id}: full match detail (with
 	// picks_bans, players, etc.) is a large payload that can legitimately take tens
 	// of seconds. The Explorer endpoint, which instead suffers from connection

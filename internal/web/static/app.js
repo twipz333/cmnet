@@ -328,14 +328,62 @@ function renderHeader() {
 // ticked forward locally between frames. The one thing measured in the page is how
 // long since a frame ARRIVED: the server sends a keepalive every few seconds, so
 // silence there means the connection died, not that the work stopped.
-let opFrameAt = null;   // when the last frame reached this page
-let opRunningMs = 0;    // server-measured, at opFrameAt
-let opQuietMs = 0;      // server-measured, at opFrameAt
+// Clocks are stored as ABSOLUTE local marks, not as "elapsed as of the last
+// frame". The delta form had a bug with teeth: any repaint that was not caused by
+// a fresh frame — clicking a row, changing the level filter — reset the base to
+// "now" while keeping the elapsed value from the previous frame, so the timer
+// jumped backwards by however long it had been since that frame.
+//
+// With a start instant, a repaint reads the same number the tick does, and only a
+// genuinely new frame moves anything.
+let lastFrameAt = null;       // when a frame last reached this page
+const jobClocks = new Map();  // job id -> { startedAt, lastLineAt, seq }
 let opTicker = null;
 
 // staleFrameMs is when a missing keepalive stops being scheduling jitter. The
 // server aims for one every 3s.
 const staleFrameMs = 10000;
+
+// syncJobClocks folds a freshly arrived frame into the local clocks.
+//
+// Called from render() alone: the server's runningMs/quietMs are measured at the
+// moment the frame was built, so converting them to a local instant is only valid
+// right then. Doing it on every repaint is what made the timer jump.
+function syncJobClocks(ops) {
+  const now = Date.now();
+  const seen = new Set();
+  for (const j of (ops && ops.active) || []) {
+    seen.add(j.id);
+    const prev = jobClocks.get(j.id);
+    // The start instant is fixed for the life of the job, so it is computed once.
+    // Recomputing it per frame would make the display jitter by the network delay.
+    const startedAt = prev ? prev.startedAt : now - (j.runningMs || 0);
+    // The quiet clock DOES move: it restarts whenever a new line lands, which the
+    // sequence number is how we detect.
+    let lastLineAt = prev ? prev.lastLineAt : now - (j.quietMs || 0);
+    if (!prev || j.seq !== prev.seq) lastLineAt = now - (j.quietMs || 0);
+    jobClocks.set(j.id, { startedAt, lastLineAt, seq: j.seq });
+  }
+  // Finished jobs stop ticking; keeping their entries would leak one per job over
+  // a long session.
+  for (const id of Array.from(jobClocks.keys())) {
+    if (!seen.has(id)) jobClocks.delete(id);
+  }
+}
+
+// runningFor returns how long a job has been running, by the local clock.
+function runningFor(job) {
+  const c = jobClocks.get(job.id);
+  if (!c) return job.runningMs || 0;
+  return Date.now() - c.startedAt;
+}
+
+// quietFor returns how long a job has been silent, by the local clock.
+function quietFor(job) {
+  const c = jobClocks.get(job.id);
+  if (!c) return job.quietMs || 0;
+  return Date.now() - c.lastLineAt;
+}
 
 function fmtElapsed(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -375,9 +423,17 @@ function renderOpHeading() {
     $('op-name').textContent = 'в очереди: ' + active.length;
     return;
   }
-  const sinceFrame = opFrameAt ? Date.now() - opFrameAt : 0;
-  const names = running.map((j) => j.kind).join(', ');
-  let text = names + ' — выполняется ' + fmtElapsed(opRunningMs + sinceFrame);
+  const sinceFrame = lastFrameAt ? Date.now() - lastFrameAt : 0;
+  // The longest-running job is the one the headline is about; the rest are named
+  // after it. Picking arbitrarily made the headline swap between two jobs on
+  // every frame.
+  const lead = running.slice().sort((a, b) => runningFor(b) - runningFor(a))[0];
+  const others = running.filter((j) => j.id !== lead.id).map((j) => j.kind);
+
+  let text = KIND_LABEL[lead.kind] || lead.kind;
+  const phase = lead.phase ? ', ' + lead.phase : '';
+  text += phase + ' — ' + fmtElapsed(runningFor(lead));
+  if (others.length) text += ' · параллельно: ' + others.join(', ');
   if (queued > 0) text += ' · в очереди ещё ' + queued;
 
   if (sinceFrame > staleFrameMs) {
@@ -385,12 +441,13 @@ function renderOpHeading() {
     // rather than reassuring the user about a process we have lost contact with.
     text += ' · нет ответа от сервера ' + fmtElapsed(sinceFrame) + ' — состояние неизвестно';
   } else {
-    const quiet = opQuietMs + sinceFrame;
+    const quiet = quietFor(lead);
     // The loops emit a heartbeat every few seconds, so silence this long is one slow
     // call (a wide Explorer scan, a stalled API request) rather than skipped work.
-    // Report the fact; the user can wait or cancel.
+    // Report the fact, and name who we are waiting on when the server knows.
     if (quiet > 15000) {
-      text += ' · без новых строк ' + fmtElapsed(quiet) + ' — сервер отвечает, ждём медленный запрос';
+      text += ' · тишина ' + fmtElapsed(quiet) + ' — ждём ответа'
+        + (lead.waitingOn ? ' от ' + lead.waitingOn : '');
     }
   }
   $('op-name').textContent = text + '…';
@@ -403,10 +460,16 @@ function jobRow(j) {
   li.dataset.jobId = String(j.id);
 
   li.append(el('span', 'job-state', STATE_LABEL[j.state] || j.state));
-  li.append(el('span', 'job-kind', j.kind));
-  if (j.state === 'running' && j.runningMs) {
-    li.append(el('span', 'job-time', fmtElapsed(j.runningMs)));
+  li.append(el('span', 'job-kind', KIND_LABEL[j.kind] || j.kind));
+  if (j.state === 'running') {
+    // Same clock as the headline, so the two cannot disagree.
+    const t = el('span', 'job-time', fmtElapsed(runningFor(j)));
+    t.dataset.jobTime = String(j.id);
+    li.append(t);
   }
+  // The phase says WHAT the job is doing right now — "which of the five things a
+  // sync does am I looking at" was not answerable from a kind alone.
+  if (j.phase) li.append(el('span', 'job-phase', j.phase));
   const tail = j.error || j.result || j.lastLine || '';
   if (tail) li.append(el('span', j.error ? 'job-tail off' : 'job-tail', tail));
   if (j.attempts > 1) li.append(el('span', 'job-tail', 'попытка ' + j.attempts));
@@ -421,6 +484,29 @@ function jobRow(j) {
     renderOps();
   });
   return li;
+}
+
+// KIND_LABEL names a job kind in the UI. The wire keeps the English identifiers,
+// which are also what the queue stores.
+const KIND_LABEL = {
+  'sync': 'сбор матчей',
+  'train': 'обучение',
+  'scout': 'разведка врагов',
+  'scout-allies': 'разведка союзников',
+  'backfill': 'дозагрузка статы',
+  'assets': 'картинки',
+};
+
+// tickBanner advances every visible clock once a second without touching the
+// state — no refetch, no re-layout of the list.
+function tickBanner() {
+  renderOpHeading();
+  const active = (state && state.ops && state.ops.active) || [];
+  const byID = new Map(active.map((j) => [String(j.id), j]));
+  document.querySelectorAll('[data-job-time]').forEach((node) => {
+    const j = byID.get(node.dataset.jobTime);
+    if (j) node.textContent = fmtElapsed(runningFor(j));
+  });
 }
 
 // followedJob is the job whose log the panel shows: the pinned one, else the first
@@ -486,17 +572,14 @@ function renderOps() {
   const banner = $('op-banner');
   banner.hidden = !active.length && !recent.length;
 
+  // The ticker is the only thing started here. The clocks themselves are set in
+  // render(), so repainting after a click cannot disturb them.
   const running = active.find((j) => j.state === 'running');
   if (running) {
-    opFrameAt = Date.now();
-    opRunningMs = running.runningMs || 0;
-    opQuietMs = running.quietMs || 0;
-    if (opTicker === null) opTicker = setInterval(renderOpHeading, 1000);
-  } else {
-    opFrameAt = null;
-    opRunningMs = 0;
-    opQuietMs = 0;
-    if (opTicker !== null) { clearInterval(opTicker); opTicker = null; }
+    if (opTicker === null) opTicker = setInterval(tickBanner, 1000);
+  } else if (opTicker !== null) {
+    clearInterval(opTicker);
+    opTicker = null;
   }
   renderOpHeading();
 
@@ -750,7 +833,12 @@ function connect() {
   const es = new EventSource('/api/events');
   es.onmessage = (ev) => {
     const prevRunning = state && state.ops && state.ops.running;
-    render(JSON.parse(ev.data));
+    const frame = JSON.parse(ev.data);
+    // A frame arrived: this is the only moment the server's elapsed values line
+    // up with the local clock, so it is the only moment they are converted.
+    lastFrameAt = Date.now();
+    syncJobClocks(frame.ops);
+    render(frame);
     // An operation that just finished may have rewritten the snapshot, and a sync
     // certainly changed what the Data screen is showing.
     if (prevRunning && !(state.ops && state.ops.running)) {
@@ -787,6 +875,78 @@ async function loadStartup() {
       host.append(el('div', 'log-line log-' + (m.level || 'info'), m.text));
     }
   } catch (_) { /* the page works without them */ }
+}
+
+// --- sources ----------------------------------------------------------------
+//
+// "Who is not responding" needs an actual answer. A quiet job could be a slow
+// STRATZ, an OpenDota that is rate-limiting us, or a genuinely hung request, and
+// from the page all three looked the same: nothing happening.
+
+let sourcesTimer = null;
+
+function startSourcesPolling() {
+  if (sourcesTimer !== null) return;
+  loadSources();
+  // Two seconds: this is a liveness readout, and the numbers it shows change on
+  // that scale. It is also the only thing on the page that polls.
+  sourcesTimer = setInterval(() => {
+    if (activeTab === 'data') loadSources(); else stopSourcesPolling();
+  }, 2000);
+}
+
+function stopSourcesPolling() {
+  if (sourcesTimer === null) return;
+  clearInterval(sourcesTimer);
+  sourcesTimer = null;
+}
+
+async function loadSources() {
+  const host = $('sources');
+  if (!host) return;
+  try {
+    const res = await fetch('/api/sources');
+    if (!res.ok) return;
+    renderSources((await res.json()).sources || []);
+  } catch (_) { /* the rest of the screen still works */ }
+}
+
+function renderSources(list) {
+  const host = $('sources');
+  host.textContent = '';
+  if (!list.length) {
+    host.append(el('div', 'why', 'ни одного запроса за этот запуск'));
+    return;
+  }
+  for (const a of list) {
+    const row = el('div', 'src-row');
+    row.append(el('span', 'src-name', a.source));
+
+    // State first, because that is the question being asked.
+    let stateText;
+    let stateCls = 'src-state';
+    if (a.waitingUntilMs > 0) {
+      stateText = 'ждём ' + fmtElapsed(a.waitingUntilMs) + ' (лимит/ошибка)';
+      stateCls += ' warnish';
+    } else if (a.inFlight > 0) {
+      stateText = 'в полёте ' + a.inFlight + ', дольше всего ' + fmtElapsed(a.oldestMs);
+      if (a.oldestMs > 15000) stateCls += ' warnish';
+    } else {
+      stateText = 'простаивает';
+    }
+    row.append(el('span', stateCls, stateText));
+
+    const counters = 'запросов ' + num(a.requests)
+      + ' · ретраев ' + num(a.retries)
+      + ' · 429: ' + num(a.rateLimited)
+      + ' · ошибок ' + num(a.failures);
+    row.append(el('span', 'src-counters', counters));
+
+    if (a.lastErr) row.append(el('span', 'src-err off', a.lastErr));
+    else if (a.lastStatus) row.append(el('span', 'src-counters', 'последний ответ: ' + a.lastStatus));
+
+    host.append(row);
+  }
 }
 
 // --- known players ----------------------------------------------------------
@@ -899,7 +1059,8 @@ function showTab(name) {
   if (name === 'scout') loadKnownPlayers();
   // The corpus aggregates are half a dozen table scans, so they are fetched when
   // the screen is actually looked at rather than on every state poll.
-  if (name === 'data') { loadCorpus(); loadCorpusMeta(); }
+  if (name === 'data') { loadCorpus(); loadCorpusMeta(); startSourcesPolling(); }
+  else stopSourcesPolling();
 }
 
 // --- wiring -----------------------------------------------------------------

@@ -31,7 +31,7 @@ func New(token string) *Client {
 	return &Client{
 		endpoint: endpoint,
 		token:    token,
-		http:     ratelimit.NewClient(ratelimit.StratzLimiter()),
+		http:     stratzHTTPClient(),
 	}
 }
 
@@ -97,4 +97,12 @@ func truncate(b []byte) string {
 		return string(b[:max]) + "..."
 	}
 	return string(b)
+}
+
+// stratzHTTPClient builds the rate-limited client, named for the activity
+// registry so the UI can report which API is slow instead of "something".
+func stratzHTTPClient() *ratelimit.Client {
+	c := ratelimit.NewClient(ratelimit.StratzLimiter())
+	c.Source = "STRATZ"
+	return c
 }

@@ -12,6 +12,7 @@ import (
 	"cmnet/internal/cache"
 	"cmnet/internal/jobs"
 	"cmnet/internal/session"
+	"cmnet/internal/sources/ratelimit"
 	"cmnet/internal/startup"
 )
 
@@ -35,6 +36,14 @@ type jobDTO struct {
 	QuietMs   uint64 `json:"quietMs"`
 	// LastLine is the most recent line, so a collapsed row still says something.
 	LastLine string `json:"lastLine,omitempty"`
+	// Phase is what the job is doing right now ("cm", "bulk", "stratz"), taken
+	// from its own log prefixes. "sync is running" does not answer the question a
+	// user watching it actually has.
+	Phase string `json:"phase,omitempty"`
+	// WaitingOn names the API the process is blocked on, with how long, once a
+	// wait is long enough to be worth naming. Without it a slow source, a
+	// rate-limited one and a hung one look identical from the page.
+	WaitingOn string `json:"waitingOn,omitempty"`
 	// Seq is the highest log sequence stored, which is what the page watches for
 	// liveness — unlike the line count, it keeps moving on a long quiet run.
 	Seq int64 `json:"seq"`
@@ -124,7 +133,62 @@ func (s *Server) jobDTO(j cache.Job) jobDTO {
 	if j.State == cache.JobRunning && j.StartedAt > 0 {
 		d.RunningMs = uint64(time.Since(time.Unix(j.StartedAt, 0)).Milliseconds())
 	}
+	if j.State == cache.JobRunning {
+		if q := s.shell.Jobs; q != nil {
+			d.Phase = phaseLabel(q.Phase(j.ID))
+		}
+		// Attributed to the running job rather than tracked per job: the rate
+		// limiter is process-wide, so "STRATZ has been silent for 40s" is a fact
+		// about the process, and claiming to know which job owns that request
+		// would be a guess.
+		if src, waited := ratelimit.Busiest(); src != "" && waited > waitingOnFloor {
+			d.WaitingOn = src + " " + roundSeconds(waited)
+		}
+	}
 	return d
+}
+
+// waitingOnFloor is how long a request must be outstanding before it is worth
+// naming. Below it every frame would carry a source name for ordinary traffic.
+const waitingOnFloor = 3 * time.Second
+
+func roundSeconds(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 60 {
+		return fmt.Sprintf("%dс", s)
+	}
+	return fmt.Sprintf("%dм %02dс", s/60, s%60)
+}
+
+// phaseLabel translates an operation's own log prefix into words. Unknown
+// prefixes pass through unchanged: an operation that grows a new phase shows it
+// immediately instead of waiting for this table to learn about it.
+func phaseLabel(phase string) string {
+	if label, ok := phaseLabels[phase]; ok {
+		return label
+	}
+	return phase
+}
+
+var phaseLabels = map[string]string{
+	"cm":        "CM-драфты",
+	"bulk":      "массовый пул",
+	"public-cm": "публичные CM",
+	"stratz":    "STRATZ",
+	"opendota":  "OpenDota",
+	"heroes":    "справочник героев",
+	"backfill":  "дозагрузка статы",
+	"assets":    "картинки",
+	"coverage":  "покрытие",
+	"train":     "обучение",
+	"training":  "обучение",
+	"eval":      "оценка",
+	"matrices":  "матрицы",
+	"snapshot":  "снапшот",
+	"scout":     "разведка",
+	"players":   "игроки",
+	"layer2":    "слой 2",
+	"layer3":    "слой 3",
 }
 
 // --- routes -----------------------------------------------------------------
@@ -145,6 +209,9 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 	// Startup messages. They also go to stderr, which the browser cannot read, and
 	// they are usually the answer to "why is nothing happening".
 	mux.HandleFunc("/api/startup", s.handleStartup)
+
+	// Per-API activity: which source is slow, rate-limiting us, or failing.
+	mux.HandleFunc("/api/sources", s.handleSources)
 
 	// What the bundle's own corpus says about positions and lanes, as opposed to
 	// the STRATZ meta shown beside it.
@@ -411,6 +478,18 @@ func (s *Server) handleCorpusMeta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+// handleSources reports per-API activity: what is outstanding, what we are
+// backing off from, and the running totals.
+//
+// Its own endpoint rather than a field on the live frame: the Data screen shows
+// it, the draft screen has no use for it, and the frame is rebuilt several times
+// a second.
+func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, struct {
+		Sources []ratelimit.Activity `json:"sources"`
+	}{ratelimit.Snapshot()})
 }
 
 // --- known players ------------------------------------------------------------
