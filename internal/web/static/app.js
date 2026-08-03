@@ -755,7 +755,7 @@ function connect() {
     // certainly changed what the Data screen is showing.
     if (prevRunning && !(state.ops && state.ops.running)) {
       loadStats();
-      if (activeTab === 'data') loadCorpus();
+      if (activeTab === 'data') { loadCorpus(); loadCorpusMeta(); }
     }
   };
   // EventSource reconnects on its own; this only surfaces the gap in the status bar.
@@ -899,7 +899,7 @@ function showTab(name) {
   if (name === 'scout') loadKnownPlayers();
   // The corpus aggregates are half a dozen table scans, so they are fetched when
   // the screen is actually looked at rather than on every state poll.
-  if (name === 'data') loadCorpus();
+  if (name === 'data') { loadCorpus(); loadCorpusMeta(); }
 }
 
 // --- wiring -----------------------------------------------------------------
@@ -931,7 +931,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const a = btn.dataset.action;
       if (a === 'stats-refresh') { loadStats(); return; }
       if (a === 'players-refresh') { loadKnownPlayers(); return; }
-      if (a === 'corpus-refresh') { loadCorpus(); return; }
+      if (a === 'corpus-refresh') { loadCorpus(); loadCorpusMeta(); return; }
       const build = ACTIONS[a];
       const [path, payload] = build ? build() : ['/api/' + a, {}];
       await post(path, payload);

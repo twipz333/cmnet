@@ -194,6 +194,9 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		SetItemRules: func(text string) (string, error) {
 			return opSetItemRules(text, h.snapshotPath, h.dbPath)
 		},
+		CorpusMeta: func() (session.CorpusMetaView, error) {
+			return opCorpusMeta(h.bundlePath, h.dbPath)
+		},
 		KnownPlayers: func(role string) ([]session.KnownPlayer, error) {
 			return opKnownPlayers(h.dbPath, role)
 		},

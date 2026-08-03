@@ -718,6 +718,129 @@ function spanLabel(from, to) {
 
 let corpusLoading = false;
 
+// --- what our own corpus says ------------------------------------------------
+//
+// The bundle carries two answers to "what is strong at position 3": STRATZ's
+// ranked all-pick meta, and the same question asked of the Captains Mode corpus
+// this bundle was trained on. They describe different populations and disagree,
+// so both are shown and each says which it is.
+
+async function loadCorpusMeta() {
+  const host = $('corpus-meta');
+  if (!host) return;
+  try {
+    const res = await fetch('/api/corpus-meta');
+    if (!res.ok) {
+      host.textContent = '';
+      host.append(el('div', 'why', 'агрегаты недоступны: сервер ответил ' + res.status));
+      return;
+    }
+    renderCorpusMeta(await res.json());
+  } catch (e) {
+    host.textContent = '';
+    host.append(el('div', 'why', String(e)));
+  }
+}
+
+const POS_TITLE = {
+  1: 'Позиция 1 — керри',
+  2: 'Позиция 2 — мид',
+  3: 'Позиция 3 — оффлейн',
+  4: 'Позиция 4 — роумер',
+  5: 'Позиция 5 — хардсаппорт',
+};
+
+function renderCorpusMeta(data) {
+  const host = $('corpus-meta');
+  host.textContent = '';
+  if (!data || data.error) {
+    host.append(el('div', 'why', 'нет данных: ' + ((data && data.error) || '')));
+    return;
+  }
+  if (!data.positions || !data.positions.length) {
+    host.append(el('div', 'why', 'бандл собран до появления этих агрегатов — они появятся после следующего обучения'));
+    return;
+  }
+
+  const head = el('div', 'panel');
+  head.append(el('h2', null, 'Позиции и лайны по нашим данным'));
+  head.append(el('p', 'why', 'Посчитано по тому корпусу, на котором обучен бандл, а не по рейтинговому олпику из STRATZ — это разные популяции, поэтому цифры расходятся, и панель «Мета по позициям» на экране драфта показывает вторую. Винрейт сглажен к среднему по позиции: герой с тремя играми не должен обгонять реальный пик. Бандл '
+    + (data.bundleVersion || '-').slice(0, 12)
+    + (data.patchTag ? ', патч ' + data.patchTag : '') + '.'));
+  host.append(head);
+
+  const posPanel = el('div', 'panel');
+  posPanel.append(el('h2', null, 'Герои по позициям'));
+  const grid = el('div', 'grid-2');
+  const byPos = new Map();
+  for (const r of data.positions) {
+    if (!byPos.has(r.position)) byPos.set(r.position, []);
+    byPos.get(r.position).push(r);
+  }
+  const order = Array.from(byPos.keys()).sort((a, b) => a - b);
+  for (const pos of order) {
+    const col = el('div');
+    col.append(el('h3', null, POS_TITLE[pos] || ('Позиция ' + pos)));
+    const box = el('div', 'items');
+    byPos.get(pos).forEach((r, i) => {
+      const row = el('div', 'item');
+      row.append(el('span', 'rank', String(i + 1)));
+      const mid = el('span', 'hero-cell');
+      mid.append(heroIcon(r.heroId));
+      mid.append(el('b', null, r.name));
+      mid.append(document.createTextNode(' '));
+      mid.append(el('span', 'why', num(r.matches) + ' игр · ' + pctOf(r.pickRate) + ' драфтов'));
+      row.append(mid);
+      row.append(el('span', 'val', (r.winRate * 100).toFixed(1) + '%'));
+      box.append(row);
+    });
+    col.append(box);
+    grid.append(col);
+  }
+  posPanel.append(grid);
+  host.append(posPanel);
+
+  if (data.lanes && data.lanes.length) {
+    const lanePanel = el('div', 'panel');
+    lanePanel.append(el('h2', null, 'Связки на лайнах'));
+    lanePanel.append(el('p', 'why', 'Лёгкая — 1+5, сложная — 3+4, мид — соло. «Лифт» — насколько связка лучше среднего лайна: сравнивать стоит именно его, а не голый винрейт.'));
+    const box = el('div', 'items');
+    for (const r of data.lanes) {
+      const row = el('div', 'item');
+      row.append(el('span', 'rank', ''));
+      const mid = el('span');
+      mid.append(el('b', null, r.heroes.join(' + ')));
+      mid.append(document.createTextNode(' '));
+      mid.append(el('span', 'why', r.lane + ', ' + num(r.matches) + ' игр'));
+      row.append(mid);
+      const lift = (r.lift >= 0 ? '+' : '') + (r.lift * 100).toFixed(1) + ' п.п.';
+      row.append(el('span', 'val', lift));
+      box.append(row);
+    }
+    lanePanel.append(box);
+    host.append(lanePanel);
+  }
+
+  if (data.bans && data.bans.length) {
+    const banPanel = el('div', 'panel');
+    banPanel.append(el('h2', null, 'Кого банят'));
+    banPanel.append(el('p', 'why', 'Позиции у бана нет: баны идут до того, как появляются лайны.'));
+    banPanel.append(barsChart(data.bans.map((b) => ({
+      label: b.name,
+      value: b.bans,
+      valueLabel: num(b.bans) + ' - ' + pctOf(b.banRate),
+      tip: [b.name, 'банов: ' + num(b.bans), pctOf(b.banRate)],
+    })), () => VIZ.cat[1], { width: chartWidth($('corpus-meta')), padL: 130, rowH: 22 }));
+    host.append(banPanel);
+  }
+}
+
+// pctOf formats a 0..1 share the way the rest of the screen formats percentages.
+function pctOf(share) {
+  const v = (share || 0) * 100;
+  return (v < 1 && v > 0 ? v.toFixed(1) : Math.round(v)) + '%';
+}
+
 // Charts are drawn at a measured pixel width, so a resize needs new geometry
 // rather than a CSS rescale. Debounced: a drag fires this continuously, and
 // repainting the whole section per frame is wasteful for something nobody reads

@@ -49,6 +49,11 @@ type ShellConfig struct {
 	// SetItemRules saves the advice-DSL text and returns a summary (#10).
 	SetItemRules func(text string) (string, error)
 
+	// CorpusMeta reports the per-position and per-lane aggregates baked into the
+	// bundle from our own corpus — what heroes actually do at each position here,
+	// as opposed to the STRATZ ranked all-pick meta shown beside it.
+	CorpusMeta func() (CorpusMetaView, error)
+
 	// KnownPlayers lists the accounts this machine has scouted or played with, so
 	// picking a teammate is a click instead of pasting a profile URL again. Role is
 	// "ally", "enemy" or "" for both. The list lives in the local cache and never in
@@ -100,6 +105,47 @@ type StatsPlayer struct {
 	Nickname  string      `json:"nickname"`
 	Resolved  bool        `json:"resolved"`
 	TopHeroes []StatsHero `json:"topHeroes"`
+}
+
+// CorpusMetaView is the bundle's view of our own corpus, for the Data screen.
+type CorpusMetaView struct {
+	// PatchTag and BundleVersion say which bundle these numbers came from: they
+	// are baked at train time, so they describe that build and not the cache as it
+	// stands now.
+	PatchTag      string `json:"patchTag,omitempty"`
+	BundleVersion string `json:"bundleVersion,omitempty"`
+
+	Positions []CorpusPosRow  `json:"positions"`
+	Lanes     []CorpusLaneRow `json:"lanes"`
+	Bans      []CorpusBanRow  `json:"bans"`
+}
+
+// CorpusPosRow is one hero's record at one position.
+type CorpusPosRow struct {
+	Position int     `json:"position"`
+	HeroID   int     `json:"heroId"`
+	Name     string  `json:"name"`
+	Matches  int     `json:"matches"`
+	WinRate  float64 `json:"winRate"`
+	PickRate float64 `json:"pickRate"`
+}
+
+// CorpusLaneRow is one lane pairing and how much it is worth over an average one.
+type CorpusLaneRow struct {
+	Lane    string   `json:"lane"`
+	Heroes  []string `json:"heroes"`
+	Matches int      `json:"matches"`
+	WinRate float64  `json:"winRate"`
+	Lift    float64  `json:"lift"`
+}
+
+// CorpusBanRow is one hero's ban record. No position: bans happen before lanes
+// exist.
+type CorpusBanRow struct {
+	HeroID  int     `json:"heroId"`
+	Name    string  `json:"name"`
+	Bans    int     `json:"bans"`
+	BanRate float64 `json:"banRate"`
 }
 
 // KnownPlayer is one remembered account as a front end sees it.

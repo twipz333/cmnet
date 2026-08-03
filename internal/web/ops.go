@@ -146,6 +146,10 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 	// they are usually the answer to "why is nothing happening".
 	mux.HandleFunc("/api/startup", s.handleStartup)
 
+	// What the bundle's own corpus says about positions and lanes, as opposed to
+	// the STRATZ meta shown beside it.
+	mux.HandleFunc("/api/corpus-meta", s.handleCorpusMeta)
+
 	// The local address book: who we have scouted or played with, so a teammate is
 	// a click rather than a profile URL pasted again.
 	mux.HandleFunc("/api/players", s.handleKnownPlayers)
@@ -390,6 +394,23 @@ func (s *Server) handleStartup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, struct {
 		Messages []startup.Message `json:"messages"`
 	}{startup.Messages()})
+}
+
+func (s *Server) handleCorpusMeta(w http.ResponseWriter, r *http.Request) {
+	if s.shell.CorpusMeta == nil {
+		http.Error(w, "corpus aggregates are not available in this build", http.StatusNotFound)
+		return
+	}
+	view, err := s.shell.CorpusMeta()
+	if err != nil {
+		// Reported in the page rather than as an HTTP error: "no bundle yet" is the
+		// normal state before the first train, and a dead fetch would look like a bug.
+		writeJSON(w, http.StatusOK, struct {
+			Error string `json:"error"`
+		}{err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 // --- known players ------------------------------------------------------------
