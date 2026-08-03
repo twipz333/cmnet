@@ -133,6 +133,28 @@
           <button data-action="ops/scout-allies" id="btn-allies">Скаутить союзников</button>
         </div>
       </div>
+
+      <!-- The local address book. Lives in the cache, never in the shared
+           snapshot: a nickname there would change its hash and split the file
+           teammates blend on. -->
+      <div class="panel">
+        <h2>Известные игроки</h2>
+        <p class="why">Кого уже скаутили или с кем играли. Клик добавляет в поле рядом —
+          ссылку на профиль каждый раз брать не нужно. «В кэше» — сколько героев уже
+          подтянуто: повторная разведка такого игрока быстрее. Список локальный и в
+          снапшот не попадает.</p>
+        <div class="row">
+          <button data-action="players-refresh" class="small">Обновить</button>
+          <label class="op-filter">показывать
+            <select id="players-role">
+              <option value="">всех</option>
+              <option value="ally">союзников</option>
+              <option value="enemy">врагов</option>
+            </select>
+          </label>
+        </div>
+        <ul id="known-players" class="known-list"></ul>
+      </div>
     </div>
 
     <!-- ---------------- STATS ---------------- -->

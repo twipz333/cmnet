@@ -141,6 +141,12 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 	mux.HandleFunc("/api/jobs", s.handleJobs)
 	mux.HandleFunc("/api/jobs/log", s.handleJobLog)
 
+	// The local address book: who we have scouted or played with, so a teammate is
+	// a click rather than a profile URL pasted again.
+	mux.HandleFunc("/api/players", s.handleKnownPlayers)
+	mux.HandleFunc("/api/players/forget", s.mutate(s.forgetPlayer))
+	mux.HandleFunc("/api/players/pin", s.mutate(s.pinPlayer))
+
 	mux.HandleFunc("/api/corpus", s.handleCorpus)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/stats/hero-pool", s.mutate(s.setHeroPool))
@@ -372,6 +378,52 @@ func (s *Server) handleJobLog(w http.ResponseWriter, r *http.Request) {
 		Job   *jobDTO      `json:"job,omitempty"`
 		Lines []logLineDTO `json:"lines"`
 	}{job, out})
+}
+
+// --- known players ------------------------------------------------------------
+
+func (s *Server) handleKnownPlayers(w http.ResponseWriter, r *http.Request) {
+	if s.shell.KnownPlayers == nil {
+		http.Error(w, "the player list is not available in this build", http.StatusNotFound)
+		return
+	}
+	players, err := s.shell.KnownPlayers(r.URL.Query().Get("role"))
+	if err != nil {
+		writeJSON(w, http.StatusOK, struct {
+			Error string `json:"error"`
+		}{err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Players []session.KnownPlayer `json:"players"`
+	}{players})
+}
+
+func (s *Server) forgetPlayer(r *http.Request) (string, error) {
+	var req struct {
+		AccountID int64 `json:"accountId"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	if s.shell.ForgetPlayer == nil {
+		return "", fmt.Errorf("forgetting a player is not available in this build")
+	}
+	return s.shell.ForgetPlayer(req.AccountID)
+}
+
+func (s *Server) pinPlayer(r *http.Request) (string, error) {
+	var req struct {
+		AccountID int64 `json:"accountId"`
+		Pinned    bool  `json:"pinned"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	if s.shell.PinPlayer == nil {
+		return "", fmt.Errorf("pinning a player is not available in this build")
+	}
+	return s.shell.PinPlayer(req.AccountID, req.Pinned)
 }
 
 func intParam(r *http.Request, name string, def int) int {

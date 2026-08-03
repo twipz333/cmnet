@@ -190,6 +190,15 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		SetItemRules: func(text string) (string, error) {
 			return opSetItemRules(text, h.snapshotPath, h.dbPath)
 		},
+		KnownPlayers: func(role string) ([]session.KnownPlayer, error) {
+			return opKnownPlayers(h.dbPath, role)
+		},
+		ForgetPlayer: func(accountID int64) (string, error) {
+			return opForgetPlayer(h.dbPath, accountID)
+		},
+		PinPlayer: func(accountID int64, pinned bool) (string, error) {
+			return opPinPlayer(h.dbPath, accountID, pinned)
+		},
 		Sync: run.manualSync(),
 	}
 	// Background collection. The lock is claimed before the worker is wired into

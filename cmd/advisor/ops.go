@@ -1217,6 +1217,18 @@ func joinBrackets(b []string) string { return strings.Join(b, ",") }
 // making a shared file's hash depend on whether OpenDota answered would split the
 // snapshot teammates must blend on identically.
 func resolvePlayers(ctx context.Context, players []string, dbPath string, log logFunc) []scout.ResolvedPlayer {
+	return resolvePlayersAs(ctx, players, dbPath, "", log)
+}
+
+// resolvePlayersAs resolves and, when a role is given, remembers the accounts in
+// the local address book.
+//
+// Remembering happens here because this is the one place that has both the id and
+// whatever nickname the lookup produced. The book is what makes "scout my usual
+// five" a click rather than five profile URLs pasted again — and it lives in the
+// cache, never the snapshot, because the snapshot is hashed and shared.
+func resolvePlayersAs(ctx context.Context, players []string, dbPath string,
+	role cache.KnownRole, log logFunc) []scout.ResolvedPlayer {
 	resolved := make([]scout.ResolvedPlayer, 0, len(players))
 	var ids []int64
 	for _, ref := range players {
@@ -1241,7 +1253,31 @@ func resolvePlayers(ctx context.Context, players []string, dbPath string, log lo
 			log(fmt.Sprintf("%s → account_id %d (no public profile name)", p.Nickname, p.AccountID))
 		}
 	}
+	if role != "" {
+		rememberScouted(dbPath, resolved, names, role)
+	}
 	return resolved
+}
+
+// rememberScouted files the resolved accounts under a role. Best-effort: failing
+// to write the address book must not fail the scout the user is waiting on.
+func rememberScouted(dbPath string, resolved []scout.ResolvedPlayer,
+	names map[int64]string, role cache.KnownRole) {
+	store, err := cache.Open(dbPath)
+	if err != nil {
+		return
+	}
+	defer store.Close()
+	for _, p := range resolved {
+		if !p.Resolved {
+			continue
+		}
+		_ = store.RememberPlayer(cache.KnownPlayer{
+			AccountID: p.AccountID,
+			Persona:   names[p.AccountID],
+			Role:      role,
+		})
+	}
 }
 
 // personaNameTimeout bounds the whole name lookup. Names are a nicety: a slow or
@@ -1396,7 +1432,7 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 	if log == nil {
 		log = discard
 	}
-	resolved := resolvePlayers(ctx, players, o.dbPath, log)
+	resolved := resolvePlayersAs(ctx, players, o.dbPath, cache.RoleEnemy, log)
 	fresh, err := scout.Fetch(ctx, scout.NewOpenDotaSource(), resolved, scout.FetchOptions{
 		WindowDays: o.windowDays, EventWindow: o.eventWindow,
 	}, log)
@@ -1432,7 +1468,7 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 	if log == nil {
 		log = discard
 	}
-	resolved := resolvePlayers(ctx, players, o.dbPath, log)
+	resolved := resolvePlayersAs(ctx, players, o.dbPath, cache.RoleAlly, log)
 	allies := scout.BuildLayer2(ctx, scout.NewOpenDotaSource(), resolved, o.windowDays, log)
 	n := 0
 	if err := editSnapshot(o.outPath, func(snap *scout.OpponentSnapshot) error {
@@ -1549,6 +1585,11 @@ func opRemovePlayer(snapshotPath string, accountID int64, ally bool) (string, er
 	if droppedL3 {
 		msg += " + cleared event drafts (layer 3)"
 	}
+	// Only the snapshot is edited. What was collected about this account stays in
+	// the cache on purpose, so scouting the same opponent again — the next round of
+	// the same Battle Cup, most likely — starts from what is already there instead
+	// of re-fetching it. "advisor forget" is the path that actually clears it.
+	msg += " (cached stats kept for a faster re-scout)"
 	return msg, nil
 }
 

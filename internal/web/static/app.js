@@ -746,6 +746,102 @@ function connect() {
   };
 }
 
+// --- known players ----------------------------------------------------------
+//
+// The local address book. Clicking a row appends the account to whichever scout
+// field matches its role, so the regular five are five clicks rather than five
+// profile URLs — which is the whole complaint this answers.
+
+async function loadKnownPlayers() {
+  const host = $('known-players');
+  if (!host) return;
+  const role = $('players-role') ? $('players-role').value : '';
+  try {
+    const res = await fetch('/api/players' + (role ? '?role=' + role : ''));
+    if (!res.ok) {
+      host.textContent = '';
+      host.append(el('li', 'why', 'список недоступен: сервер ответил ' + res.status));
+      return;
+    }
+    const data = await res.json();
+    renderKnownPlayers(data.players || [], data.error);
+  } catch (e) {
+    host.textContent = '';
+    host.append(el('li', 'why', 'список недоступен: ' + e));
+  }
+}
+
+function renderKnownPlayers(players, error) {
+  const host = $('known-players');
+  host.textContent = '';
+  if (error) {
+    host.append(el('li', 'why', error));
+    return;
+  }
+  if (!players.length) {
+    host.append(el('li', 'why',
+      'пока пусто — после первой разведки игроки появятся здесь автоматически'));
+    return;
+  }
+  for (const p of players) {
+    const li = el('li', 'known');
+    if (p.pinned) li.classList.add('pinned');
+
+    const name = el('span', 'known-name', p.persona || String(p.accountId));
+    li.append(name);
+    li.append(el('span', 'known-role', p.role === 'ally' ? 'союзник' : 'враг'));
+    if (p.heroes) li.append(el('span', 'known-cached', 'в кэше: ' + p.heroes + ' героев'));
+    if (p.lastSeen) li.append(el('span', 'known-seen', ago(p.lastSeen)));
+
+    // Clicking the row fills the field; the buttons are separate so a stray click
+    // never deletes anybody.
+    li.addEventListener('click', () => addToScoutField(p));
+
+    const pin = el('button', 'small', p.pinned ? 'открепить' : 'закрепить');
+    pin.title = 'Закреплённые не удаляются автоматической чисткой';
+    pin.onclick = async (e) => {
+      e.stopPropagation();
+      await post('/api/players/pin', { accountId: p.accountId, pinned: !p.pinned });
+      loadKnownPlayers();
+    };
+    li.append(pin);
+
+    const forget = el('button', 'small danger', 'забыть');
+    forget.title = 'Убрать из списка и удалить кэш по этому игроку';
+    forget.onclick = async (e) => {
+      e.stopPropagation();
+      await post('/api/players/forget', { accountId: p.accountId });
+      loadKnownPlayers();
+    };
+    li.append(forget);
+
+    host.append(li);
+  }
+}
+
+// addToScoutField appends an account to the enemy or ally input, without
+// duplicating one that is already there.
+function addToScoutField(p) {
+  const field = $(p.role === 'ally' ? 'allies-players' : 'scout-players');
+  if (!field) return;
+  const parts = field.value.split(/[\s,]+/).filter(Boolean);
+  const id = String(p.accountId);
+  if (!parts.includes(id)) parts.push(id);
+  field.value = parts.join(', ');
+  field.focus();
+}
+
+// ago renders a unix timestamp as a coarse "how long ago", which is all this list
+// needs — the exact minute someone was scouted is not a decision input.
+function ago(unix) {
+  const days = Math.floor((Date.now() / 1000 - unix) / 86400);
+  if (days <= 0) return 'сегодня';
+  if (days === 1) return 'вчера';
+  if (days < 30) return days + ' дн. назад';
+  const months = Math.floor(days / 30);
+  return months + ' мес. назад';
+}
+
 // --- tabs -------------------------------------------------------------------
 
 function showTab(name) {
@@ -757,6 +853,7 @@ function showTab(name) {
     t.classList.toggle('active', t.dataset.tab === name);
   });
   if (name === 'stats') loadStats();
+  if (name === 'scout') loadKnownPlayers();
   // The corpus aggregates are half a dozen table scans, so they are fetched when
   // the screen is actually looked at rather than on every state poll.
   if (name === 'data') loadCorpus();
@@ -790,6 +887,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.onclick = async () => {
       const a = btn.dataset.action;
       if (a === 'stats-refresh') { loadStats(); return; }
+      if (a === 'players-refresh') { loadKnownPlayers(); return; }
       if (a === 'corpus-refresh') { loadCorpus(); return; }
       const build = ACTIONS[a];
       const [path, payload] = build ? build() : ['/api/' + a, {}];
@@ -811,6 +909,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // lines are in memory, and the server has no idea what the user is filtering to.
   const level = $('job-level');
   if (level) level.onchange = () => renderJobLog();
+
+  const playersRole = $('players-role');
+  if (playersRole) playersRole.onchange = () => loadKnownPlayers();
 
   document.querySelector('[data-close]').onclick = () => { $('matchups').hidden = true; };
   document.addEventListener('keydown', (e) => {

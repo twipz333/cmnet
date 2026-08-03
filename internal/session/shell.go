@@ -49,6 +49,19 @@ type ShellConfig struct {
 	// SetItemRules saves the advice-DSL text and returns a summary (#10).
 	SetItemRules func(text string) (string, error)
 
+	// KnownPlayers lists the accounts this machine has scouted or played with, so
+	// picking a teammate is a click instead of pasting a profile URL again. Role is
+	// "ally", "enemy" or "" for both. The list lives in the local cache and never in
+	// the shared snapshot.
+	KnownPlayers func(role string) ([]KnownPlayer, error)
+	// ForgetPlayer drops an account from that list along with its cached
+	// aggregates. Distinct from RemovePlayer, which only takes them out of the
+	// current snapshot and deliberately leaves the cache warm.
+	ForgetPlayer func(accountID int64) (string, error)
+	// PinPlayer keeps an account out of the automatic pruning — the regular five
+	// stay, the long tail of one-off opponents does not.
+	PinPlayer func(accountID int64, pinned bool) (string, error)
+
 	// BuildScan loads the bundle (+snapshot) and returns the draft-screen config.
 	BuildScan func() (Config, error)
 
@@ -82,6 +95,20 @@ type StatsPlayer struct {
 	Nickname  string      `json:"nickname"`
 	Resolved  bool        `json:"resolved"`
 	TopHeroes []StatsHero `json:"topHeroes"`
+}
+
+// KnownPlayer is one remembered account as a front end sees it.
+type KnownPlayer struct {
+	AccountID int64  `json:"accountId"`
+	Persona   string `json:"persona"`
+	Role      string `json:"role"`
+	Note      string `json:"note,omitempty"`
+	LastSeen  int64  `json:"lastSeen"`
+	Pinned    bool   `json:"pinned"`
+	// Heroes is how many hero rows are cached for this account: what makes a
+	// repeat scout cheap, and worth showing so "cached" is visible rather than
+	// merely claimed.
+	Heroes int `json:"heroes"`
 }
 
 // StatsHero is a hero reference with optional per-player stats.

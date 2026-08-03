@@ -114,6 +114,7 @@ var migrations = []migration{
 	{2, "job queue and job log", migrateJobs},
 	{3, "per-player match performance", migrateMatchStats},
 	{4, "player aggregates", migratePlayerStats},
+	{5, "known players", migrateKnownPlayers},
 }
 
 // migrateMatchStats widens a cached match from a bag of heroes into a record of a
