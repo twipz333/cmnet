@@ -8,6 +8,7 @@ import (
 	"cmnet/internal/bundle"
 	"cmnet/internal/cache"
 	"cmnet/internal/session"
+	"cmnet/internal/startup"
 )
 
 // autoOpts configures the background worker that keeps the cache and the bundle
@@ -47,9 +48,8 @@ func buildAuto(o autoOpts, h homeFlags, run *runner) *session.Auto {
 		// Say it rather than quietly collect less: public CM drafts are the pool the
 		// advisor is actually used in, and a user who set auto-public-cm and gets none
 		// deserves to know it is the missing token, not a broken worker.
-		fmt.Fprintln(os.Stderr,
-			"background collection: public CM drafts are skipped without a STRATZ token "+
-				"(pass --token or set it in config.yaml)")
+		startup.Warnf("background collection: public CM drafts are skipped without a STRATZ token " +
+			"(pass --token or set it in config.yaml)")
 	}
 
 	// The worker proposes work rather than doing it: both passes are queue

@@ -766,6 +766,29 @@ function connect() {
   };
 }
 
+// --- startup messages -------------------------------------------------------
+//
+// Loaded once. These are the lines the binary printed before any job existed —
+// "background collection is off", "could not install the GSI config" — which went
+// to stderr only, where a browser user never saw them. They are usually the answer
+// to "why is nothing happening".
+
+async function loadStartup() {
+  const host = $('startup');
+  if (!host) return;
+  try {
+    const res = await fetch('/api/startup');
+    if (!res.ok) return;
+    const data = await res.json();
+    const msgs = (data.messages || []).filter((m) => m.level !== 'info');
+    host.textContent = '';
+    host.hidden = !msgs.length;
+    for (const m of msgs) {
+      host.append(el('div', 'log-line log-' + (m.level || 'info'), m.text));
+    }
+  } catch (_) { /* the page works without them */ }
+}
+
 // --- known players ----------------------------------------------------------
 //
 // The local address book. Clicking a row appends the account to whichever scout
@@ -938,5 +961,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') $('matchups').hidden = true;
   });
 
+  loadStartup();
   connect();
 });

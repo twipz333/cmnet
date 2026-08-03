@@ -392,6 +392,18 @@ code { font: 12px ui-monospace, Consolas, monospace; color: var(--accent); }
 /* The calendar's scale strip: swatches only, no text between them. */
 .viz-swatch-strip { vertical-align: middle; }
 
+/* Startup warnings sit above everything: they explain why a feature is inert. */
+.startup {
+  margin: 14px 14px 0;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.startup[hidden] { display: none; }
+
 /* --- hero portraits ---------------------------------------------------------
 
    Sized in the layout so a missing image leaves no hole: the element removes

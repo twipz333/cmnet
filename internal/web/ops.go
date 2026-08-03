@@ -12,6 +12,7 @@ import (
 	"cmnet/internal/cache"
 	"cmnet/internal/jobs"
 	"cmnet/internal/session"
+	"cmnet/internal/startup"
 )
 
 // maxProgressLines is how much of a job's log the browser is given per frame. The
@@ -140,6 +141,10 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 	// The page asks for the pages it is actually showing.
 	mux.HandleFunc("/api/jobs", s.handleJobs)
 	mux.HandleFunc("/api/jobs/log", s.handleJobLog)
+
+	// Startup messages. They also go to stderr, which the browser cannot read, and
+	// they are usually the answer to "why is nothing happening".
+	mux.HandleFunc("/api/startup", s.handleStartup)
 
 	// The local address book: who we have scouted or played with, so a teammate is
 	// a click rather than a profile URL pasted again.
@@ -378,6 +383,13 @@ func (s *Server) handleJobLog(w http.ResponseWriter, r *http.Request) {
 		Job   *jobDTO      `json:"job,omitempty"`
 		Lines []logLineDTO `json:"lines"`
 	}{job, out})
+}
+
+// handleStartup serves the messages recorded before any job existed.
+func (s *Server) handleStartup(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, struct {
+		Messages []startup.Message `json:"messages"`
+	}{startup.Messages()})
 }
 
 // --- known players ------------------------------------------------------------

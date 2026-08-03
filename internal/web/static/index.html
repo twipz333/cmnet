@@ -18,6 +18,10 @@
     <div id="step" class="step"></div>
   </header>
 
+  <!-- Warnings the binary emitted before any job existed. Hidden when there are
+       none; these used to go to stderr only, invisible to a browser user. -->
+  <section id="startup" class="startup" hidden></section>
+
   <!-- Background work: what is queued, what is running, and the log of whichever
        job is selected. Visible on every tab, because collection now continues
        while the user is doing something else. -->

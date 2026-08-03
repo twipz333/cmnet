@@ -16,6 +16,7 @@ import (
 	"cmnet/internal/draft"
 	"cmnet/internal/gsi"
 	"cmnet/internal/session"
+	"cmnet/internal/startup"
 	"cmnet/internal/tui"
 )
 
@@ -213,7 +214,7 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		if lock == nil {
 			// Someone else is already collecting into this cache. Run the UI anyway:
 			// everything except background collection works fine on a shared database.
-			fmt.Fprintln(os.Stderr, "background collection is off:", held)
+			startup.Warnf("background collection is off: %s", held)
 		} else {
 			defer lock.Release()
 			autoLockHeld = lock
@@ -229,10 +230,10 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		// hangs forever on "waiting". Best-effort: a failure here (e.g. Dota dir not
 		// found) is reported but does not block manual fallback.
 		if path, err := gsi.Install("", h.gsiAddr, h.gsiToken); err != nil {
-			fmt.Fprintln(os.Stderr, "warning: could not auto-install GSI config:", err)
-			fmt.Fprintln(os.Stderr, "  run 'advisor gsi-install --cfg-dir <dota cfg dir>' manually, then RESTART Dota.")
+			startup.Warnf("could not auto-install the GSI config: %v", err)
+			startup.Warnf("run 'advisor gsi-install --cfg-dir <dota cfg dir>' by hand, then RESTART Dota")
 		} else {
-			fmt.Fprintln(os.Stderr, "GSI config installed:", path, "(RESTART Dota if it was running for it to load)")
+			startup.Infof("GSI config installed: %s (RESTART Dota if it was already running)", path)
 		}
 		// The token is checked, not merely written: without it the endpoint accepted
 		// a POST from anything on the machine that could reach the port.
@@ -268,7 +269,7 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 				select {
 				case <-autoCtx.Done():
 				case <-autoLockHeld.Lost():
-					fmt.Fprintln(os.Stderr, "background collection stopped: another advisor took over the cache")
+					startup.Warnf("background collection stopped: another advisor took over the cache")
 					stopAuto()
 				}
 			}()
