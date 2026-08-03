@@ -113,6 +113,7 @@ var migrations = []migration{
 	{1, "provenance columns on matches", migrateProvenance},
 	{2, "job queue and job log", migrateJobs},
 	{3, "per-player match performance", migrateMatchStats},
+	{4, "player aggregates", migratePlayerStats},
 }
 
 // migrateMatchStats widens a cached match from a bag of heroes into a record of a

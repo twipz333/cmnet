@@ -7,6 +7,7 @@ import (
 
 	"cmnet/internal/atomicfile"
 	"cmnet/internal/features"
+	"cmnet/internal/heroagg"
 	"cmnet/internal/matrices"
 	"cmnet/internal/model"
 	"cmnet/internal/objectives"
@@ -78,6 +79,25 @@ type Bundle struct {
 	// signal instead of a single global popularity score. Empty/omitted makes the
 	// recommender fall back to the coarse roles-based meta.
 	PositionMeta map[int][]PosHero `json:"position_meta,omitempty"`
+
+	// CorpusPositions / CorpusBans / CorpusLanes are the same kind of question as
+	// PositionMeta, answered from the corpus this bundle was trained on rather than
+	// from STRATZ's ranked all-pick aggregate.
+	//
+	// Kept alongside PositionMeta, not instead of it: the two describe different
+	// populations (our Captains Mode cache vs a rank bracket's all-pick), so they
+	// disagree, and pooling them would produce a number that describes neither.
+	// Each panel says which it is showing.
+	//
+	// Empty on bundles trained before this existed; consumers check len() and fall
+	// back, which is why no schema version had to change (§6).
+	CorpusPositions []heroagg.HeroPosStat `json:"corpus_positions,omitempty"`
+	CorpusBans      []heroagg.HeroBanStat `json:"corpus_bans,omitempty"`
+	// CorpusLanes carries the lane pairings (1+5, 3+4, solo 2) with their lift over
+	// an average lane. Display and explanation only for now: feeding it into the
+	// scoring vector would change the feature layout, which is a FeatureSchemaVersion
+	// bump and a coordinated bundle handout, not a quiet addition.
+	CorpusLanes []heroagg.LaneStat `json:"corpus_lanes,omitempty"`
 }
 
 // PosHero is one hero's standing in a lane position's meta (bundle-baked, §9).

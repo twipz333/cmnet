@@ -13,6 +13,7 @@ import (
 	"cmnet/internal/blend"
 	"cmnet/internal/bundle"
 	"cmnet/internal/cache"
+	"cmnet/internal/heroagg"
 	"cmnet/internal/model"
 	"cmnet/internal/objectives"
 	"cmnet/internal/recommender"
@@ -1032,6 +1033,20 @@ func opTrain(ctx context.Context, o trainOpts, log logFunc) (string, error) {
 		b.HeroPositions = pos
 		log(fmt.Sprintf("hero positions: %d heroes mapped (roles → 1-5; pass --token for real per-position meta)", len(pos)))
 	}
+
+	// Aggregates from the corpus this bundle was actually trained on: per-position
+	// pick/win rates, ban rates, and lane pairings. They answer the same questions
+	// as the STRATZ meta above but about our own population, so both are baked and
+	// each panel says which it is showing.
+	//
+	// Computed from the same filtered match slice the models were fitted on, so the
+	// numbers describe the bundle rather than whatever else happens to be cached.
+	agg := heroagg.Compute(matches, heroagg.Options{})
+	b.CorpusPositions = agg.Positions
+	b.CorpusBans = agg.Bans
+	b.CorpusLanes = agg.Lanes
+	log(fmt.Sprintf("corpus aggregates: %d hero-position rows, %d ban rows, %d lane pairings",
+		len(agg.Positions), len(agg.Bans), len(agg.Lanes)))
 
 	log("saving bundle…")
 	if err := b.Save(o.outPath); err != nil {
