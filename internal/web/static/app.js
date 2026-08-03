@@ -251,7 +251,9 @@ function renderHeader() {
   // the draft are gated — scouting an enemy and browsing matchups do not, and
   // disabling them here made the whole screen look broken.
   const manual = m.draftReady && !m.gsiMode;
-  const busy = !!state.ops.running;
+  // Nothing is greyed out because something else is running any more: work goes
+  // into a queue that decides what may overlap, by resource. A second request is
+  // queued, not refused, so disabling the buttons would only hide that.
   const enable = (id, on) => { const b = $(id); if (b) b.disabled = !on; };
 
   document.querySelectorAll('#screen-draft [data-action]').forEach((b) => {
@@ -280,11 +282,11 @@ function renderHeader() {
     + clickHint
     + ' Ручной ввод — запусти с --gsi=false (или убери gsi из config.yaml).';
 
-  enable('btn-sync', m.canSync && !busy);
-  enable('btn-train', m.canTrain && !busy);
-  enable('btn-scout', m.canScout && !busy);
-  enable('btn-allies', m.canScoutAllies && !busy);
-  enable('btn-clear3', !busy);
+  enable('btn-sync', m.canSync);
+  enable('btn-train', m.canTrain);
+  enable('btn-scout', m.canScout);
+  enable('btn-allies', m.canScoutAllies);
+  enable('btn-clear3', true);
 
   // Tabs whose backing operations this build does not offer stay visible but inert.
   const tabAvailable = {
@@ -322,16 +324,41 @@ function fmtElapsed(ms) {
   return m + 'м ' + String(s % 60).padStart(2, '0') + 'с';
 }
 
+// STATE_LABEL names a job state in the UI. The wire keeps the English identifiers.
+const STATE_LABEL = {
+  pending: 'в очереди',
+  running: 'выполняется',
+  done: 'готово',
+  failed: 'ошибка',
+  cancelled: 'отменено',
+};
+
+// selectedJob is the job whose log is shown. null follows whatever is running,
+// which is what a user watching a sync expects; clicking a row pins it instead.
+let selectedJob = null;
+let logSeq = 0;
+let logLines = [];
+let logPending = false;
+
 // renderOpHeading redraws just the banner title, cheaply, once a second.
 function renderOpHeading() {
   const o = state && state.ops;
   if (!o) return;
-  if (!o.running) {
-    $('op-name').textContent = 'последний прогон';
+  const active = o.active || [];
+  if (!active.length) {
+    $('op-name').textContent = 'фоновых задач нет';
+    return;
+  }
+  const running = active.filter((j) => j.state === 'running');
+  const queued = active.length - running.length;
+  if (!running.length) {
+    $('op-name').textContent = 'в очереди: ' + active.length;
     return;
   }
   const sinceFrame = opFrameAt ? Date.now() - opFrameAt : 0;
-  let text = o.running + ' — выполняется ' + fmtElapsed(opRunningMs + sinceFrame);
+  const names = running.map((j) => j.kind).join(', ');
+  let text = names + ' — выполняется ' + fmtElapsed(opRunningMs + sinceFrame);
+  if (queued > 0) text += ' · в очереди ещё ' + queued;
 
   if (sinceFrame > staleFrameMs) {
     // No keepalive: what the server is doing is unknown from here. Say exactly that
@@ -349,15 +376,101 @@ function renderOpHeading() {
   $('op-name').textContent = text + '…';
 }
 
-function renderOps() {
-  const o = state.ops;
-  const banner = $('op-banner');
-  banner.hidden = !o.running && !o.log.length;
+// jobRow renders one job as a clickable row: state, kind, and its latest line.
+function jobRow(j) {
+  const li = el('li', 'job job-' + j.state);
+  if (selectedJob === j.id) li.classList.add('sel');
+  li.dataset.jobId = String(j.id);
 
-  if (o.running) {
+  li.append(el('span', 'job-state', STATE_LABEL[j.state] || j.state));
+  li.append(el('span', 'job-kind', j.kind));
+  if (j.state === 'running' && j.runningMs) {
+    li.append(el('span', 'job-time', fmtElapsed(j.runningMs)));
+  }
+  const tail = j.error || j.result || j.lastLine || '';
+  if (tail) li.append(el('span', j.error ? 'job-tail off' : 'job-tail', tail));
+  if (j.attempts > 1) li.append(el('span', 'job-tail', 'попытка ' + j.attempts));
+
+  li.addEventListener('click', () => {
+    // Clicking the pinned row unpins it, so the panel goes back to following the
+    // running job instead of being stuck on a finished one.
+    selectedJob = selectedJob === j.id ? null : j.id;
+    logSeq = 0;
+    logLines = [];
+    loadJobLog();
+    renderOps();
+  });
+  return li;
+}
+
+// followedJob is the job whose log the panel shows: the pinned one, else the first
+// running one, else the most recent.
+function followedJob() {
+  const o = state && state.ops;
+  if (!o) return null;
+  const all = (o.active || []).concat(o.recent || []);
+  if (selectedJob) return all.find((j) => j.id === selectedJob) || null;
+  return (o.active || []).find((j) => j.state === 'running') || all[0] || null;
+}
+
+// loadJobLog fetches the lines after what is already shown. Incremental by design:
+// a long sync's log runs to thousands of lines, and refetching it every second
+// would be the heaviest thing the page does.
+function loadJobLog() {
+  const job = followedJob();
+  if (!job || logPending) return;
+  logPending = true;
+  fetch('/api/jobs/log?id=' + job.id + '&after=' + logSeq)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      logPending = false;
+      if (!data || !data.lines) return;
+      for (const l of data.lines) {
+        logLines.push(l);
+        logSeq = l.seq;
+      }
+      // Bounded in the page, unbounded in the database: scrolling back further is a
+      // request away, but the DOM stays small.
+      if (logLines.length > 600) logLines = logLines.slice(-600);
+      renderJobLog();
+    })
+    .catch(() => { logPending = false; });
+}
+
+function renderJobLog() {
+  const box = $('op-log');
+  const level = $('job-level') ? $('job-level').value : '';
+  const keep = (l) => {
+    if (level === 'warn') return l.level === 'warn' || l.level === 'error';
+    if (level === 'error') return l.level === 'error';
+    return true;
+  };
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  box.textContent = '';
+  let lastPhase = null;
+  for (const l of logLines) {
+    if (!keep(l)) continue;
+    if (l.phase && l.phase !== lastPhase) {
+      box.append(el('div', 'log-phase', '── ' + l.phase));
+      lastPhase = l.phase;
+    }
+    box.append(el('div', 'log-line log-' + (l.level || 'info'), l.text));
+  }
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+function renderOps() {
+  const o = state.ops || {};
+  const active = o.active || [];
+  const recent = o.recent || [];
+  const banner = $('op-banner');
+  banner.hidden = !active.length && !recent.length;
+
+  const running = active.find((j) => j.state === 'running');
+  if (running) {
     opFrameAt = Date.now();
-    opRunningMs = o.runningMs || 0;
-    opQuietMs = o.quietMs || 0;
+    opRunningMs = running.runningMs || 0;
+    opQuietMs = running.quietMs || 0;
     if (opTicker === null) opTicker = setInterval(renderOpHeading, 1000);
   } else {
     opFrameAt = null;
@@ -367,17 +480,27 @@ function renderOps() {
   }
   renderOpHeading();
 
-  const log = $('op-log');
-  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-  log.textContent = o.log.join('\n');
-  if (atBottom) log.scrollTop = log.scrollHeight;
+  const list = $('job-list');
+  list.textContent = '';
+  for (const j of active) list.append(jobRow(j));
+  for (const j of recent.slice(0, 6)) list.append(jobRow(j));
+
+  // A pinned job that has been trimmed away would leave the panel following
+  // nothing at all.
+  if (selectedJob && !active.concat(recent).some((j) => j.id === selectedJob)) {
+    selectedJob = null;
+    logSeq = 0;
+    logLines = [];
+  }
+  loadJobLog();
 
   const res = $('op-result');
+  const last = recent[0];
   if (res) {
-    res.textContent = o.result || '—';
-    res.className = o.failed ? 'off' : 'why';
+    res.textContent = last ? (last.error || last.result || '—') : '—';
+    res.className = last && last.error ? 'off' : 'why';
   }
-  banner.querySelector('[data-action="ops/cancel"]').disabled = !o.running;
+  banner.querySelector('[data-action="ops/cancel"]').disabled = !active.length;
 }
 
 function renderStatus() {
@@ -606,11 +729,11 @@ function beep() {
 function connect() {
   const es = new EventSource('/api/events');
   es.onmessage = (ev) => {
-    const prevRunning = state && state.ops.running;
+    const prevRunning = state && state.ops && state.ops.running;
     render(JSON.parse(ev.data));
     // An operation that just finished may have rewritten the snapshot, and a sync
     // certainly changed what the Data screen is showing.
-    if (prevRunning && !state.ops.running) {
+    if (prevRunning && !(state.ops && state.ops.running)) {
       loadStats();
       if (activeTab === 'data') loadCorpus();
     }
@@ -683,6 +806,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const first = document.querySelector('#hero-list li');
     if (first) first.click();
   };
+
+  // The level filter re-renders what is already loaded rather than refetching: the
+  // lines are in memory, and the server has no idea what the user is filtering to.
+  const level = $('job-level');
+  if (level) level.onchange = () => renderJobLog();
 
   document.querySelector('[data-close]').onclick = () => { $('matchups').hidden = true; };
   document.addEventListener('keydown', (e) => {

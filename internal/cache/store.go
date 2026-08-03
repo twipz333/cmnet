@@ -111,6 +111,7 @@ const baselineVersion = 1
 // changes: it never runs against a database that already has its tables.
 var migrations = []migration{
 	{1, "provenance columns on matches", migrateProvenance},
+	{2, "job queue and job log", migrateJobs},
 }
 
 // schemaVersion is the version a fully migrated database reports.

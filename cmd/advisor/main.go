@@ -154,21 +154,24 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		snapshotPath: h.snapshotPath,
 	}
 
+	// Every long operation runs through the job queue, whichever front end asked
+	// for it: one row, one log, one set of rules about what may run alongside what.
+	run, err := newRunner(h)
+	if err != nil {
+		return err
+	}
+	defer run.Close()
+	queueCtx, stopQueue := context.WithCancel(cmd.Context())
+	defer stopQueue()
+	go run.Run(queueCtx)
+
 	cfg := tui.ShellConfig{
-		GSI:   h.useGSI,
-		Token: true, // sync no longer needs a token (OpenDota-only)
-		Train: func(ctx context.Context, progress func(string)) (string, error) {
-			return opTrain(ctx, trainOpts{
-				dbPath: h.dbPath, outPath: h.bundlePath, windowDays: h.windowDays,
-				token: h.token, minTier: h.minRankTier, maxTier: h.maxRankTier,
-			}, progress)
-		},
-		Scout: func(ctx context.Context, players []string, progress func(string)) (string, error) {
-			return opScout(ctx, players, scoutOpts{outPath: h.snapshotPath, dbPath: h.dbPath, windowDays: 30}, progress)
-		},
-		ScoutAllies: func(ctx context.Context, players []string, progress func(string)) (string, error) {
-			return opScoutAllies(ctx, players, scoutOpts{outPath: h.snapshotPath, dbPath: h.dbPath, windowDays: 30}, progress)
-		},
+		GSI:         h.useGSI,
+		Token:       true, // sync no longer needs a token (OpenDota-only)
+		Jobs:        run.Queue(),
+		Train:       run.manualTrain(),
+		Scout:       run.scoutOp(jobScout),
+		ScoutAllies: run.scoutOp(jobScoutAllies),
 		Stats: func() (tui.StatsView, error) {
 			return opStats(h.snapshotPath, h.dbPath)
 		},
@@ -187,26 +190,13 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		SetItemRules: func(text string) (string, error) {
 			return opSetItemRules(text, h.snapshotPath, h.dbPath)
 		},
-		Sync: func(ctx context.Context, progress func(string)) (string, error) {
-			return opSync(ctx, syncOpts{
-				dbPath:       h.dbPath,
-				windowDays:   h.windowDays,
-				minTier:      h.minRankTier,
-				maxTier:      h.maxRankTier,
-				maxMatches:   h.maxMatches,
-				cmMatches:    h.cmMatches,
-				publicCM:     h.publicCM,
-				bulkGameMode: h.bulkGameMode,
-				token:        h.token,
-			}, progress)
-		},
+		Sync: run.manualSync(),
 	}
-	// Background collection, plus the coordination that keeps it out of the way of
-	// anything the user starts by hand. The lock is claimed before the worker is
-	// wired into anything, so a second instance behaves exactly like one started
-	// with --auto=false rather than half-connected.
+	// Background collection. The lock is claimed before the worker is wired into
+	// anything, so a second instance behaves exactly like one started with
+	// --auto=false rather than half-connected.
 	var autoLockHeld *autoLock
-	if auto := buildAuto(h.auto, h); auto != nil {
+	if auto := buildAuto(h.auto, h, run); auto != nil {
 		lock, held := acquireAutoLock(h.dbPath)
 		if lock == nil {
 			// Someone else is already collecting into this cache. Run the UI anyway:
@@ -216,8 +206,6 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 			defer lock.Release()
 			autoLockHeld = lock
 			cfg.Auto = auto
-			cfg.Sync = withYield(auto, cfg.Sync)
-			cfg.Train = withYield(auto, cfg.Train)
 		}
 	}
 

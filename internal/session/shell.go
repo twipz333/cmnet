@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"cmnet/internal/cache"
+	"cmnet/internal/jobs"
 )
 
 // CorpusStats is the cache's own breakdown of what it holds, surfaced to the
@@ -52,10 +53,16 @@ type ShellConfig struct {
 	BuildScan func() (Config, error)
 
 	// Auto is the background sync/train worker, or nil when it is disabled. Front
-	// ends use it for three things: showing what it is doing, telling it when the
-	// draft screen is open (SetDraftActive), and standing it aside while a manual
-	// sync or train runs (Yield).
+	// ends use it for two things: showing what it is doing, and telling it when the
+	// draft screen is open (TouchDraft). Standing it aside is no longer its job —
+	// the queue preempts a background pass when a manual request outranks it.
 	Auto *Auto
+
+	// Jobs is the work queue every long operation runs through, or nil in builds
+	// and tests that wire the operations directly. Front ends read it to show what
+	// is in flight and to page through a job's log; they never execute work
+	// themselves.
+	Jobs *jobs.Queue
 }
 
 // StatsView is a read-only projection of the current snapshot for the Statistics

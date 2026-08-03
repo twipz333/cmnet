@@ -18,12 +18,24 @@
     <div id="step" class="step"></div>
   </header>
 
-  <!-- Long-running operation log; visible on every tab while an op runs. -->
+  <!-- Background work: what is queued, what is running, and the log of whichever
+       job is selected. Visible on every tab, because collection now continues
+       while the user is doing something else. -->
   <section id="op-banner" class="op-banner" hidden>
     <div class="op-head">
       <span id="op-name"></span>
-      <button data-action="ops/cancel" class="danger">Отменить</button>
+      <div class="op-tools">
+        <label class="op-filter">уровень
+          <select id="job-level">
+            <option value="">все</option>
+            <option value="warn">предупреждения</option>
+            <option value="error">ошибки</option>
+          </select>
+        </label>
+        <button data-action="ops/cancel" class="danger">Отменить</button>
+      </div>
     </div>
+    <ul id="job-list" class="job-list"></ul>
     <pre id="op-log" class="op-log"></pre>
   </section>
 

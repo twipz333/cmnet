@@ -2,138 +2,128 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"cmnet/internal/cache"
+	"cmnet/internal/jobs"
 	"cmnet/internal/session"
 )
 
-// maxProgressLines is how much of a long operation's log the UI keeps. The TUI
-// shows the last 8; the browser has room for more, but this still bounds memory
-// for a sync that emits thousands of lines.
+// maxProgressLines is how much of a job's log the browser is given per frame. The
+// full history stays in the database and is paged through /api/jobs/log; this
+// bounds what rides along on the live frame.
 const maxProgressLines = 400
 
-// ops tracks the single long-running operation the shell allows at a time
-// (sync/train/scout), mirroring the terminal shell's "running" screen: starting a
-// second one while the first is in flight is rejected rather than queued.
-type ops struct {
-	mu      sync.Mutex
-	name    string // "" when idle
-	log     []string
-	result  string
-	failed  bool
-	cancelF context.CancelFunc
-	// rev increments on every appended line. The progress pump compares it against
-	// the last revision it sent, so a quiet operation costs nothing and a chatty one
-	// still only produces one frame per tick. It is also what the browser watches for
-	// liveness: the log itself is capped, so its LENGTH stops changing on a long run
-	// while work is still being done.
-	rev uint64
-	// startedAt/lastLineAt let the browser report how long the operation has been
-	// running and how long it has been quiet. Both are measured here rather than in
-	// the page: a browser that reconnects mid-operation has no idea when it began.
-	startedAt  time.Time
-	lastLineAt time.Time
-}
-
-func newOps() *ops { return &ops{} }
-
-// opsDTO is the operation state as the browser sees it.
-type opsDTO struct {
-	Running string   `json:"running"` // "" when idle
-	Log     []string `json:"log"`
-	Result  string   `json:"result"`
-	Failed  bool     `json:"failed"`
-	// Rev is the monotonic count of log lines ever appended — unlike len(Log), which
-	// saturates at maxProgressLines.
-	Rev uint64 `json:"rev"`
-	// Milliseconds since the operation started and since its last log line, as the
-	// SERVER measured them at the moment this frame was built. The page ticks them
-	// forward locally between frames.
+// jobDTO is one queued or finished job as the browser sees it.
+type jobDTO struct {
+	ID       int64  `json:"id"`
+	Kind     string `json:"kind"`
+	State    string `json:"state"`
+	Priority int    `json:"priority"`
+	Result   string `json:"result,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Attempts int    `json:"attempts"`
+	// Milliseconds since the job started and since its last log line, measured by
+	// the SERVER: a browser that connects mid-run has no idea when it began.
 	RunningMs uint64 `json:"runningMs"`
 	QuietMs   uint64 `json:"quietMs"`
+	// LastLine is the most recent line, so a collapsed row still says something.
+	LastLine string `json:"lastLine,omitempty"`
+	// Seq is the highest log sequence stored, which is what the page watches for
+	// liveness — unlike the line count, it keeps moving on a long quiet run.
+	Seq int64 `json:"seq"`
 }
 
-func (o *ops) dto() opsDTO {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	logCopy := make([]string, len(o.log))
-	copy(logCopy, o.log)
-	d := opsDTO{Running: o.name, Log: logCopy, Result: o.result, Failed: o.failed, Rev: o.rev}
-	if o.name != "" {
-		d.RunningMs = uint64(time.Since(o.startedAt).Milliseconds())
-		d.QuietMs = uint64(time.Since(o.lastLineAt).Milliseconds())
+// logLineDTO is one structured log line.
+//
+// Structured rather than a formatted string: the page filters by level and groups
+// by phase, and neither is recoverable once the fields are flattened into text.
+type logLineDTO struct {
+	Seq   int64  `json:"seq"`
+	At    int64  `json:"at"`
+	Level string `json:"level"`
+	Phase string `json:"phase,omitempty"`
+	Text  string `json:"text"`
+}
+
+// opsDTO is the work state as the browser sees it: what is in flight now, and the
+// tail of recent history.
+type opsDTO struct {
+	Active []jobDTO `json:"active"`
+	Recent []jobDTO `json:"recent"`
+	// Running is the kind of the first active job, or "" — kept because the status
+	// bar and the "is anything happening" checks read exactly this.
+	Running string `json:"running"`
+}
+
+// jobsView builds the operations frame from the queue.
+func (s *Server) jobsView() opsDTO {
+	q := s.shell.Jobs
+	if q == nil {
+		return opsDTO{}
+	}
+	var d opsDTO
+	for _, j := range q.Active() {
+		dto := s.jobDTO(j)
+		d.Active = append(d.Active, dto)
+		if d.Running == "" && j.State == cache.JobRunning {
+			d.Running = j.Kind
+		}
+	}
+	for _, j := range q.Recent(recentJobs) {
+		switch j.State {
+		case cache.JobPending, cache.JobRunning:
+			continue // already in Active
+		}
+		d.Recent = append(d.Recent, s.jobDTO(j))
 	}
 	return d
 }
 
-// begin claims the operation slot. ok is false when another op is already running.
-func (o *ops) begin(name string, cancel context.CancelFunc) (ok bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.name != "" {
-		return false
+// recentJobs is how much finished history rides along on the live frame. The rest
+// is a click away in the job log.
+const recentJobs = 12
+
+// logRevision is the highest log sequence across the jobs in flight, plus their
+// count so a job starting or finishing also counts as a change.
+func (s *Server) logRevision() uint64 {
+	q := s.shell.Jobs
+	if q == nil {
+		return 0
 	}
-	now := time.Now()
-	o.name = name
-	o.log = nil
-	o.result = ""
-	o.failed = false
-	o.cancelF = cancel
-	o.startedAt = now
-	o.lastLineAt = now
-	return true
-}
-
-func (o *ops) append(line string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.log = append(o.log, line)
-	if len(o.log) > maxProgressLines {
-		o.log = o.log[len(o.log)-maxProgressLines:]
+	var rev uint64
+	for _, j := range q.Active() {
+		rev++
+		if _, seq, _, ok := q.LastLine(j.ID); ok {
+			rev += uint64(seq)
+		}
 	}
-	o.rev++
-	o.lastLineAt = time.Now()
+	return rev
 }
 
-// revision reports how many lines have been appended so far.
-func (o *ops) revision() uint64 {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.rev
-}
-
-func (o *ops) finish(summary string, err error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.name = ""
-	o.cancelF = nil
-	if err != nil {
-		o.result = "error: " + err.Error()
-		o.failed = true
-		return
+func (s *Server) jobDTO(j cache.Job) jobDTO {
+	d := jobDTO{
+		ID: j.ID, Kind: j.Kind, State: string(j.State), Priority: j.Priority,
+		Result: j.Result, Error: j.Error, Attempts: j.Attempts,
 	}
-	o.result = summary
-	o.failed = false
-}
-
-// cancel stops the running operation, if any.
-func (o *ops) cancel() {
-	o.mu.Lock()
-	c := o.cancelF
-	o.mu.Unlock()
-	if c != nil {
-		c()
+	if q := s.shell.Jobs; q != nil {
+		if line, seq, at, ok := q.LastLine(j.ID); ok {
+			d.LastLine = line
+			d.Seq = seq
+			if j.State == cache.JobRunning {
+				d.QuietMs = uint64(time.Since(time.UnixMilli(at)).Milliseconds())
+			}
+		}
 	}
-}
-
-func (o *ops) running() string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.name
+	if j.State == cache.JobRunning && j.StartedAt > 0 {
+		d.RunningMs = uint64(time.Since(time.Unix(j.StartedAt, 0)).Milliseconds())
+	}
+	return d
 }
 
 // --- routes -----------------------------------------------------------------
@@ -145,6 +135,12 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 	mux.HandleFunc("/api/ops/scout-allies", s.mutate(s.startScoutAllies))
 	mux.HandleFunc("/api/ops/cancel", s.mutate(s.cancelOp))
 
+	// The job log is its own endpoint rather than a field on the live frame: a run
+	// emits thousands of lines, and the frame is rebuilt several times a second.
+	// The page asks for the pages it is actually showing.
+	mux.HandleFunc("/api/jobs", s.handleJobs)
+	mux.HandleFunc("/api/jobs/log", s.handleJobLog)
+
 	mux.HandleFunc("/api/corpus", s.handleCorpus)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/stats/hero-pool", s.mutate(s.setHeroPool))
@@ -155,60 +151,59 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 
 // --- long operations --------------------------------------------------------
 
-// longOp is the shape of sync/train (no arguments) and, after binding players, of
-// scout/scout-allies.
-type longOp func(ctx context.Context, progress func(string)) (string, error)
+// queue returns the work queue, or an error naming what is unavailable without it.
+func (s *Server) queue(kind string) (*jobs.Queue, error) {
+	if s.shell.Jobs == nil {
+		return nil, jobs.KindError(kind)
+	}
+	return s.shell.Jobs, nil
+}
 
-// run starts fn in the background, streaming its progress lines to every browser.
-// Returns immediately: the UI follows along over SSE, exactly like the terminal
-// shell's spinner screen. reloadAfter rebuilds the draft session on success, so a
-// fresh bundle or snapshot takes effect without a restart.
-func (s *Server) run(name string, fn longOp, reloadAfter bool) (string, error) {
-	if fn == nil {
-		return "", fmt.Errorf("%s is not available in this build", name)
+// start queues a job and returns immediately.
+//
+// Nothing is rejected for being "already running" any more: the queue decides what
+// may overlap, by resource, and a manual request preempts the background copy of
+// the same kind. The browser follows along over SSE.
+//
+// reloadAfter rebuilds the draft session once the job succeeds, so a fresh bundle
+// or snapshot takes effect without a restart. It watches from a goroutine rather
+// than blocking the request, and only on success: reloading after a failed train
+// would swap in whatever bundle happened to be on disk.
+func (s *Server) start(kind, payload string, dedupe, reloadAfter bool) (string, error) {
+	q, err := s.queue(kind)
+	if err != nil {
+		return "", err
+	}
+	id, err := q.Enqueue(kind, jobs.PriorityManual, payload, dedupe)
+	if err != nil {
+		return "", err
 	}
 
-	s.mu.Lock()
-	base := s.baseCtx
-	s.mu.Unlock()
-	if base == nil {
-		base = context.Background()
-	}
-	ctx, cancel := context.WithCancel(base)
-
-	if !s.ops.begin(name, cancel) {
-		cancel()
-		return "", fmt.Errorf("%s is already running", s.ops.running())
-	}
-
-	// The progress pump decouples the operation from the browsers watching it.
-	// Broadcasting inside the progress callback instead made every log line
-	// serialise the entire UI state and take the session lock — so a chatty sync
-	// spent its time rendering frames, and any competing session work (a GSI event
-	// recomputing the draft, the Statistics screen loading) stalled it further. Now
-	// the operation only appends, and one frame per tick carries the latest state.
+	// One frame pump per in-flight job, so a chatty run pushes at a bounded rate
+	// instead of once per log line. Broadcasting inside the progress callback is
+	// what used to make a sync spend its time rendering frames while every other
+	// piece of session work queued behind it.
 	pumpDone := make(chan struct{})
 	go s.pumpProgress(pumpDone)
 
 	go func() {
-		defer cancel()
-		summary, err := fn(ctx, s.ops.append)
-		// The reload happens BEFORE finish: it is part of the operation, so the slot
-		// must stay claimed until it is done (otherwise a second operation can start
-		// mid-reload), and a reload failure has to reach the user as a failure rather
-		// than a success with a stray log line.
-		if err == nil && reloadAfter {
+		defer close(pumpDone)
+		s.mu.Lock()
+		base := s.baseCtx
+		s.mu.Unlock()
+		if base == nil {
+			base = context.Background()
+		}
+		_, ferr := q.Follow(base, id, nil)
+		if ferr == nil && reloadAfter {
 			if rerr := s.reloadSession(); rerr != nil {
-				s.ops.append("reload failed: " + rerr.Error())
-				err = fmt.Errorf("%s finished but reloading it failed: %w", name, rerr)
+				_ = q.Note(id, cache.LogError, "reload failed: "+rerr.Error())
 			}
 		}
-		s.ops.finish(summary, err)
-		close(pumpDone) // stop the pump before the final, authoritative frame
 		s.broadcast(false)
 	}()
 
-	return name + " started", nil
+	return kind + " queued", nil
 }
 
 // progressInterval is how often a running operation's log is pushed to browsers.
@@ -236,7 +231,10 @@ func (s *Server) pumpProgress(done <-chan struct{}) {
 		case <-done:
 			return
 		case <-ticker.C:
-			rev := s.ops.revision()
+			// The revision is the highest log sequence across everything in flight:
+			// unlike a line count it keeps moving on a long run, which is exactly what
+			// the browser watches to tell a quiet phase from a dead connection.
+			rev := s.logRevision()
 			if rev == sent && time.Since(lastSend) < keepaliveInterval {
 				continue
 			}
@@ -249,11 +247,11 @@ func (s *Server) pumpProgress(done <-chan struct{}) {
 
 func (s *Server) startSync(*http.Request) (string, error) {
 	// Sync only fills the cache; the bundle is unchanged until Train runs.
-	return s.run("sync", s.shell.Sync, false)
+	return s.start(jobs.KindSync, "", true, false)
 }
 
 func (s *Server) startTrain(*http.Request) (string, error) {
-	return s.run("train", s.shell.Train, true)
+	return s.start(jobs.KindTrain, "", true, true)
 }
 
 // playersReq carries the space- or comma-separated player list from the scout
@@ -270,15 +268,16 @@ func splitPlayers(s string) []string {
 }
 
 func (s *Server) startScout(r *http.Request) (string, error) {
-	return s.startScoutLike(r, "scout", s.shell.Scout)
+	return s.startScoutLike(r, jobs.KindScout)
 }
 
 func (s *Server) startScoutAllies(r *http.Request) (string, error) {
-	return s.startScoutLike(r, "scout allies", s.shell.ScoutAllies)
+	return s.startScoutLike(r, jobs.KindScoutAllies)
 }
 
-func (s *Server) startScoutLike(r *http.Request, name string,
-	fn func(context.Context, []string, func(string)) (string, error)) (string, error) {
+// startScoutLike queues a scout. Not deduped: two scouts are two different player
+// lists, and collapsing them would silently drop one.
+func (s *Server) startScoutLike(r *http.Request, kind string) (string, error) {
 	var req playersReq
 	if err := decode(r, &req); err != nil {
 		return "", err
@@ -287,21 +286,104 @@ func (s *Server) startScoutLike(r *http.Request, name string,
 	if len(players) == 0 {
 		return "", fmt.Errorf("give at least one player id or profile URL")
 	}
-	if fn == nil {
-		return "", fmt.Errorf("%s is not available in this build", name)
+	payload, err := json.Marshal(struct {
+		Players []string `json:"players"`
+	}{players})
+	if err != nil {
+		return "", err
 	}
-	return s.run(name, func(ctx context.Context, progress func(string)) (string, error) {
-		return fn(ctx, players, progress)
-	}, true)
+	return s.start(kind, string(payload), false, true)
 }
 
-func (s *Server) cancelOp(*http.Request) (string, error) {
-	name := s.ops.running()
-	if name == "" {
+// cancelOp stops a specific job, or everything in flight when no id is given.
+func (s *Server) cancelOp(r *http.Request) (string, error) {
+	q, err := s.queue("cancel")
+	if err != nil {
+		return "", err
+	}
+	var req struct {
+		ID int64 `json:"id"`
+	}
+	_ = decode(r, &req) // an empty body means "whatever is running"
+
+	if req.ID > 0 {
+		if err := q.Cancel(req.ID); err != nil {
+			return "", err
+		}
+		return "cancelling…", nil
+	}
+	active := q.Active()
+	if len(active) == 0 {
 		return "", fmt.Errorf("nothing is running")
 	}
-	s.ops.cancel()
-	return "cancelling " + name + "…", nil
+	for _, j := range active {
+		if err := q.Cancel(j.ID); err != nil {
+			return "", err
+		}
+	}
+	return "cancelling…", nil
+}
+
+// --- job log ----------------------------------------------------------------
+
+func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
+	q, err := s.queue("jobs")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	limit := intParam(r, "limit", 50)
+	var out []jobDTO
+	for _, j := range q.Recent(limit) {
+		out = append(out, s.jobDTO(j))
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Jobs []jobDTO `json:"jobs"`
+	}{out})
+}
+
+func (s *Server) handleJobLog(w http.ResponseWriter, r *http.Request) {
+	q, err := s.queue("jobs")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	id := int64(intParam(r, "id", 0))
+	if id <= 0 {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	after := int64(intParam(r, "after", 0))
+	lines, err := q.Log(id, after, intParam(r, "limit", maxProgressLines))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out := make([]logLineDTO, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, logLineDTO{Seq: l.Seq, At: l.At, Level: l.Level, Phase: l.Phase, Text: l.Text})
+	}
+	var job *jobDTO
+	if j, err := q.Job(id); err == nil && j != nil {
+		d := s.jobDTO(*j)
+		job = &d
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Job   *jobDTO      `json:"job,omitempty"`
+		Lines []logLineDTO `json:"lines"`
+	}{job, out})
+}
+
+func intParam(r *http.Request, name string, def int) int {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // --- snapshot editing -------------------------------------------------------

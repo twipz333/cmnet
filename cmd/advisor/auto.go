@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
@@ -34,7 +33,7 @@ type autoOpts struct {
 // The worker deliberately reuses opSync/opTrain rather than a background-specific
 // code path: whatever the user gets from pressing Sync is what runs unattended,
 // including the watermarks and the resume behaviour. Only the caps differ.
-func buildAuto(o autoOpts, h homeFlags) *session.Auto {
+func buildAuto(o autoOpts, h homeFlags, run *runner) *session.Auto {
 	if !o.enabled {
 		return nil
 	}
@@ -53,53 +52,17 @@ func buildAuto(o autoOpts, h homeFlags) *session.Auto {
 				"(pass --token or set it in config.yaml)")
 	}
 
-	syncOnce := func(ctx context.Context, progress func(string)) (string, error) {
-		return opSync(ctx, syncOpts{
-			dbPath:       h.dbPath,
-			windowDays:   h.windowDays,
-			minTier:      h.minRankTier,
-			maxTier:      h.maxRankTier,
-			maxMatches:   o.maxMatches,
-			cmMatches:    o.cmMatches,
-			publicCM:     publicCM,
-			bulkGameMode: h.bulkGameMode,
-			token:        h.token,
-		}, progress)
-	}
-	trainOnce := func(ctx context.Context, progress func(string)) (string, error) {
-		return opTrain(ctx, trainOpts{
-			dbPath: h.dbPath, outPath: h.bundlePath, windowDays: h.windowDays,
-			token: h.token, minTier: h.minRankTier, maxTier: h.maxRankTier,
-		}, progress)
-	}
-
+	// The worker proposes work rather than doing it: both passes are queue
+	// submissions at background priority, so a manual request preempts them and the
+	// resource rules — not a bespoke handshake — keep incompatible work apart.
 	return session.NewAuto(session.AutoConfig{
-		Sync:     syncOnce,
-		Train:    trainOnce,
+		Sync:     run.backgroundSync(o, publicCM),
+		Train:    run.backgroundTrain(),
 		TrainDue: func() (bool, string) { return trainDue(h.dbPath, h.bundlePath, o) },
 		Count:    func() (int64, error) { return countMatches(h.dbPath) },
 		Idle:     o.idle,
 		MaxIdle:  o.maxIdle,
 	})
-}
-
-// withYield wraps a manual operation so the background worker stands aside while
-// it runs.
-//
-// Doing it here rather than in each front end means the terminal and browser UIs
-// get the coordination for free and cannot drift apart on it. Only sync and train
-// are wrapped: they contend with the worker over the scan watermarks and the
-// bundle file, so overlapping runs are not slow but incoherent. Scouting shares
-// neither and keeps running alongside collection.
-func withYield(auto *session.Auto, op session.AutoOp) session.AutoOp {
-	if auto == nil || op == nil {
-		return op
-	}
-	return func(ctx context.Context, progress func(string)) (string, error) {
-		release := auto.Yield()
-		defer release()
-		return op(ctx, progress)
-	}
 }
 
 // countMatches opens the cache just long enough to count. Opening per call rather

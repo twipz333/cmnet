@@ -107,7 +107,48 @@ main { flex: 1; padding: 14px; }
 }
 .op-banner[hidden] { display: none; }
 .op-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.op-head span { font-weight: 600; }
+.op-head > span { font-weight: 600; }
+.op-tools { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.op-filter { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+.op-filter select {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+/* Queued and running work. One row per job: several may be in flight now, which
+   is the whole point of the queue, so a single headline cannot describe it. */
+.job-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.job {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+.job:hover { background: var(--panel-2); }
+.job.sel { border-color: var(--line); background: var(--panel-2); }
+.job-state { color: var(--dim); min-width: 92px; }
+.job-kind { font-weight: 600; }
+.job-time { color: var(--dim); font-variant-numeric: tabular-nums; }
+.job-tail {
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.job-running .job-state { color: var(--accent); }
+.job-failed .job-state { color: var(--dire); }
+.job-done .job-state { color: var(--radiant); }
+.job-cancelled .job-state, .job-pending .job-state { color: var(--dim); }
+
 .op-log {
   margin: 0;
   max-height: 190px;
@@ -117,6 +158,12 @@ main { flex: 1; padding: 14px; }
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* Levels are the reason the log is structured: "show me only what went wrong" is
+   not expressible once the fields are flattened into a formatted string. */
+.log-line { color: var(--dim); }
+.log-warn { color: var(--warn); }
+.log-error { color: var(--dire); }
+.log-phase { color: var(--fg); opacity: 0.75; margin-top: 4px; }
 
 button.danger { border-color: #5a3237; }
 button.danger:hover:not(:disabled) { border-color: var(--dire); color: var(--dire); }

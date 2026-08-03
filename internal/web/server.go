@@ -28,7 +28,6 @@ type Server struct {
 	shell session.ShellConfig
 	addr  string
 	hub   *hub
-	ops   *ops
 
 	mu       sync.Mutex
 	sess     *session.Session // built lazily from shell.BuildScan; nil until then
@@ -43,7 +42,7 @@ type Server struct {
 // built on demand (and rebuilt after train/scout), so the UI still comes up when
 // no bundle exists yet — the user can go straight to Train.
 func New(shell session.ShellConfig, addr string) *Server {
-	s := &Server{shell: shell, addr: addr, hub: newHub(), ops: newOps()}
+	s := &Server{shell: shell, addr: addr, hub: newHub()}
 	if shell.Auto != nil {
 		// A bundle trained in the background is of no use while the server keeps
 		// serving the one it loaded at startup. Rebuilding the session picks it up,
@@ -105,7 +104,9 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	go func() {
 		<-ctx.Done()
-		s.ops.cancel()
+		// Jobs are not cancelled on shutdown: they are rows, and the queue hands an
+		// interrupted one back to be resumed next start. Killing them here would
+		// throw away a sync's remaining band for no reason.
 		shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
@@ -390,7 +391,7 @@ func (s *Server) snapshot(ring bool) stateDTO {
 		Board:  boardDTO{RadiantPicks: []int{}, RadiantBans: []int{}, DirePicks: []int{}, DireBans: []int{}},
 		Heroes: []session.Hero{},
 		Names:  map[string]string{},
-		Ops:    s.ops.dto(),
+		Ops:    s.jobsView(),
 		Status: status,
 		Auto:   autoStatus(sh.Auto),
 		Ring:   ring,

@@ -1,98 +1,169 @@
 package web
 
 import (
-	"fmt"
+	"context"
+	"encoding/json"
+	"net/http/httptest"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
+
+	"cmnet/internal/cache"
+	"cmnet/internal/jobs"
+	"cmnet/internal/session"
 )
 
-// The browser distinguishes "quietly working" from "hung" using these fields, so
-// they have to keep moving even when the log itself stops growing.
-func TestOpsDTOReportsLiveness(t *testing.T) {
-	o := newOps()
-	if d := o.dto(); d.Running != "" || d.RunningMs != 0 || d.QuietMs != 0 {
-		t.Fatalf("idle ops should report nothing running, got %+v", d)
+// newQueueServer builds a server whose operations run through a real queue over a
+// throwaway cache, plus a handler that blocks until released.
+func newQueueServer(t *testing.T) (*Server, *jobs.Queue, chan struct{}) {
+	t.Helper()
+	st, err := cache.Open(filepath.Join(t.TempDir(), "cmnet.db"))
+	if err != nil {
+		t.Fatalf("open cache: %v", err)
 	}
+	t.Cleanup(func() { st.Close() })
 
-	if !o.begin("sync", func() {}) {
-		t.Fatal("begin should claim a free slot")
+	q := jobs.New(st, jobs.Options{Workers: 2})
+	release := make(chan struct{})
+	handler := func(ctx context.Context, j cache.Job, log jobs.Log) (string, error) {
+		log(cache.LogInfo, "collect", "working")
+		select {
+		case <-release:
+			return "collected 3 drafts", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}
-	time.Sleep(20 * time.Millisecond)
+	q.Register(jobs.Spec{Kind: jobs.KindSync, Resources: []jobs.Resource{jobs.ResSyncWatermarks}, Handler: handler})
 
-	d := o.dto()
-	if d.Running != "sync" {
-		t.Errorf("running = %q, want sync", d.Running)
-	}
-	if d.RunningMs == 0 {
-		t.Error("runningMs stayed 0; the page cannot show elapsed time")
-	}
-	if d.QuietMs == 0 {
-		t.Error("quietMs stayed 0 despite no log lines")
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go q.Run(ctx)
 
-	o.append("first line")
-	if d := o.dto(); d.QuietMs > 5 {
-		t.Errorf("quietMs = %d after a fresh line, want ~0", d.QuietMs)
-	}
+	s := New(session.ShellConfig{Jobs: q}, "127.0.0.1:0")
+	return s, q, release
 }
 
-// rev must keep counting past the log cap: len(log) saturates at maxProgressLines,
-// so a UI watching the length would conclude a long sync had stopped producing
-// output while it was in fact still working.
-func TestOpsRevOutlivesTheLogCap(t *testing.T) {
-	o := newOps()
-	o.begin("sync", func() {})
-
-	for i := range maxProgressLines + 50 {
-		o.append(fmt.Sprintf("line %d", i))
+func waitRunning(t *testing.T, q *jobs.Queue, d time.Duration) cache.Job {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		for _, j := range q.Active() {
+			if j.State == cache.JobRunning {
+				return j
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	d := o.dto()
-	if len(d.Log) != maxProgressLines {
-		t.Errorf("log length = %d, want it capped at %d", len(d.Log), maxProgressLines)
-	}
-	if d.Rev != uint64(maxProgressLines+50) {
-		t.Errorf("rev = %d, want %d (it must not saturate with the log)", d.Rev, maxProgressLines+50)
-	}
-
-	before := d.Rev
-	o.append("one more")
-	if after := o.dto().Rev; after != before+1 {
-		t.Errorf("rev did not advance past the cap: %d then %d", before, after)
-	}
+	t.Fatal("no job started in time")
+	return cache.Job{}
 }
 
-// begin must reset the clocks, or a second operation inherits the first one's
-// start time and shows an elapsed time that never happened.
-func TestOpsBeginResetsClocks(t *testing.T) {
-	o := newOps()
-	o.begin("sync", func() {})
-	o.append("work")
+// The frame must say how long a job has been running and how long it has been
+// quiet: a browser that connects mid-run has no idea when it began, and without
+// the quiet timer a slow phase and a dead connection look identical.
+func TestJobsViewReportsLiveness(t *testing.T) {
+	s, q, release := newQueueServer(t)
+	defer close(release)
+
+	if _, err := s.startSync(nil); err != nil {
+		t.Fatalf("start sync: %v", err)
+	}
+	waitRunning(t, q, 3*time.Second)
 	time.Sleep(30 * time.Millisecond)
-	o.finish("done", nil)
 
-	if !o.begin("train", func() {}) {
-		t.Fatal("slot should be free after finish")
+	view := s.jobsView()
+	if view.Running != jobs.KindSync {
+		t.Fatalf("Running = %q, want %q", view.Running, jobs.KindSync)
 	}
-	d := o.dto()
-	if d.RunningMs > 15 {
-		t.Errorf("runningMs = %d on a just-started operation; the previous run's clock leaked", d.RunningMs)
+	if len(view.Active) != 1 {
+		t.Fatalf("Active has %d jobs, want 1", len(view.Active))
 	}
-	if d.Rev != 0 && len(d.Log) != 0 {
-		t.Errorf("log was not cleared for the new operation: %+v", d)
+	got := view.Active[0]
+	if got.RunningMs == 0 {
+		t.Error("RunningMs is zero, so the page cannot say how long this has been going")
+	}
+	if got.LastLine != "working" {
+		t.Errorf("LastLine = %q, want the handler's line", got.LastLine)
+	}
+	if got.Seq == 0 {
+		t.Error("Seq is zero, so the page cannot tell a quiet job from a dead stream")
 	}
 }
 
-// A second operation must be refused while one is in flight, and the refusal must
-// not disturb the running one's bookkeeping.
-func TestOpsBeginRejectsConcurrentOperation(t *testing.T) {
-	o := newOps()
-	o.begin("sync", func() {})
-	o.append("line")
+// The old shell rejected a second operation outright. The queue accepts it: that
+// is the point of the wave — collection keeps running while the user does
+// something else, and incompatible work is separated by resource, not refused.
+func TestSecondRequestIsQueuedNotRejected(t *testing.T) {
+	s, q, release := newQueueServer(t)
+	defer close(release)
 
-	if o.begin("train", func() {}) {
-		t.Fatal("a second operation was allowed to start")
+	if _, err := s.startSync(nil); err != nil {
+		t.Fatalf("first sync: %v", err)
 	}
-	if d := o.dto(); d.Running != "sync" || d.Rev != 1 {
-		t.Errorf("the running operation was disturbed by the rejected one: %+v", d)
+	waitRunning(t, q, 3*time.Second)
+
+	if _, err := s.startSync(nil); err != nil {
+		t.Fatalf("second sync was rejected instead of queued: %v", err)
+	}
+}
+
+// A job's log is paged from the database, so its history survives the page being
+// reloaded — the old in-memory []string did not.
+func TestJobLogEndpointPages(t *testing.T) {
+	s, q, release := newQueueServer(t)
+	defer close(release)
+
+	if _, err := s.startSync(nil); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	job := waitRunning(t, q, 3*time.Second)
+
+	// Wait for the first line to be flushed to storage.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if lines, err := q.Log(job.ID, 0, 10); err == nil && len(lines) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	req := httptest.NewRequest("GET", "/api/jobs/log?id="+strconv.FormatInt(job.ID, 10)+"&after=0", nil)
+	w := httptest.NewRecorder()
+	s.handleJobLog(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
+	}
+	var got struct {
+		Job   *jobDTO      `json:"job"`
+		Lines []logLineDTO `json:"lines"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Lines) == 0 {
+		t.Fatal("no log lines returned")
+	}
+	if got.Lines[0].Phase != "collect" {
+		t.Errorf("phase = %q, want the structured phase to survive to the browser", got.Lines[0].Phase)
+	}
+	if got.Lines[0].Level != cache.LogInfo {
+		t.Errorf("level = %q, want %q", got.Lines[0].Level, cache.LogInfo)
+	}
+	if got.Job == nil || got.Job.State != string(cache.JobRunning) {
+		t.Errorf("job = %+v, want the running job alongside its lines", got.Job)
+	}
+}
+
+// Without a queue the endpoints must say so rather than panic: some builds and
+// tests wire the operations directly.
+func TestOpsWithoutQueue(t *testing.T) {
+	s := New(session.ShellConfig{}, "127.0.0.1:0")
+	if _, err := s.startSync(nil); err == nil {
+		t.Error("starting a job without a queue reported success")
+	}
+	if view := s.jobsView(); view.Running != "" || len(view.Active) != 0 {
+		t.Errorf("jobsView on a queueless server = %+v, want empty", view)
 	}
 }
