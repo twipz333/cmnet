@@ -15,7 +15,19 @@ const VIZ = {
   // Categorical slots — identity, assigned in fixed order and never cycled.
   cat: ['#3987e5', '#d95926', '#199e70'],
   // Ordinal ramp — rank tiers are an ORDERED scale, so one hue, light to dark.
-  ramp: ['#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95'],
+  //
+  // Nine steps because Dota has nine medals (Herald…Immortal). Five steps meant
+  // Archon through Immortal collapsed into the same dark blue, which is exactly
+  // the end of the scale a player cares about telling apart. The steps are spaced
+  // in lightness, not hue, so the order survives greyscale and colour-vision
+  // deficiency; the lightest still clears 3:1 against the panel.
+  ramp: [
+    '#dbe9fb', '#bcd6f7', '#9ec5f4', '#7fb0f0', '#6da7ec',
+    '#4a94e9', '#3987e5', '#256abf', '#184f95',
+  ],
+  // The "nothing here" step of the calendar: darker than the surface so an empty
+  // day still reads as a cell, not as a hole in the grid.
+  empty: '#222932',
   // "Not a series": absent data and the picks-only bulk pool, which is context
   // rather than something to compare against the drafts.
   muted: '#898781',
@@ -32,6 +44,36 @@ const SOURCE_COLORS = {
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// CHART_CH is the average advance width of the value font at 12px, in pixels.
+// Used to size gutters from label text without laying anything out first; an
+// approximation is fine because it only ever adds a little slack.
+const CHART_CH = 6.6;
+
+// valueGutter returns the right pad needed for the longest value label plus the
+// gap it sits after. A fixed pad let "12 345 · 24%" run past the viewBox on the
+// longest bar and draw over the panel border.
+function valueGutter(rows) {
+  let longest = 0;
+  for (const r of rows || []) {
+    const text = r.valueLabel || String(r.value ?? '');
+    longest = Math.max(longest, text.length);
+  }
+  return Math.ceil(longest * CHART_CH) + 14;
+}
+
+// chartWidth measures the box a chart is about to be drawn into.
+//
+// Charts are authored at the container's real pixel width so nothing is scaled.
+// The element is not in the document yet when this is called, so the nearest
+// already-laid-out ancestor is measured instead; the fallback covers the case
+// where nothing has a width yet (a hidden tab).
+function chartWidth(host, fallback) {
+  let node = host;
+  while (node && !node.clientWidth) node = node.parentElement;
+  const w = node ? node.clientWidth : 0;
+  return Math.max(320, w || fallback || 720);
+}
 
 function svg(tag, attrs) {
   const n = document.createElementNS(SVG_NS, tag);
@@ -122,10 +164,12 @@ function barPath(x, y, w, h, dir) {
 // matches — two bars would invite reading them as separate populations that sum to
 // more than the day's total. Empty days are drawn as gaps rather than skipped: a
 // day the collector was not running is exactly the thing worth seeing.
-function intakeChart(daily) {
-  const W = 720, H = 190, padL = 46, padR = 10, padT = 10, padB = 26;
+function intakeChart(daily, width) {
+  // Authored at the container's real width for the same reason barsChart is: a
+  // stretched viewBox scales the type along with the marks.
+  const W = width || 720, H = 190, padL = 46, padR = 10, padT = 10, padB = 26;
   const root = svg('svg', {
-    viewBox: `0 0 ${W} ${H}`, class: 'viz', role: 'img',
+    viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'viz', role: 'img',
     'aria-label': 'Приток матчей по дням',
   });
   if (!daily || !daily.length) return root;
@@ -193,15 +237,23 @@ function intakeChart(daily) {
 // (sources) and ordinal (rank tiers) charts without a ramp ever landing on
 // nominal categories.
 function barsChart(rows, colorOf, opts) {
-  // The viewBox scales to the container, so a chart rendered in a half-width
-  // column must be authored narrow — otherwise every label is scaled down with it
-  // and the text ends up unreadably small next to the full-width charts.
+  // The width is measured, not assumed, and the viewBox is authored at exactly
+  // that many units — so one SVG unit is one CSS pixel and a 12px label renders
+  // at 12px in every panel.
+  //
+  // Before this, the viewBox was a fixed 720 stretched to the container: on a
+  // 1900px screen that is a 2.6x scale, so a 12px label came out at ~31px and a
+  // ten-row chart stood 700px tall. The bars grew, and the type grew with them.
   const o = opts || {};
   const W = o.width || 720, rowH = o.rowH || 26, padL = o.padL || 130;
-  const padR = o.padR || 56, padT = 6;
+  const padT = 6;
+  // The right pad has to fit the longest value label ("12 345 · 24%"), which the
+  // caller cannot know in advance. Measured from the strings themselves; the
+  // fallback keeps a caller-supplied value honoured.
+  const padR = o.padR || valueGutter(rows);
   const H = padT * 2 + rows.length * rowH;
   const root = svg('svg', {
-    viewBox: `0 0 ${W} ${H}`, class: 'viz', role: 'img',
+    viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'viz', role: 'img',
     'aria-label': 'Распределение',
   });
   if (!rows.length) return root;
@@ -230,6 +282,124 @@ function barsChart(rows, colorOf, opts) {
     root.append(val);
   });
   return root;
+}
+
+// heatmapChart lays a year of collection out the way a contribution graph does:
+// one square per day, weeks running left to right, weekdays top to bottom.
+//
+// Why this and not another bar chart: the day histograms answer "how much on this
+// day", one day at a time. Laid out as a calendar the same numbers answer a
+// different question at a glance — which stretches are covered, where the gaps
+// are, whether collection has a weekly rhythm. That is a shape, and a shape is
+// what a row of 300 thin bars cannot show.
+//
+// Intensity is a sequential ramp on the SAME hue as the rest of the ordinal
+// scales: volume is ordered data, so the encoding is lightness, not hue.
+function heatmapChart(daily, width, opts) {
+  const o = opts || {};
+  const cell = o.cell || 13, gap = 3, padL = 30, padT = 18, padB = 6;
+  const step = cell + gap;
+
+  const byDay = new Map();
+  let max = 0;
+  for (const d of daily || []) {
+    const value = o.pick ? o.pick(d) : d.matches;
+    byDay.set(dayKey(d.day), value);
+    if (value > max) max = value;
+  }
+
+  // The grid spans whole weeks: a calendar that starts mid-column reads as a bug.
+  const days = (daily || []).map((d) => d.day).sort((a, b) => a - b);
+  const W = width || 720;
+  const root = svg('svg', {
+    viewBox: `0 0 ${W} 10`, width: W, height: 10, class: 'viz', role: 'img',
+    'aria-label': 'Календарь сбора',
+  });
+  if (!days.length) return root;
+
+  const first = startOfWeek(new Date(days[0] * 1000));
+  const last = new Date(days[days.length - 1] * 1000);
+  const weeks = Math.max(1, Math.ceil((last - first) / (7 * 86400 * 1000)) + 1);
+  const H = padT + 7 * step + padB;
+  root.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  root.setAttribute('height', H);
+
+  const dayNames = ['пн', '', 'ср', '', 'пт', '', 'вс'];
+  for (let r = 0; r < 7; r++) {
+    if (!dayNames[r]) continue;
+    const t = svg('text', {
+      x: padL - 6, y: padT + r * step + cell - 2, class: 'viz-tick', 'text-anchor': 'end',
+    });
+    t.textContent = dayNames[r];
+    root.append(t);
+  }
+
+  let lastMonth = -1;
+  for (let w = 0; w < weeks; w++) {
+    for (let r = 0; r < 7; r++) {
+      const d = new Date(first.getTime() + (w * 7 + r) * 86400 * 1000);
+      if (d > last) continue;
+      const key = dayKey(Math.floor(d.getTime() / 1000));
+      const v = byDay.get(key);
+      const x = padL + w * step, y = padT + r * step;
+
+      if (r === 0 && d.getMonth() !== lastMonth) {
+        lastMonth = d.getMonth();
+        const label = svg('text', { x, y: padT - 6, class: 'viz-tick' });
+        label.textContent = d.toLocaleDateString('ru-RU', { month: 'short' });
+        root.append(label);
+      }
+
+      // A day with no data and a day with zero are drawn the same on purpose:
+      // both mean "nothing arrived", and inventing a third state for the
+      // difference would be a distinction the collector does not record.
+      const rect = svg('rect', {
+        x, y, width: cell, height: cell, rx: 3,
+        fill: heatColor(v || 0, max), class: 'viz-mark',
+      });
+      const dateLabel = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+      root.append(hoverable(rect, v ? [dateLabel, `${o.unit || 'матчей'}: ${num(v)}`]
+        : [dateLabel, 'ничего не собрано']));
+    }
+  }
+  return root;
+}
+
+// heatColor maps a value onto the ordinal ramp, with a distinct "nothing" step so
+// an empty day is visibly empty rather than merely pale.
+function heatColor(v, max) {
+  if (!v) return VIZ.empty;
+  const idx = Math.min(VIZ.ramp.length - 1,
+    Math.max(0, Math.round((v / Math.max(1, max)) * (VIZ.ramp.length - 1))));
+  return VIZ.ramp[idx];
+}
+
+function dayKey(unix) {
+  const d = new Date(unix * 1000);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+// startOfWeek returns the Monday of the week containing d, at local midnight.
+function startOfWeek(d) {
+  const out = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const shift = (out.getDay() + 6) % 7; // Monday-first, unlike JS's Sunday-first
+  out.setDate(out.getDate() - shift);
+  return out;
+}
+
+// heatLegend is the "меньше → больше" strip a calendar needs: the squares carry
+// no axis, so the scale has to be stated somewhere.
+function heatLegend() {
+  const box = el('div', 'viz-legend');
+  box.append(el('span', 'viz-legend-item', 'меньше'));
+  const strip = svg('svg', { width: (VIZ.ramp.length + 1) * 14, height: 12, class: 'viz-swatch-strip' });
+  strip.append(svg('rect', { x: 0, y: 1, width: 11, height: 11, rx: 3, fill: VIZ.empty }));
+  VIZ.ramp.forEach((c, i) => {
+    strip.append(svg('rect', { x: (i + 1) * 14, y: 1, width: 11, height: 11, rx: 3, fill: c }));
+  });
+  box.append(strip);
+  box.append(el('span', 'viz-legend-item', 'больше'));
+  return box;
 }
 
 // niceTicks returns round gridline values up to max, aiming for about `count`
@@ -332,10 +502,22 @@ function statTile(label, value, why) {
   return box;
 }
 
+// lastCorpus keeps the payload so a resize can repaint without refetching. The
+// charts are authored at a measured pixel width, so a window resize genuinely
+// needs new geometry rather than a CSS rescale.
+let lastCorpus = null;
+
 // renderCorpus paints the whole "what we collected" section.
 function renderCorpus(data) {
   const host = $('corpus');
+  lastCorpus = data;
   host.textContent = '';
+  // Measured once per repaint: every chart in this section shares the column.
+  const fullW = chartWidth(host);
+  // Half-width columns on a wide screen, full width when the grid collapses to
+  // one column. Measured rather than fixed, so the labels stay the same size as
+  // in every other panel.
+  const halfW = fullW >= 760 ? Math.floor((fullW - 14) / 2) : fullW;
 
   if (!data || data.error) {
     host.append(el('div', 'why', 'кэш не прочитан: ' + ((data && data.error) || 'нет данных')));
@@ -374,7 +556,7 @@ function renderCorpus(data) {
     { color: VIZ.cat[0], label: 'CM-драфты (с банами)' },
     { color: VIZ.muted, label: 'остальные матчи' },
   ]));
-  played.append(intakeChart(c.daily));
+  played.append(intakeChart(c.daily, fullW));
   played.append(tableView('Показать таблицей', ['День игры', 'Матчей', 'CM-драфтов'],
     (c.daily || []).map((d) => [dayLabel(d.day), num(d.matches), num(d.cmDrafts)])));
   host.append(played);
@@ -389,10 +571,33 @@ function renderCorpus(data) {
     { color: VIZ.cat[0], label: 'CM-драфты (с банами)' },
     { color: VIZ.muted, label: 'остальные матчи' },
   ]));
-  fetched.append(intakeChart(c.fetched));
+  fetched.append(intakeChart(c.fetched, fullW));
   fetched.append(tableView('Показать таблицей', ['День загрузки', 'Матчей', 'CM-драфтов'],
     (c.fetched || []).map((d) => [dayLabel(d.day), num(d.matches), num(d.cmDrafts)])));
   host.append(fetched);
+
+  // --- the corpus as a shape rather than a row of bars
+  const calendar = el('div', 'panel');
+  calendar.append(el('h2', null, 'Календарь сбора'));
+  calendar.append(el('p', 'why',
+    'Те же дни, что и на гистограммах выше, но разложенные по неделям: сразу видно ' +
+    'сплошные периоды, дыры и ритм. Насыщенность клетки — сколько матчей за этот день ' +
+    'попало в кэш.'));
+  calendar.append(heatLegend());
+  const calGrid = el('div', 'grid-2');
+
+  const calPlayed = el('div');
+  calPlayed.append(el('h3', null, 'По дате игры'));
+  calPlayed.append(heatmapChart(c.daily, halfW));
+  calGrid.append(calPlayed);
+
+  const calFetched = el('div');
+  calFetched.append(el('h3', null, 'По дате загрузки'));
+  calFetched.append(heatmapChart(c.fetched, halfW));
+  calGrid.append(calFetched);
+
+  calendar.append(calGrid);
+  host.append(calendar);
 
   // --- sources
   const bySource = el('div', 'panel');
@@ -410,7 +615,7 @@ function renderCorpus(data) {
   // Colour follows the SOURCE, not its position in the list: the rows are ordered
   // by size, so an index-based palette would repaint bulk the day public-cm
   // overtakes it — and a reader who learned "green is public-cm" would be misled.
-  bySource.append(barsChart(srcRows, (r) => SOURCE_COLORS[r.label] || VIZ.muted));
+  bySource.append(barsChart(srcRows, (r) => SOURCE_COLORS[r.label] || VIZ.muted, { width: fullW }));
   bySource.append(tableView('Показать таблицей', ['Источник', 'Матчей', 'CM-драфтов'],
     (c.sources || []).map((s) => [s.source, num(s.matches), num(s.cmDrafts)])));
   host.append(bySource);
@@ -433,9 +638,12 @@ function renderCorpus(data) {
   const known = rankRows.filter((r) => r.tier >= 0).sort((a, b) => a.tier - b.tier);
   byRank.append(barsChart(rankRows, (r) => {
     if (r.tier < 0) return VIZ.muted;
-    const idx = known.findIndex((k) => k.tier === r.tier);
-    return VIZ.ramp[Math.min(VIZ.ramp.length - 1, Math.max(0, idx))];
-  }));
+    // Indexed by the tier's own place on the medal scale, not by its position in
+    // this cache's list: a bracket nobody collected must not shift the colour of
+    // the ones around it.
+    const idx = Math.max(0, Math.min(VIZ.ramp.length - 1, Math.floor(r.tier / 10) - 1));
+    return VIZ.ramp[idx];
+  }, { width: fullW }));
   byRank.append(tableView('Показать таблицей', ['Ранг', 'Матчей'],
     rankRows.map((r) => [r.label, num(r.value)])));
   host.append(byRank);
@@ -448,7 +656,7 @@ function renderCorpus(data) {
     'а сырая частота — полезно как проверка, что собралось то, что ожидалось.'));
   const grid = el('div', 'grid-2');
 
-  const half = { width: 360, padL: 108, padR: 52, rowH: 22 };
+  const half = { width: halfW, padL: 108, rowH: 22 };
 
   const picks = el('div');
   picks.append(el('h3', null, 'Чаще всего пикают'));
@@ -509,6 +717,21 @@ function spanLabel(from, to) {
 // --- loading ----------------------------------------------------------------
 
 let corpusLoading = false;
+
+// Charts are drawn at a measured pixel width, so a resize needs new geometry
+// rather than a CSS rescale. Debounced: a drag fires this continuously, and
+// repainting the whole section per frame is wasteful for something nobody reads
+// mid-drag.
+let corpusResizeTimer = null;
+window.addEventListener('resize', () => {
+  if (!lastCorpus) return;
+  if (corpusResizeTimer) clearTimeout(corpusResizeTimer);
+  corpusResizeTimer = setTimeout(() => {
+    corpusResizeTimer = null;
+    const host = document.getElementById('corpus');
+    if (host && host.clientWidth) renderCorpus(lastCorpus);
+  }, 150);
+});
 
 async function loadCorpus() {
   if (corpusLoading) return;
