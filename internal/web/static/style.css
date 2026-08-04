@@ -393,6 +393,14 @@ code { font: 12px ui-monospace, Consolas, monospace; color: var(--accent); }
    drawn through drawInto(), which measures the box it is actually going into. */
 .viz { max-width: 100%; height: auto; display: block; margin-top: 4px; overflow: visible; }
 
+/* A chart with a natural size the column cannot always give it (the calendar:
+   weeks x cell) scrolls sideways instead of being squeezed — squeezing shrinks the
+   type, and clipping would drop weeks off the end without saying so. max-width is
+   cancelled inside, or the SVG would shrink to the scroll box and there would be
+   nothing to scroll. */
+.viz-scroll { max-width: 100%; overflow-x: auto; }
+.viz-scroll .viz { max-width: none; }
+
 /* The calendar's scale strip: swatches only, no text between them. */
 .viz-swatch-strip { vertical-align: middle; }
 

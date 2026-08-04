@@ -68,11 +68,25 @@ function valueGutter(rows) {
 // If the element itself has no width yet the nearest already-laid-out ancestor is
 // measured instead; the fallback covers the case where nothing has a width at all
 // (a hidden tab).
+//
+// The padding is subtracted: clientWidth INCLUDES it, but a child box is laid out
+// inside it, so a panel with 14px of side padding hands a chart 28px it does not
+// have — and `max-width: 100%` then scales the SVG, type included, to fit. Small,
+// but it is the same bug this whole path exists to avoid.
+//
+// A measured width is used as measured. Only the fallback gets a floor, because
+// only the fallback is a guess: forcing a minimum onto a real 280px column would
+// re-create the overflow it is meant to prevent.
 function chartWidth(host, fallback) {
   let node = host;
   while (node && !node.clientWidth) node = node.parentElement;
-  const w = node ? node.clientWidth : 0;
-  return Math.max(320, w || fallback || 720);
+  if (node) {
+    const cs = window.getComputedStyle(node);
+    const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    const w = Math.floor(node.clientWidth - pad);
+    if (w > 0) return Math.max(120, w);
+  }
+  return Math.max(320, fallback || 720);
 }
 
 // drawInto builds a chart at the width of the box it is going into, and only then
@@ -90,6 +104,20 @@ function drawInto(host, build) {
   const node = build(chartWidth(host));
   host.append(node);
   return node;
+}
+
+// drawScrollable is drawInto for a chart whose content has a natural size the
+// container cannot always satisfy — the calendar, whose width is a fixed number of
+// weeks times whatever the cell shrank to.
+//
+// The chart is drawn into a scroll box rather than being squeezed: `max-width` on
+// the SVG would shrink the type again, and clipping would silently drop weeks off
+// the end. In the ordinary case the cell fits and no scrollbar appears.
+function drawScrollable(host, build) {
+  const box = el('div', 'viz-scroll');
+  host.append(box);
+  box.append(build(chartWidth(box)));
+  return box;
 }
 
 function svg(tag, attrs) {
@@ -353,21 +381,33 @@ function heatmapChart(daily, width, opts) {
 
   const first = startOfWeek(new Date(days[0] * 1000));
   const last = new Date(days[days.length - 1] * 1000);
-  const weeks = Math.max(1, Math.ceil((last - first) / (7 * 86400 * 1000)) + 1);
+  // Counted between the two weeks' Mondays, so the answer is a whole number of
+  // weeks. Rounding a duration instead (ceil of last-minus-first) added a phantom
+  // column whenever the last day was not itself a Monday, which shrank every cell
+  // to make room for nothing.
+  const weeks = Math.max(1,
+    Math.round((startOfWeek(last) - first) / (7 * 86400 * 1000)) + 1);
 
   // The cell is sized from the room there actually is, not fixed at 13px. A month
   // of collection at 13px is a 130px postage stamp sitting in a 450px column —
-  // which is what "the charts are tiny" meant here. Floor keeps it legible, ceiling
-  // keeps a three-week cache from turning into wall tiles.
+  // which is what "the charts are tiny" meant here. The ceiling keeps a three-week
+  // cache from turning into wall tiles; the floor is low because a year of data in
+  // a narrow column has to fit somewhere, and a small cell still reads as a
+  // calendar where a scrollbar reads as a nuisance.
   const cell = o.cell
-    || Math.max(11, Math.min(24, Math.floor((W - padL - 4) / weeks) - gap));
+    || Math.max(6, Math.min(24, Math.floor((W - padL - 14) / weeks) - gap));
   const step = cell + gap;
   const H = padT + 7 * step + padB;
-  // The box is the grid, not the column. A few weeks of data at the maximum cell
-  // size does not fill a wide column, and an SVG that claims the whole width would
-  // put the calendar in the corner of a large empty rectangle — plus the month
-  // labels need a little room past the last week.
-  const boxW = Math.min(W, padL + weeks * step + 14);
+  // The box is the grid, not the column: a few weeks at the maximum cell size do
+  // not fill a wide column, and an SVG claiming the whole width would sit the
+  // calendar in the corner of a large empty rectangle. The month labels need a
+  // little room past the last week.
+  //
+  // It is NOT clamped to W. When even the smallest cell does not fit — years of
+  // data in a narrow column — the box stays as wide as the calendar is and the
+  // scroll box around it takes over; clamping here would draw the last weeks
+  // outside the viewBox instead.
+  const boxW = padL + weeks * step + 14;
   const root = svg('svg', {
     viewBox: `0 0 ${boxW} ${H}`, width: boxW, height: H, class: 'viz', role: 'img',
     'aria-label': 'Календарь сбора',
@@ -386,7 +426,10 @@ function heatmapChart(daily, width, opts) {
   let lastMonth = -1;
   for (let w = 0; w < weeks; w++) {
     for (let r = 0; r < 7; r++) {
-      const d = new Date(first.getTime() + (w * 7 + r) * 86400 * 1000);
+      // Calendar arithmetic, not 86400000 * n: a day is not always 24 hours, and
+      // adding milliseconds across a daylight-saving change lands on 23:00 the day
+      // before — which keys the cell to the wrong date.
+      const d = addDays(first, w * 7 + r);
       if (d > last) continue;
       const key = dayKey(Math.floor(d.getTime() / 1000));
       const v = byDay.get(key);
@@ -426,6 +469,12 @@ function heatColor(v, max) {
 function dayKey(unix) {
   const d = new Date(unix * 1000);
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+// addDays returns local midnight n days after d, over a daylight-saving change
+// included: Date normalises an out-of-range day-of-month itself.
+function addDays(d, n) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 }
 
 // startOfWeek returns the Monday of the week containing d, at local midnight.
@@ -649,8 +698,8 @@ function renderCorpus(data) {
   host.append(calendar);
   // Measured per column, not per panel: grid-2 may be two columns here and one
   // when the window is narrow, and only the laid-out column knows which.
-  drawInto(calPlayed, (w) => heatmapChart(c.daily, w));
-  drawInto(calFetched, (w) => heatmapChart(c.fetched, w));
+  drawScrollable(calPlayed, (w) => heatmapChart(c.daily, w));
+  drawScrollable(calFetched, (w) => heatmapChart(c.fetched, w));
 
   // --- sources
   const bySource = el('div', 'panel');
