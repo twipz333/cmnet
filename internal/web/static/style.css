@@ -386,7 +386,11 @@ code { font: 12px ui-monospace, Consolas, monospace; color: var(--accent); }
    must render at its own size. `width: 100%` here is what made a 720-unit viewBox
    stretch to 1900px — a 2.6x scale applied to the type as much as to the bars, so
    a 12px label came out at ~31px. max-width keeps it from overflowing if the
-   container shrinks between a repaint and the debounced resize. */
+   container shrinks between a repaint and the debounced resize.
+
+   It scales BOTH ways, which is the other half of the same bug: a chart authored
+   wider than its box is shrunk here, type included. That is why every chart is
+   drawn through drawInto(), which measures the box it is actually going into. */
 .viz { max-width: 100%; height: auto; display: block; margin-top: 4px; overflow: visible; }
 
 /* The calendar's scale strip: swatches only, no text between them. */
@@ -544,10 +548,13 @@ code { font: 12px ui-monospace, Consolas, monospace; color: var(--accent); }
   #corpus { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
   /* The headline tiles and the two day-histograms are the width of the screen;
      the rest pairs up. Explicit rather than automatic: these are the panels whose
-     x-axis is a month of days, and halving them makes the ticks illegible. */
+     x-axis is a month of days, and halving them makes the ticks illegible.
+
+     Marked with a class rather than counted with :nth-of-type — that counts
+     ELEMENTS of the type, not elements matching the class, so the stats row being
+     the first div silently shifted the count by one and spanned the wrong panel. */
   #corpus > .stats-row,
-  #corpus > .panel:nth-of-type(1),
-  #corpus > .panel:nth-of-type(2) { grid-column: 1 / -1; }
+  #corpus > .panel.wide { grid-column: 1 / -1; }
 }
 
 /* Very wide: cap the text column so a maximised window does not produce

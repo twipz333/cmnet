@@ -65,14 +65,31 @@ function valueGutter(rows) {
 // chartWidth measures the box a chart is about to be drawn into.
 //
 // Charts are authored at the container's real pixel width so nothing is scaled.
-// The element is not in the document yet when this is called, so the nearest
-// already-laid-out ancestor is measured instead; the fallback covers the case
-// where nothing has a width yet (a hidden tab).
+// If the element itself has no width yet the nearest already-laid-out ancestor is
+// measured instead; the fallback covers the case where nothing has a width at all
+// (a hidden tab).
 function chartWidth(host, fallback) {
   let node = host;
   while (node && !node.clientWidth) node = node.parentElement;
   const w = node ? node.clientWidth : 0;
   return Math.max(320, w || fallback || 720);
+}
+
+// drawInto builds a chart at the width of the box it is going into, and only then
+// puts it there.
+//
+// Measuring an ancestor is not good enough. On a wide screen the Data screen is a
+// two-column grid, so measuring the grid handed every chart the full 1900px while
+// the panel it landed in was half that — and `max-width: 100%` then scaled the
+// whole SVG, type included, down by half. That is the same "the labels are the
+// wrong size" bug as before, just from the other direction.
+//
+// The host must already be in the document: its width is the thing being asked
+// for. Callers therefore append the panel first and fill it here.
+function drawInto(host, build) {
+  const node = build(chartWidth(host));
+  host.append(node);
+  return node;
 }
 
 function svg(tag, attrs) {
@@ -167,7 +184,14 @@ function barPath(x, y, w, h, dir) {
 function intakeChart(daily, width) {
   // Authored at the container's real width for the same reason barsChart is: a
   // stretched viewBox scales the type along with the marks.
-  const W = width || 720, H = 190, padL = 46, padR = 10, padT = 10, padB = 26;
+  //
+  // The height follows the width instead of being fixed: a 1900px chart 190px tall
+  // is a strip, and the day-to-day differences it exists to show flatten out in it.
+  // Clamped at both ends so a narrow panel keeps a usable plot and a maximised
+  // window does not hand one histogram half the screen.
+  const W = width || 720;
+  const H = Math.round(Math.max(190, Math.min(300, W * 0.16)));
+  const padL = 46, padR = 10, padT = 10, padB = 26;
   const root = svg('svg', {
     viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'viz', role: 'img',
     'aria-label': 'Приток матчей по дням',
@@ -177,7 +201,10 @@ function intakeChart(daily, width) {
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const max = Math.max(1, ...daily.map((d) => d.matches));
   const step = plotW / daily.length;
-  const barW = Math.min(24, Math.max(2, step - 3)); // never fill the slot: the rest is air
+  // Never fill the slot: the rest is air. The cap grows with the chart, or a wide
+  // month of data turns into 30 hairlines lost in white space.
+  const barCap = Math.max(24, Math.round(W / 48));
+  const barW = Math.min(barCap, Math.max(2, step - 3));
 
   // Gridlines and ticks: hairline, solid, one step off the surface, and rounded to
   // numbers a person would say out loud.
@@ -245,7 +272,12 @@ function barsChart(rows, colorOf, opts) {
   // 1900px screen that is a 2.6x scale, so a 12px label came out at ~31px and a
   // ten-row chart stood 700px tall. The bars grew, and the type grew with them.
   const o = opts || {};
-  const W = o.width || 720, rowH = o.rowH || 26, padL = o.padL || 130;
+  const W = o.width || 720;
+  // Rows breathe a little on a wide chart: at 1900px a 26px row leaves a 12px
+  // label floating in a very long line, which is what makes a correctly-sized
+  // chart still read as "tiny". Bounded, and an explicit rowH always wins.
+  const rowH = o.rowH || (W >= 1100 ? 32 : 26);
+  const padL = o.padL || 130;
   const padT = 6;
   // The right pad has to fit the longest value label ("12 345 · 24%"), which the
   // caller cannot know in advance. Measured from the strings themselves; the
@@ -260,7 +292,9 @@ function barsChart(rows, colorOf, opts) {
 
   const plotW = W - padL - padR;
   const max = Math.max(1, ...rows.map((r) => r.value));
-  const barH = Math.min(18, rowH - 8);
+  // Tied to the row rather than pinned, so a taller row is a taller bar and not
+  // an 18px bar with more air around it.
+  const barH = Math.min(Math.round(rowH * 0.7), rowH - 8);
 
   rows.forEach((r, i) => {
     const y = padT + i * rowH + (rowH - barH) / 2;
@@ -297,8 +331,7 @@ function barsChart(rows, colorOf, opts) {
 // scales: volume is ordered data, so the encoding is lightness, not hue.
 function heatmapChart(daily, width, opts) {
   const o = opts || {};
-  const cell = o.cell || 13, gap = 3, padL = 30, padT = 18, padB = 6;
-  const step = cell + gap;
+  const gap = 3, padL = 30, padT = 18, padB = 6;
 
   const byDay = new Map();
   let max = 0;
@@ -311,18 +344,34 @@ function heatmapChart(daily, width, opts) {
   // The grid spans whole weeks: a calendar that starts mid-column reads as a bug.
   const days = (daily || []).map((d) => d.day).sort((a, b) => a - b);
   const W = width || 720;
-  const root = svg('svg', {
-    viewBox: `0 0 ${W} 10`, width: W, height: 10, class: 'viz', role: 'img',
-    'aria-label': 'Календарь сбора',
-  });
-  if (!days.length) return root;
+  if (!days.length) {
+    return svg('svg', {
+      viewBox: `0 0 ${W} 10`, width: W, height: 10, class: 'viz', role: 'img',
+      'aria-label': 'Календарь сбора',
+    });
+  }
 
   const first = startOfWeek(new Date(days[0] * 1000));
   const last = new Date(days[days.length - 1] * 1000);
   const weeks = Math.max(1, Math.ceil((last - first) / (7 * 86400 * 1000)) + 1);
+
+  // The cell is sized from the room there actually is, not fixed at 13px. A month
+  // of collection at 13px is a 130px postage stamp sitting in a 450px column —
+  // which is what "the charts are tiny" meant here. Floor keeps it legible, ceiling
+  // keeps a three-week cache from turning into wall tiles.
+  const cell = o.cell
+    || Math.max(11, Math.min(24, Math.floor((W - padL - 4) / weeks) - gap));
+  const step = cell + gap;
   const H = padT + 7 * step + padB;
-  root.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  root.setAttribute('height', H);
+  // The box is the grid, not the column. A few weeks of data at the maximum cell
+  // size does not fill a wide column, and an SVG that claims the whole width would
+  // put the calendar in the corner of a large empty rectangle — plus the month
+  // labels need a little room past the last week.
+  const boxW = Math.min(W, padL + weeks * step + 14);
+  const root = svg('svg', {
+    viewBox: `0 0 ${boxW} ${H}`, width: boxW, height: H, class: 'viz', role: 'img',
+    'aria-label': 'Календарь сбора',
+  });
 
   const dayNames = ['пн', '', 'ср', '', 'пт', '', 'вс'];
   for (let r = 0; r < 7; r++) {
@@ -512,12 +561,11 @@ function renderCorpus(data) {
   const host = $('corpus');
   lastCorpus = data;
   host.textContent = '';
-  // Measured once per repaint: every chart in this section shares the column.
-  const fullW = chartWidth(host);
-  // Half-width columns on a wide screen, full width when the grid collapses to
-  // one column. Measured rather than fixed, so the labels stay the same size as
-  // in every other panel.
-  const halfW = fullW >= 760 ? Math.floor((fullW - 14) / 2) : fullW;
+  // No width is computed up front any more. This section is a grid on a wide
+  // screen, so its panels are narrower than it is, and the sub-columns inside a
+  // panel are narrower again — a single number measured here was wrong for every
+  // chart by a factor of two. Each chart is drawn through drawInto, after its own
+  // box is in the document and can be measured.
 
   if (!data || data.error) {
     host.append(el('div', 'why', 'кэш не прочитан: ' + ((data && data.error) || 'нет данных')));
@@ -547,7 +595,8 @@ function renderCorpus(data) {
   // gap there is time the app was closed. One sync pass pulls games spread over
   // weeks, so the two charts look nothing alike — labelling either as "intake"
   // would be plain wrong.
-  const played = el('div', 'panel');
+  // "wide": a month of days on the x-axis needs the whole row on a wide screen.
+  const played = el('div', 'panel wide');
   played.append(el('h2', null, 'Матчи по дате игры'));
   played.append(el('p', 'why',
     'Чем покрыто окно обучения. Провал — день, по которому в кэше почти нет игр: ' +
@@ -556,12 +605,14 @@ function renderCorpus(data) {
     { color: VIZ.cat[0], label: 'CM-драфты (с банами)' },
     { color: VIZ.muted, label: 'остальные матчи' },
   ]));
-  played.append(intakeChart(c.daily, fullW));
+  // In the document first, drawn second: the panel has to have a width before a
+  // chart can be authored at it.
+  host.append(played);
+  drawInto(played, (w) => intakeChart(c.daily, w));
   played.append(tableView('Показать таблицей', ['День игры', 'Матчей', 'CM-драфтов'],
     (c.daily || []).map((d) => [dayLabel(d.day), num(d.matches), num(d.cmDrafts)])));
-  host.append(played);
 
-  const fetched = el('div', 'panel');
+  const fetched = el('div', 'panel wide');
   fetched.append(el('h2', null, 'Загружено в кэш по дням'));
   fetched.append(el('p', 'why',
     'Когда матчи реально попадали в кэш. Пустой день — в этот день не сохранилось ' +
@@ -571,10 +622,10 @@ function renderCorpus(data) {
     { color: VIZ.cat[0], label: 'CM-драфты (с банами)' },
     { color: VIZ.muted, label: 'остальные матчи' },
   ]));
-  fetched.append(intakeChart(c.fetched, fullW));
+  host.append(fetched);
+  drawInto(fetched, (w) => intakeChart(c.fetched, w));
   fetched.append(tableView('Показать таблицей', ['День загрузки', 'Матчей', 'CM-драфтов'],
     (c.fetched || []).map((d) => [dayLabel(d.day), num(d.matches), num(d.cmDrafts)])));
-  host.append(fetched);
 
   // --- the corpus as a shape rather than a row of bars
   const calendar = el('div', 'panel');
@@ -588,16 +639,18 @@ function renderCorpus(data) {
 
   const calPlayed = el('div');
   calPlayed.append(el('h3', null, 'По дате игры'));
-  calPlayed.append(heatmapChart(c.daily, halfW));
   calGrid.append(calPlayed);
 
   const calFetched = el('div');
   calFetched.append(el('h3', null, 'По дате загрузки'));
-  calFetched.append(heatmapChart(c.fetched, halfW));
   calGrid.append(calFetched);
 
   calendar.append(calGrid);
   host.append(calendar);
+  // Measured per column, not per panel: grid-2 may be two columns here and one
+  // when the window is narrow, and only the laid-out column knows which.
+  drawInto(calPlayed, (w) => heatmapChart(c.daily, w));
+  drawInto(calFetched, (w) => heatmapChart(c.fetched, w));
 
   // --- sources
   const bySource = el('div', 'panel');
@@ -615,10 +668,11 @@ function renderCorpus(data) {
   // Colour follows the SOURCE, not its position in the list: the rows are ordered
   // by size, so an index-based palette would repaint bulk the day public-cm
   // overtakes it — and a reader who learned "green is public-cm" would be misled.
-  bySource.append(barsChart(srcRows, (r) => SOURCE_COLORS[r.label] || VIZ.muted, { width: fullW }));
+  host.append(bySource);
+  drawInto(bySource, (w) => barsChart(srcRows,
+    (r) => SOURCE_COLORS[r.label] || VIZ.muted, { width: w }));
   bySource.append(tableView('Показать таблицей', ['Источник', 'Матчей', 'CM-драфтов'],
     (c.sources || []).map((s) => [s.source, num(s.matches), num(s.cmDrafts)])));
-  host.append(bySource);
 
   // --- rank mix
   const byRank = el('div', 'panel');
@@ -633,20 +687,19 @@ function renderCorpus(data) {
     tip: [tierLabel(r.tier), `матчей: ${num(r.matches)}`],
     tier: r.tier,
   }));
+  host.append(byRank);
   // The ramp is ordered by TIER, not by bar length: rank is an ordered scale, and
   // colouring by size would double-encode the length the bar already shows.
-  const known = rankRows.filter((r) => r.tier >= 0).sort((a, b) => a.tier - b.tier);
-  byRank.append(barsChart(rankRows, (r) => {
+  drawInto(byRank, (w) => barsChart(rankRows, (r) => {
     if (r.tier < 0) return VIZ.muted;
     // Indexed by the tier's own place on the medal scale, not by its position in
     // this cache's list: a bracket nobody collected must not shift the colour of
     // the ones around it.
     const idx = Math.max(0, Math.min(VIZ.ramp.length - 1, Math.floor(r.tier / 10) - 1));
     return VIZ.ramp[idx];
-  }, { width: fullW }));
+  }, { width: w }));
   byRank.append(tableView('Показать таблицей', ['Ранг', 'Матчей'],
     rankRows.map((r) => [r.label, num(r.value)])));
-  host.append(byRank);
 
   // --- meta as this cache sees it
   const meta = el('div', 'panel');
@@ -656,25 +709,28 @@ function renderCorpus(data) {
     'а сырая частота — полезно как проверка, что собралось то, что ожидалось.'));
   const grid = el('div', 'grid-2');
 
-  const half = { width: halfW, padL: 108, rowH: 22 };
-
   const picks = el('div');
   picks.append(el('h3', null, 'Чаще всего пикают'));
-  picks.append(barsChart((c.topPicks || []).map((h) => ({
-    label: h.name, value: h.count, tip: [h.name, `пиков: ${num(h.count)}`],
-  })), () => VIZ.cat[0], half));
   grid.append(picks);
 
   const bans = el('div');
   bans.append(el('h3', null, 'Чаще всего банят'));
-  bans.append(barsChart((c.topBans || []).map((h) => ({
-    label: h.name, value: h.count, tip: [h.name, `банов: ${num(h.count)}`],
-  })), () => VIZ.cat[1], half));
   grid.append(bans);
 
   meta.append(grid);
-  meta.append(tableView('Показать таблицей', ['Герой', 'Пиков', 'Банов'], heroTableRows(c)));
   host.append(meta);
+
+  // rowH is left to the chart: these two sit in a column whose width depends on
+  // the window, and the row height that suits it follows from that.
+  const half = (w) => ({ width: w, padL: 108 });
+  drawInto(picks, (w) => barsChart((c.topPicks || []).map((h) => ({
+    label: h.name, value: h.count, tip: [h.name, `пиков: ${num(h.count)}`],
+  })), () => VIZ.cat[0], half(w)));
+  drawInto(bans, (w) => barsChart((c.topBans || []).map((h) => ({
+    label: h.name, value: h.count, tip: [h.name, `банов: ${num(h.count)}`],
+  })), () => VIZ.cat[1], half(w)));
+
+  meta.append(tableView('Показать таблицей', ['Герой', 'Пиков', 'Банов'], heroTableRows(c)));
 }
 
 // heroTableRows merges the two top lists into one table, so the twin view holds
@@ -726,7 +782,10 @@ let corpusLoading = false;
 // as empty slots, never skipped — a pause is the thing worth seeing, and a chart
 // that closes the gap makes a stalled source look busy.
 function trafficChart(samples, width) {
-  const W = width || 720, H = 46, padT = 2, padB = 10;
+  const W = width || 720, padT = 2, padB = 10;
+  // A sparkline, so it stays short — but a 46px strip 1900px wide is a line, not a
+  // chart, and the spikes it exists to show have nowhere to go.
+  const H = Math.round(Math.max(46, Math.min(76, W * 0.05)));
   const root = svg('svg', {
     viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'viz', role: 'img',
     'aria-label': 'Запросы по секундам',
@@ -846,8 +905,13 @@ const POS_TITLE = {
   5: 'Позиция 5 — хардсаппорт',
 };
 
+// Kept for the same reason lastCorpus is: a resize needs the payload again, and
+// refetching it to change a geometry constant would be silly.
+let lastCorpusMeta = null;
+
 function renderCorpusMeta(data) {
   const host = $('corpus-meta');
+  lastCorpusMeta = data;
   host.textContent = '';
   if (!data || data.error) {
     host.append(el('div', 'why', 'нет данных: ' + ((data && data.error) || '')));
@@ -921,13 +985,13 @@ function renderCorpusMeta(data) {
     const banPanel = el('div', 'panel');
     banPanel.append(el('h2', null, 'Кого банят'));
     banPanel.append(el('p', 'why', 'Позиции у бана нет: баны идут до того, как появляются лайны.'));
-    banPanel.append(barsChart(data.bans.map((b) => ({
+    host.append(banPanel);
+    drawInto(banPanel, (w) => barsChart(data.bans.map((b) => ({
       label: b.name,
       value: b.bans,
       valueLabel: num(b.bans) + ' - ' + pctOf(b.banRate),
       tip: [b.name, 'банов: ' + num(b.bans), pctOf(b.banRate)],
-    })), () => VIZ.cat[1], { width: chartWidth($('corpus-meta')), padL: 130, rowH: 22 }));
-    host.append(banPanel);
+    })), () => VIZ.cat[1], { width: w, padL: 130 }));
   }
 }
 
@@ -943,12 +1007,14 @@ function pctOf(share) {
 // mid-drag.
 let corpusResizeTimer = null;
 window.addEventListener('resize', () => {
-  if (!lastCorpus) return;
+  if (!lastCorpus && !lastCorpusMeta) return;
   if (corpusResizeTimer) clearTimeout(corpusResizeTimer);
   corpusResizeTimer = setTimeout(() => {
     corpusResizeTimer = null;
     const host = document.getElementById('corpus');
-    if (host && host.clientWidth) renderCorpus(lastCorpus);
+    if (lastCorpus && host && host.clientWidth) renderCorpus(lastCorpus);
+    const metaHost = document.getElementById('corpus-meta');
+    if (lastCorpusMeta && metaHost && metaHost.clientWidth) renderCorpusMeta(lastCorpusMeta);
   }, 150);
 });
 

@@ -952,12 +952,15 @@ function renderSources(list) {
 
     const card = el('div', 'src-card');
     card.append(row);
+    host.append(card);
     // The chart is the same data as the counters, over time: the counters say how
     // much has happened since start-up, this says whether anything is happening
     // now — which is the actual question when a job goes quiet.
-    card.append(trafficChart(a.recent, chartWidth(host)));
+    //
+    // Drawn after the card is in the page: the card is narrower than the panel it
+    // sits in, and a chart authored at the panel's width gets scaled down to fit.
+    drawInto(card, (w) => trafficChart(a.recent, w));
     card.append(el('div', 'src-summary why', trafficSummary(a.recent)));
-    host.append(card);
   }
 }
 
