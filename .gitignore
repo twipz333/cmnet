@@ -37,3 +37,29 @@ graphify-out/
 # local config (may contain the STRATZ token)
 config.yaml
 config.yaml.bak
+
+holdout.json
+holdout.json.bak
+
+
+# Discord bot secrets + local TTS cache
+discord.yaml
+tts-cache/
+
+
+# GSI probe capture sessions (raw match dumps; can be large)
+data/gsi-probe/
+
+# Local Dota minimap cache + Valve extract tooling (do not commit assets)
+data/local/
+tools/Source2Viewer/
+tools/cli-windows-x64.zip
+tools/dota-map-extract/
+
+# local runtime state and backups (not source)
+backup/
+bin/
+*.bak
+decisions.jsonl
+alerts.yaml
+tmp-*
