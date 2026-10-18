@@ -11,6 +11,11 @@ import (
 
 func testRecommender(wpWeights []float64, wpBias float64) *Recommender {
 	hm := features.NewHeroMap([]int{1, 2, 3})
+	if len(wpWeights) != hm.WinProbLen() {
+		padded := make([]float64, hm.WinProbLen())
+		copy(padded, wpWeights)
+		wpWeights = padded
+	}
 	wp := &model.WinProb{
 		Model:   &model.BinaryLogReg{Weights: wpWeights, Bias: wpBias},
 		HeroMap: hm,

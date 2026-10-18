@@ -67,6 +67,12 @@ type Bundle struct {
 	// that can't field a plausible 1-5. Empty/omitted disables lining checks.
 	HeroPositions map[int][]int `json:"hero_positions,omitempty"`
 
+	// RolePrior is P(position|hero) over the CM corpus used at train time (§6.3).
+	// Serve uses it to form a joint distribution over valid hero→position
+	// assignments mid-draft (positions are latent until later picks resolve them).
+	// Empty/omitted disables soft position features at inference; main effects still work.
+	RolePrior map[int][5]float64 `json:"role_prior,omitempty"`
+
 	// Objectives is the patch's map-objective spawn table (bounty/power/wisdom/lotus/
 	// tormentor/day-night), baked at train time (M6). serve reads the live game clock
 	// from GSI and renders deterministic upcoming-objective alerts from this table.

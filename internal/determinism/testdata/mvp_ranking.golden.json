@@ -1,17 +1,17 @@
 {
-  "bundle_version": "b55941ddc86f7541c3c4f6d202571c17383f81c2cd72445237e0f05e72d1c013",
+  "bundle_version": "d3f8cb5df0b18b7e8921e155edfe9d79ded18c8f75976f930162577377113b5b",
   "our_turn": true,
   "is_pick": true,
   "recs": [
     {
       "heroId": 5,
       "score": 0.97927,
-      "why": "win 97.9%"
+      "why": "вин ~98%"
     },
     {
       "heroId": 6,
       "score": 0.97313,
-      "why": "win 97.3%"
+      "why": "вин ~97%"
     }
   ],
   "enemy_pred": [

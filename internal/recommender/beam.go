@@ -44,12 +44,20 @@ func (r *Recommender) prunePool(d draft.View, dist []float64) []int {
 
 // evalDraft scores a (partial) draft from ourTeam's perspective: win probability
 // plus synergy and counter adjustments. Result is rounded for platform stability.
+// ScoreDraft exposes the value the search ranks candidates by, for offline
+// evaluation. It is not the raw win probability: it is what the advisor actually
+// orders picks with, matrices and lining penalty included. Measuring win-prob
+// alone would grade a component the user never sees on its own.
+func (r *Recommender) ScoreDraft(ourTeam draft.Team, myPicks, enemyPicks []int) float64 {
+	return r.evalDraft(ourTeam, myPicks, enemyPicks)
+}
+
 func (r *Recommender) evalDraft(ourTeam draft.Team, myPicks, enemyPicks []int) float64 {
 	var base float64
 	if ourTeam == draft.Radiant {
-		base = r.WinProb.RadiantWinProb(myPicks, enemyPicks)
+		base = model.RoundScore(r.WinProb.CalibrateAt(r.rawWinProb(myPicks, enemyPicks), len(myPicks)+len(enemyPicks)))
 	} else {
-		base = 1 - r.WinProb.RadiantWinProb(enemyPicks, myPicks)
+		base = model.RoundScore(1 - r.WinProb.CalibrateAt(r.rawWinProb(enemyPicks, myPicks), len(myPicks)+len(enemyPicks)))
 	}
 	adj := r.beam.LambdaSyn*(r.meanSynergy(myPicks)-r.meanSynergy(enemyPicks)) +
 		r.beam.LambdaCnt*(r.meanCounter(myPicks, enemyPicks)-0.5)
@@ -169,11 +177,9 @@ type beamState struct {
 	score float64 // our-perspective eval of the partial draft
 }
 
-// beamPickScore evaluates adding cand to our picks via a bounded, deterministic
-// best-response rollout: remaining slots are filled by greedy best-response from
-// the pruned pool, both sides playing to their own evaluation. The candidate's
-// score is the best our-perspective evaluation reachable within the beam.
-func (r *Recommender) beamPickScore(ourTeam draft.Team, rPicks, dPicks []int, cand int, pool []int) float64 {
+// beamPickScoreGreedy is the pre-§6.4 rollout: pick-only, value-greedy enemy reply,
+// max over the beam. Kept as the EnemyPolicy=false path for gate tests.
+func (r *Recommender) beamPickScoreGreedy(ourTeam draft.Team, rPicks, dPicks []int, cand int, pool []int) float64 {
 	var myStart, enemyStart []int
 	if ourTeam == draft.Radiant {
 		myStart, enemyStart = rPicks, dPicks

@@ -64,6 +64,10 @@ func (m model) viewMain() string {
 	if m.addingEnemy {
 		b.WriteString(panel(m.th, m.width, m.th.title.Render("ADD ENEMY")+"\n"+m.enemyInput.View()+"\n"+m.th.dim.Render("enter: scout & blend   •   esc: cancel")))
 		b.WriteByte('\n')
+	} else if m.addingReason {
+		// §6.1: attached to the last step of ours, stored locally, never shared.
+		b.WriteString(panel(m.th, m.width, m.th.title.Render("WHY NOT THE RECOMMENDATION")+"\n"+m.reasonInput.View()+"\n"+m.th.dim.Render("enter: record locally   •   esc: cancel")))
+		b.WriteByte('\n')
 	} else if m.busy != "" {
 		b.WriteString(panel(m.th, m.width, m.th.dim.Render(m.busy)))
 		b.WriteByte('\n')

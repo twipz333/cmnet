@@ -100,7 +100,10 @@ func trainDue(dbPath, bundlePath string, o autoOpts) (bool, string) {
 	}
 	defer store.Close()
 
-	count, err := store.CountMatches()
+	// Public CM drafts, not the total. Retraining because ten thousand all-pick
+	// games arrived rebuilds the model on a pool that does not change the advice;
+	// what moves the answer is new Captains Mode at the rank the advisor is used at.
+	count, err := store.CountMatchesBySource(cache.SourcePublicCM)
 	if err != nil {
 		return false, ""
 	}
@@ -121,14 +124,23 @@ func trainDue(dbPath, bundlePath string, o autoOpts) (bool, string) {
 			return true, "training bookkeeping is unwritable"
 		}
 		_ = store.SetMeta(metaLastTrainCount, "0")
+		_ = store.SetMeta(metaLastTrainCMCount, "0")
 		return false, ""
 	}
-	lastCount := metaInt(store, metaLastTrainCount)
+	// A bundle trained before the trigger counted CM separately has no CM
+	// watermark. Treat the current count as the baseline instead of zero: zero
+	// would read every draft ever cached as new and retrain at the next interval
+	// regardless of whether anything arrived.
+	lastCount := metaInt(store, metaLastTrainCMCount)
+	if _, ok, _ := store.GetMeta(metaLastTrainCMCount); !ok {
+		_ = store.SetMeta(metaLastTrainCMCount, fmt.Sprint(count))
+		return false, ""
+	}
 
 	newMatches := count - lastCount
 	age := time.Since(time.Unix(last, 0))
 	if age < o.trainEvery || newMatches < int64(o.trainMinNew) {
 		return false, ""
 	}
-	return true, fmt.Sprintf("%d new matches in %s", newMatches, age.Round(time.Hour))
+	return true, fmt.Sprintf("%d new public CM drafts in %s", newMatches, age.Round(time.Hour))
 }

@@ -17,9 +17,14 @@ func beamRecommender(n int, wpWeights []float64) *Recommender {
 		ids[i] = i + 1
 	}
 	hm := features.NewHeroMap(ids)
+	if len(wpWeights) != hm.WinProbLen() {
+		padded := make([]float64, hm.WinProbLen())
+		copy(padded, wpWeights)
+		wpWeights = padded
+	}
 	wp := &model.WinProb{Model: &model.BinaryLogReg{Weights: wpWeights, Bias: 0}, HeroMap: hm}
 	pred := &model.Predictor{
-		Pick: &model.SoftmaxReg{Weights: make([][]float64, n), Bias: make([]float64, n)},
+		Pick:    &model.SoftmaxReg{Weights: make([][]float64, n), Bias: make([]float64, n)},
 		HeroMap: hm,
 	}
 	for i := range pred.Pick.Weights {
@@ -54,7 +59,7 @@ func firstPickDraft(t *testing.T) *draft.DraftState {
 }
 
 func TestBeamEnabledByMatrices(t *testing.T) {
-	r := beamRecommender(8, make([]float64, 16))
+	r := beamRecommender(8, make([]float64, features.NewHeroMap([]int{1, 2, 3, 4, 5, 6, 7, 8}).WinProbLen()))
 	if !r.beamEnabled() {
 		t.Fatal("beam should be enabled when matrices are attached")
 	}
@@ -100,4 +105,97 @@ func randomishWeights(n int) []float64 {
 		w[i] = float64((i*37)%11-5) * 0.1
 	}
 	return w
+}
+
+func TestEnemyPolicyChangesRanking(t *testing.T) {
+	// Win-prob strongly prefers high ids for Radiant; predictor pushes Dire toward id 1.
+	n := 8
+	w := make([]float64, features.NewHeroMap([]int{1, 2, 3, 4, 5, 6, 7, 8}).WinProbLen())
+	for i := 0; i < n; i++ {
+		w[i] = float64(i) * 0.4 // hero 8 >> hero 1 for Radiant presence
+	}
+	r := beamRecommender(n, w)
+	for i := range r.Predictor.Pick.Bias {
+		r.Predictor.Pick.Bias[i] = -3
+	}
+	r.Predictor.Pick.Bias[0] = 8 // hero 1 dominates enemy policy
+	r.Predictor.Ban = r.Predictor.Pick
+
+	cfg := DefaultBeamConfig()
+	cfg.Depth = 2
+	cfg.Width = 3
+	cfg.PruneN = 8
+	cfg.EnemyTopK = 3
+	cfg.MassFloor = 0.5
+
+	d := firstPickDraft(t)
+	cfg.EnemyPolicy = true
+	r.SetBeamConfig(cfg)
+	withPol := r.Recommend(d, draft.Radiant, 8)
+
+	cfg.EnemyPolicy = false
+	r.SetBeamConfig(cfg)
+	greedy := r.Recommend(d, draft.Radiant, 8)
+
+	if len(withPol.Recs) == 0 || len(greedy.Recs) == 0 {
+		t.Fatal("empty recommendations")
+	}
+	same := true
+	for i := 0; i < len(withPol.Recs) && i < len(greedy.Recs); i++ {
+		if withPol.Recs[i].HeroID != greedy.Recs[i].HeroID {
+			same = false
+			break
+		}
+	}
+	if same && withPol.Recs[0].HeroID == greedy.Recs[0].HeroID &&
+		withPol.Recs[0].Score == greedy.Recs[0].Score {
+		t.Fatalf("EnemyPolicy did not change ranking/scores:\n pol=%v\n greedy=%v",
+			withPol.Recs, greedy.Recs)
+	}
+}
+
+func TestExpectimaxDeterministic(t *testing.T) {
+	r := beamRecommender(10, randomishWeights(features.NewHeroMap([]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}).WinProbLen()))
+	cfg := DefaultBeamConfig()
+	cfg.Depth = 2
+	cfg.EnemyPolicy = true
+	r.SetBeamConfig(cfg)
+	d := firstPickDraft(t)
+	pool := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	a := r.beamPickScore(d, draft.Radiant, 3, pool)
+	b := r.beamPickScore(d, draft.Radiant, 3, pool)
+	if a != b {
+		t.Fatalf("non-deterministic expectimax: %v vs %v", a, b)
+	}
+}
+
+func TestEnemyMassTailUsesBaseline(t *testing.T) {
+	n := 6
+	w := make([]float64, features.NewHeroMap([]int{1, 2, 3, 4, 5, 6}).WinProbLen())
+	r := beamRecommender(n, w)
+	// Uniform-ish predictor; tiny TopK leaves most mass for the baseline term.
+	for i := range r.Predictor.Pick.Bias {
+		r.Predictor.Pick.Bias[i] = 0
+	}
+	r.Predictor.Ban = r.Predictor.Pick
+
+	cfg := DefaultBeamConfig()
+	cfg.Depth = 1
+	cfg.Width = 2
+	cfg.PruneN = 6
+	cfg.EnemyPolicy = true
+	cfg.EnemyTopK = 1
+	cfg.MassFloor = 0.99 // force stop only by TopK=1
+	r.SetBeamConfig(cfg)
+
+	d := firstPickDraft(t)
+	pool := []int{1, 2, 3, 4, 5, 6}
+	// After our pick, next CM steps include enemy actions; score must be finite.
+	got := r.beamPickScore(d, draft.Radiant, 1, pool)
+	if got != model.RoundScore(got) {
+		t.Fatalf("unrounded score %v", got)
+	}
+	if got < 0 || got > 1 {
+		t.Fatalf("score %v out of [0,1]", got)
+	}
 }

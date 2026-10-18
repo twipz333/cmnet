@@ -428,6 +428,99 @@ func (s *Store) MatchesMissingStats(since int64, limit int) ([]int64, error) {
 	return out, rows.Err()
 }
 
+// MatchesMissingRank returns ids of cached matches whose average rank tier was
+// never stored and never looked up, newest first.
+//
+// Pro matches are excluded rather than merely unfilled: a professional game has no
+// average rank tier at all, so NULL there is the right answer and asking about it
+// would spend requests to learn nothing. What this backlog really holds is the
+// public matches cached before the provenance columns existed — they came out of
+// the very table the fill reads back, so their tier was known once and simply had
+// nowhere to go.
+//
+// Ordered newest first because those are the matches the training window weights
+// most, and a pass that is interrupted should have improved the part that counts.
+func (s *Store) MatchesMissingRank(limit int) ([]int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.rd.Query(
+		`SELECT match_id FROM matches
+		 WHERE rank_tier IS NULL AND rank_probed_at IS NULL AND source <> ?
+		 ORDER BY start_time DESC, match_id DESC
+		 LIMIT ?`, SourcePro, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// SetRankTiers records the tiers found for a batch of matches and marks every id
+// in asked as looked up, including the ones nothing was found for.
+//
+// Deliberately not a Match upsert: UpsertMatch replaces a match's draft rows from
+// the value it is given, so writing a rank-only record through it would erase the
+// pick/ban list that made the match worth keeping. This touches two columns and
+// nothing else.
+//
+// The mark is what keeps the backlog finite — see migrateRankProbe. asked must be
+// the full batch that got an answer from the source, not just the rows in tiers,
+// and it must not include a batch that failed in transit: marking those would
+// silently retire matches over a network hiccup.
+func (s *Store) SetRankTiers(tiers map[int64]int, asked []int64) error {
+	if len(asked) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	set, err := tx.Prepare(
+		`UPDATE matches SET rank_tier = ? WHERE match_id = ? AND rank_tier IS NULL`)
+	if err != nil {
+		return err
+	}
+	defer set.Close()
+	for id, tier := range tiers {
+		if _, err := set.Exec(tier, id); err != nil {
+			return err
+		}
+	}
+
+	now := time.Now().Unix()
+	mark, err := tx.Prepare(`UPDATE matches SET rank_probed_at = ? WHERE match_id = ?`)
+	if err != nil {
+		return err
+	}
+	defer mark.Close()
+	for _, id := range asked {
+		if _, err := mark.Exec(now, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// RankCoverage reports how many cached matches carry an average rank tier, and how
+// many could — pro matches excluded, since they have no tier to carry.
+func (s *Store) RankCoverage() (withRank, total int64, err error) {
+	err = s.rd.QueryRow(
+		`SELECT COUNT(rank_tier), COUNT(*) FROM matches WHERE source <> ?`,
+		SourcePro).Scan(&withRank, &total)
+	return withRank, total, err
+}
+
 // StatsCoverage reports how many cached matches in the window carry per-player
 // performance, and how many have a draft at all — the Data screen's answer to
 // "how much of this is the richer kind".
@@ -462,6 +555,19 @@ func (s *Store) MaxStartTime() (int64, error) {
 func (s *Store) CountMatches() (int64, error) {
 	var n int64
 	if err := s.rd.QueryRow("SELECT COUNT(*) FROM matches").Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// CountMatchesBySource returns how many matches came from one provenance.
+//
+// Retraining decisions need this rather than the total: the pools are not
+// interchangeable, and a retrain triggered by thousands of fresh all-pick games
+// rebuilds the model on data that never changed the answer the advisor gives.
+func (s *Store) CountMatchesBySource(source string) (int64, error) {
+	var n int64
+	if err := s.rd.QueryRow("SELECT COUNT(*) FROM matches WHERE source = ?", source).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil

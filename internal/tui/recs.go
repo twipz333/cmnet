@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"cmnet/internal/lineup"
 )
 
 // viewRecs renders the ranked recommendations for the current step.
@@ -24,7 +26,14 @@ func (m model) viewRecs(width int) string {
 		return panel(m.th, width, b.String())
 	}
 	for i, r := range m.result.Recs {
-		line := fmt.Sprintf("%2d %-16s %6.3f  %s", i+1, m.heroName(r.HeroID), r.Score, m.th.dim.Render(r.Why))
+		why := r.Why
+		if r.Player != "" {
+			why = why + " · для " + r.Player
+		}
+		if r.Role > 0 {
+			why = why + " · " + lineup.RoleName(r.Role)
+		}
+		line := fmt.Sprintf("%2d %-16s %6.3f  %s", i+1, m.heroName(r.HeroID), r.Score, m.th.dim.Render(why))
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}

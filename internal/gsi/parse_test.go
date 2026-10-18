@@ -109,6 +109,23 @@ func TestParseMapOnlyEventCarriesLive(t *testing.T) {
 	}
 }
 
+func TestParseEmptyDraftObjectIsNotHasDraft(t *testing.T) {
+	body := []byte(`{"draft":{},"map":{"matchid":"1","clock_time":50}}`)
+	snap, err := ParseDraft(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap == nil {
+		t.Fatal("nil snapshot")
+	}
+	if snap.HasDraft {
+		t.Fatal("empty draft object must not wipe picks via HasDraft")
+	}
+	if !snap.Done {
+		t.Fatal("empty in-game draft must be Done")
+	}
+}
+
 func TestParseDraftEventCarriesLiveWhenMapPresent(t *testing.T) {
 	// During the CM draft Dota sends draft and map together; both must parse.
 	body := []byte(`{"draft":{"activeteam":2,"pick":true,"radiant":{"pick0_id":8},"dire":{}},

@@ -67,13 +67,15 @@ func opBackfillStats(ctx context.Context, o backfillOpts, log logFunc) (string, 
 	log(fmt.Sprintf("backfill: %d matches without per-player stats", len(ids)))
 
 	cl := stratz.New(o.token)
-	var filled, missed int
+	// ranked counts matches this pass could not fill with performance but did learn
+	// a rank tier for — salvage, reported separately so it is not read as success.
+	var filled, missed, ranked int
 	for i, id := range ids {
 		if err := ctx.Err(); err != nil {
 			// Cancelled mid-pass: what was stored is stored, and the next pass finds
 			// the rest by the same query. Report the partial result rather than an
 			// error, which is what the queue records as "cancelled".
-			return fmt.Sprintf("backfill: %d filled, %d without data (stopped early)", filled, missed), nil
+			return backfillSummary(filled, missed, ranked) + " (stopped early)", nil
 		}
 		md, err := cl.Match(ctx, id)
 		if err != nil {
@@ -89,12 +91,28 @@ func opBackfillStats(ctx context.Context, o backfillOpts, log logFunc) (string, 
 		}
 		m, ok := stratzDetailToCacheMatch(md)
 		if !ok {
+			// The draft did not convert, but the rank tier in the same answer is a
+			// match-level fact that does not depend on it — see salvageRank.
+			saved, err := salvageRank(store, md.ID, md.Rank)
+			if err != nil {
+				return "", err
+			}
+			if saved {
+				ranked++
+			}
 			missed++
 			continue
 		}
 		if !hasAnyStats(m.Players) {
 			// STRATZ answered but had no performance for this match: counting it as
 			// filled would hide a match that will be re-tried forever.
+			saved, err := salvageRank(store, m.ID, m.RankTier)
+			if err != nil {
+				return "", err
+			}
+			if saved {
+				ranked++
+			}
 			missed++
 			continue
 		}
@@ -112,7 +130,37 @@ func opBackfillStats(ctx context.Context, o backfillOpts, log logFunc) (string, 
 		log(fmt.Sprintf("coverage: %d of %d drafts now carry per-player stats (%.0f%%)",
 			withStats, withDraft, 100*float64(withStats)/float64(withDraft)))
 	}
-	return fmt.Sprintf("backfill: %d filled, %d without data", filled, missed), nil
+	return backfillSummary(filled, missed, ranked), nil
+}
+
+// salvageRank keeps the rank tier out of an answer this pass could not otherwise
+// use, reporting whether anything was stored.
+//
+// A response that fails to become a usable match is not empty: the average rank is
+// a property of the match, not of the draft or the roster that failed to convert,
+// and the request has already been paid for. Written through the narrow update
+// rather than a full upsert, which would replace the match's draft rows with
+// whatever the failed conversion produced.
+func salvageRank(store *cache.Store, id int64, tier *int) (bool, error) {
+	if tier == nil {
+		// Nothing known. Deliberately not marked as looked up either — the rank fill
+		// asks a different source and may well find it.
+		return false, nil
+	}
+	if err := store.SetRankTiers(map[int64]int{id: *tier}, []int64{id}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// backfillSummary words one pass's result. The rank salvage is mentioned only when
+// it happened, so an ordinary pass reads exactly as it always did.
+func backfillSummary(filled, missed, ranked int) string {
+	s := fmt.Sprintf("backfill: %d filled, %d without data", filled, missed)
+	if ranked > 0 {
+		s += fmt.Sprintf(" (%d of those gave a rank tier)", ranked)
+	}
+	return s
 }
 
 // hasAnyStats reports whether a converted roster carries performance for anyone.

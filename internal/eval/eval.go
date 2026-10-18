@@ -8,7 +8,10 @@ import (
 	"cmnet/internal/bundle"
 	"cmnet/internal/cache"
 	"cmnet/internal/features"
+	"cmnet/internal/matrices"
 	"cmnet/internal/model"
+	"cmnet/internal/recommender"
+	"cmnet/internal/roles"
 	"cmnet/internal/train"
 )
 
@@ -35,6 +38,15 @@ type Options struct {
 	// single split.
 	Folds int
 
+	// OnlyFold evaluates just this fold (1-based) out of Folds, leaving the split
+	// geometry identical to a full run.
+	//
+	// Folds are independent and training is single-threaded, so a three-fold run
+	// spends an hour using one core out of however many the machine has. Running
+	// one process per fold turns that hour into twenty minutes. 0 evaluates all
+	// folds, as before.
+	OnlyFold int
+
 	// SweepHalfLife evaluates each of these recency half-lives (days) and reports
 	// the effective sample size each implies.
 	SweepHalfLife []float64
@@ -56,6 +68,31 @@ type Options struct {
 	// auxiliary-data assumption can be tested rather than assumed. 0 => training
 	// default, 1 => no down-weighting.
 	ProWeight float64
+
+	// StratifySplit sizes the test window by the TARGET domain instead of by the
+	// whole corpus: "cm" (default) puts TestFrac of the Captains Mode matches in
+	// the test block, "public-cm" uses only public CM, "none" restores the old
+	// behaviour of slicing the corpus tail blindly.
+	//
+	// Without this the tool measures itself worse the more data it collects. The
+	// bulk pool grows several times faster than public CM, so a tail of "the newest
+	// 20% of everything" holds a shrinking number of target matches — between two
+	// real runs the corpus grew by 5 816 matches while the CM test set fell from
+	// 723 to 478, and the confidence interval on the main metric got *wider*. The
+	// split has to be anchored to the population the metric is about.
+	StratifySplit string
+
+	// Ladder enables the §6.6 personalization ladder (paired Δ per rung).
+	Ladder bool
+
+	// ExcludeHoldout removes sealed match ids from the corpus before any tuning
+	// fold is cut (§6.8). Use this for every iterative / hyperparameter eval so the
+	// final set stays untouched.
+	ExcludeHoldout *Holdout
+
+	// FinalHoldout scores only the sealed set in a single fold (train = rest of
+	// corpus). Mutually exclusive with ExcludeHoldout; when set, Folds is ignored.
+	FinalHoldout *Holdout
 }
 
 func (o Options) withDefaults() Options {
@@ -71,7 +108,47 @@ func (o Options) withDefaults() Options {
 	if o.Folds <= 0 {
 		o.Folds = 1
 	}
+	if o.StratifySplit == "" {
+		o.StratifySplit = "cm"
+	}
 	return o
+}
+
+// orUnknown labels a fold report built before split modes were recorded.
+func orUnknown(mode string) string {
+	if mode == "" {
+		return "split mode unrecorded"
+	}
+	return mode
+}
+
+func shortSHA(s string) string {
+	if len(s) <= 12 {
+		return s
+	}
+	return s[:12]
+}
+
+// targetOf is which domain the reported target count refers to. With
+// stratification off we still report the CM count — that is the number a reader
+// needs to judge the interval, whether or not it was used to size the split.
+func targetOf(stratify string) string {
+	if stratify == "public-cm" {
+		return "public-cm"
+	}
+	return "cm"
+}
+
+// isTargetDomain reports whether a match counts toward the stratified test size.
+func isTargetDomain(m cache.Match, domain string) bool {
+	switch domain {
+	case "public-cm":
+		return hasBan(m) && m.Source == cache.SourcePublicCM
+	case "cm":
+		return hasBan(m)
+	default:
+		return false
+	}
 }
 
 // filterTrainDomain keeps only the matches used for training under the chosen
@@ -137,6 +214,12 @@ type StrengthMetrics struct {
 	VsBase CI // paired difference against the plain win-prob variant
 }
 
+// minSegment is the fewest matches a reported sub-population may have. The floor
+// is 200 because 50 demonstrably is not enough: a 57-match CM-pro block scored
+// 0.629 with a 95% interval of [0.472-0.788] — spanning "worse than a coin flip"
+// to "excellent" — and still read like a result.
+const minSegment = 200
+
 // HalfLifeRow is one point of the recency-half-life sweep.
 type HalfLifeRow struct {
 	HalfLifeDays  float64
@@ -152,11 +235,35 @@ type FoldReport struct {
 	TrainMatches int
 	TestMatches  int
 	SplitTime    int64
+	// TestTargets is how many target-domain matches landed in this test block, and
+	// SplitMode how the block was sized. Both are printed because the headline
+	// number is only as trustworthy as the size of the slice it was measured on,
+	// and that size used to be an accident of how fast the bulk pool was growing.
+	TestTargets int
+	SplitMode   string
 
 	WinProb   []WinProbMetrics
 	Strength  []StrengthMetrics
 	Phase     []PhaseMetrics
 	Predictor []PredictorMetrics // model first, then the frequency baselines
+
+	// PickQuality scores the ordering of candidates inside real draft states —
+	// the question the advisor actually answers. See PickQualityMetrics.
+	PickQuality []PickQualityMetrics
+
+	// RankAgreement says whether the richer scoring variants reorder candidates at
+	// all relative to plain one-ply win-prob. See RankAgreement.
+	RankAgreement []RankAgreement
+
+	// HalfLife is the recency sweep for THIS fold. The sweep lives per fold
+	// because a single split cannot tell a real recency effect from the ordinary
+	// variation between meta windows: the spread of top-5 across folds is an
+	// order of magnitude wider than the spread across half-lives, so a sweep
+	// measured on one window will happily "prove" whichever default it was run on.
+	HalfLife []HalfLifeRow
+
+	// Ladder is the §6.6 personalization ladder; empty when Options.Ladder is off.
+	Ladder LadderReport
 }
 
 // Report is the full evaluation result.
@@ -164,7 +271,6 @@ type Report struct {
 	TrainDomain string
 	Bootstrap   int
 	Folds       []FoldReport
-	HalfLife    []HalfLifeRow
 }
 
 // hasBan reports whether a match carries at least one ban (proxy for a real CM
@@ -202,29 +308,84 @@ func Run(matches []cache.Match, heroIDs []int, opts Options) (*Report, error) {
 	if len(matches) < 10 {
 		return nil, fmt.Errorf("need at least 10 matches to evaluate, have %d", len(matches))
 	}
+	// Caught here rather than yielding an empty report: an out-of-range fold means
+	// one process of a parallel run silently produced nothing, and the missing
+	// window would only be noticed when someone tried to compare three logs.
+	if opts.OnlyFold > opts.Folds {
+		return nil, fmt.Errorf("only-fold %d is out of range for %d fold(s)", opts.OnlyFold, opts.Folds)
+	}
+
+	if opts.FinalHoldout != nil && opts.ExcludeHoldout != nil {
+		return nil, fmt.Errorf("eval: pass either --final-holdout or --exclude-holdout, not both")
+	}
 
 	sorted := make([]cache.Match, len(matches))
 	copy(sorted, matches)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].StartTime < sorted[j].StartTime })
 
+	if opts.ExcludeHoldout != nil {
+		if err := opts.ExcludeHoldout.Verify(); err != nil {
+			return nil, err
+		}
+		before := len(sorted)
+		sorted = Exclude(sorted, opts.ExcludeHoldout)
+		if len(sorted) == before {
+			return nil, fmt.Errorf("exclude-holdout: sealed %d ids but none were in the loaded corpus", opts.ExcludeHoldout.N)
+		}
+		if len(sorted) < 10 {
+			return nil, fmt.Errorf("need at least 10 matches after excluding holdout, have %d", len(sorted))
+		}
+	}
+
 	rep := &Report{TrainDomain: opts.TrainDomain, Bootstrap: opts.Bootstrap}
 
-	for f := 0; f < opts.Folds; f++ {
-		trainSet, testSet, err := foldSplit(sorted, opts, f)
+	if opts.FinalHoldout != nil {
+		trainRaw, testSet, err := FinalSplit(sorted, opts.FinalHoldout)
 		if err != nil {
 			return nil, err
+		}
+		trainSet := filterTrainDomain(trainRaw, opts.TrainDomain)
+		if len(trainSet) == 0 {
+			return nil, fmt.Errorf("no training matches after domain filter %q", opts.TrainDomain)
+		}
+		fr := evalFold(trainSet, testSet, heroIDs, opts)
+		fr.Fold = 1
+		fr.SplitMode = fmt.Sprintf("final-holdout:%s n=%d sha=%s", opts.FinalHoldout.Stratify, opts.FinalHoldout.N, shortSHA(opts.FinalHoldout.ContentSHA256))
+		for _, m := range testSet {
+			if isTargetDomain(m, targetOf(opts.StratifySplit)) {
+				fr.TestTargets++
+			}
+		}
+		if len(opts.SweepHalfLife) > 0 {
+			fr.HalfLife = sweepHalfLife(trainSet, testSet, heroIDs, opts)
+		}
+		rep.Folds = append(rep.Folds, *fr)
+		return rep, nil
+	}
+
+	for f := 0; f < opts.Folds; f++ {
+		if opts.OnlyFold > 0 && f+1 != opts.OnlyFold {
+			continue
+		}
+		trainSet, testSet, mode, err := foldSplit(sorted, opts, f)
+		if err != nil {
+			return nil, err
+		}
+		if opts.ExcludeHoldout != nil {
+			mode = mode + "; holdout-excluded"
 		}
 		fr := evalFold(trainSet, testSet, heroIDs, opts)
 		fr.Fold = f + 1
-		rep.Folds = append(rep.Folds, *fr)
-	}
-
-	if len(opts.SweepHalfLife) > 0 {
-		trainSet, testSet, err := foldSplit(sorted, opts, opts.Folds-1)
-		if err != nil {
-			return nil, err
+		fr.SplitMode = mode
+		for _, m := range testSet {
+			if isTargetDomain(m, targetOf(opts.StratifySplit)) {
+				fr.TestTargets++
+			}
 		}
-		rep.HalfLife = sweepHalfLife(trainSet, testSet, heroIDs, opts)
+		if len(opts.SweepHalfLife) > 0 {
+			fr.HalfLife = sweepHalfLife(trainSet, testSet, heroIDs, opts)
+		}
+		rep.Folds = append(rep.Folds, *fr)
 	}
 	return rep, nil
 }
@@ -232,24 +393,66 @@ func Run(matches []cache.Match, heroIDs []int, opts Options) (*Report, error) {
 // foldSplit produces the fold-th rolling time split. Fold 0 is the earliest test
 // window; the last fold's test block is the newest data. Each fold trains only on
 // what precedes its own test block, so no fold ever sees its future.
-func foldSplit(sorted []cache.Match, opts Options, fold int) (trainSet, testSet []cache.Match, err error) {
+//
+// The block is still a contiguous stretch of time — stratification changes how its
+// boundaries are chosen, never that they are boundaries in time. Nothing is
+// sampled across the split, so a fold cannot see its own future either way.
+func foldSplit(sorted []cache.Match, opts Options, fold int) (trainSet, testSet []cache.Match, mode string, err error) {
 	n := len(sorted)
-	testSize := int(float64(n) * opts.TestFrac)
-	if testSize < 1 {
-		testSize = 1
+	start, end, ok := stratifiedBounds(sorted, opts, fold)
+	mode = "stratified:" + opts.StratifySplit
+	if !ok {
+		mode = "corpus-tail"
+		testSize := int(float64(n) * opts.TestFrac)
+		if testSize < 1 {
+			testSize = 1
+		}
+		offset := (opts.Folds - 1 - fold) * testSize
+		end = n - offset
+		start = end - testSize
 	}
-	offset := (opts.Folds - 1 - fold) * testSize
-	end := n - offset
-	start := end - testSize
-	if start < 1 || end > n {
-		return nil, nil, fmt.Errorf("not enough matches for %d folds at test-frac %.2f", opts.Folds, opts.TestFrac)
+	if start < 1 || end > n || start >= end {
+		return nil, nil, mode, fmt.Errorf("not enough matches for %d folds at test-frac %.2f", opts.Folds, opts.TestFrac)
 	}
 	trainSet = filterTrainDomain(sorted[:start], opts.TrainDomain)
 	testSet = sorted[start:end]
 	if len(trainSet) == 0 {
-		return nil, nil, fmt.Errorf("no training matches after domain filter %q", opts.TrainDomain)
+		return nil, nil, mode, fmt.Errorf("no training matches after domain filter %q", opts.TrainDomain)
 	}
-	return trainSet, testSet, nil
+	return trainSet, testSet, mode, nil
+}
+
+// stratifiedBounds sizes the test block so it holds TestFrac of the TARGET-domain
+// matches, and returns the surrounding corpus indices. ok=false falls back to the
+// unstratified tail — when stratification is off, or when there are too few target
+// matches to cut into folds, in which case a fixed target count would just produce
+// an empty training set instead of an honest measurement.
+func stratifiedBounds(sorted []cache.Match, opts Options, fold int) (start, end int, ok bool) {
+	if opts.StratifySplit == "none" {
+		return 0, 0, false
+	}
+	var idx []int
+	for i, m := range sorted {
+		if isTargetDomain(m, opts.StratifySplit) {
+			idx = append(idx, i)
+		}
+	}
+	tn := len(idx)
+	perFold := int(float64(tn) * opts.TestFrac)
+	if perFold < 1 || perFold*opts.Folds >= tn {
+		return 0, 0, false
+	}
+	endT := tn - (opts.Folds-1-fold)*perFold
+	startT := endT - perFold
+	if startT < 1 || endT > tn {
+		return 0, 0, false
+	}
+	start = idx[startT]
+	end = len(sorted)
+	if endT < tn {
+		end = idx[endT] // stop just before the next target match
+	}
+	return start, end, true
 }
 
 // evalFold trains on trainSet and scores everything on testSet.
@@ -277,7 +480,55 @@ func evalFold(trainSet, testSet []cache.Match, heroIDs []int, opts Options) *Fol
 	fr.Strength = evalStrength(testSet, wp, b, hm, opts.Bootstrap)
 	fr.Phase = evalPhase(testSet, wp)
 	fr.Predictor = evalPredictors(trainSet, testSet, pred, hm, opts)
+	if opts.Ladder {
+		var prior *roles.Prior
+		if len(b.RolePrior) > 0 {
+			prior = &roles.Prior{Prob: b.RolePrior}
+		}
+		corpus := append(append([]cache.Match(nil), trainSet...), testSet...)
+		fr.Ladder = evalLadder(corpus, trainSet, testSet, pred, hm, prior, opts)
+	}
+	// The advisor ranker needs the recommender wired the way serve wires it, so
+	// the offline ordering is the one the user is shown.
+	rec := recommender.New(wp, pred).
+		WithMatrices(b.SynergyMatrix, b.CounterMatrix).
+		WithStacker(b.StrengthStacker).
+		WithPositions(b.HeroPositions)
+	if len(b.RolePrior) > 0 {
+		rec.WithRolePrior(&roles.Prior{Prob: b.RolePrior})
+	}
+	fr.PickQuality, fr.RankAgreement = evalPickQualityGroups(trainSet, testSet, wp, b.Matrices(), rec, hm, opts.Bootstrap)
 	return fr
+}
+
+// evalPickQualityGroups scores candidate ordering on the CM drafts, once over all
+// of them and once over public CM alone — the population the advisor runs in.
+// The popularity baseline is fitted on the training half only.
+func evalPickQualityGroups(trainSet, testSet []cache.Match, wp *model.WinProb, mx *matrices.Matrices, rec *recommender.Recommender, hm *features.HeroMap, boot int) ([]PickQualityMetrics, []RankAgreement) {
+	pop := &Baseline{Name: popularityRankerName, counts: map[baselineKey][]float64{},
+		keyOf: func(ord int, isPick bool, actor int) baselineKey { return baselineKey{a: ord} }}
+	pop.Fit(trainSet, hm)
+	rankers := []pickRanker{winProbRanker(wp, hm), baselinePickRanker(pop)}
+	if mx != nil {
+		rankers = append(rankers, matrixRanker(mx, hm))
+	}
+	if rec != nil {
+		rankers = append(rankers, advisorRanker(rec, hm))
+	}
+
+	var out []PickQualityMetrics
+	var agree []RankAgreement
+	cmMetrics, cmAgree := evalPickQuality(cmSubset(testSet, ""), hm, rankers, "CM", boot)
+	out = append(out, cmMetrics...)
+	agree = append(agree, cmAgree...)
+	// Same floor as the win-prob segments: below it the interval is wider than
+	// anything it could tell you.
+	if pub := cmSubset(testSet, cache.SourcePublicCM); len(pub) >= minSegment {
+		pubMetrics, pubAgree := evalPickQuality(pub, hm, rankers, "CM-pub", boot)
+		out = append(out, pubMetrics...)
+		agree = append(agree, pubAgree...)
+	}
+	return out, agree
 }
 
 // evalWinProb scores final-composition win probability on the test set, segmented
@@ -288,6 +539,12 @@ func evalWinProb(test []cache.Match, wp *model.WinProb, boot int) []WinProbMetri
 		clusters      []Cluster
 	}
 	all, cm, ap := &bucket{}, &bucket{}, &bucket{}
+	// Captains Mode is TWO populations, and pooling them hides which one the model
+	// is bad at. Pro drafts are coordinated teams where execution decides the game,
+	// so draft-only prediction has a genuinely low ceiling there; public CM at pub
+	// rank is the population this advisor is actually used in. A single "CM" number
+	// is their average, and the average is not what anyone plays.
+	cmPro, cmPub := &bucket{}, &bucket{}
 	add := func(b *bucket, p, y float64) {
 		b.probs = append(b.probs, p)
 		b.labels = append(b.labels, y)
@@ -306,6 +563,12 @@ func evalWinProb(test []cache.Match, wp *model.WinProb, boot int) []WinProbMetri
 		add(all, p, y)
 		if hasBan(m) {
 			add(cm, p, y)
+			switch m.Source {
+			case cache.SourcePro:
+				add(cmPro, p, y)
+			case cache.SourcePublicCM:
+				add(cmPub, p, y)
+			}
 		} else {
 			add(ap, p, y)
 		}
@@ -321,7 +584,14 @@ func evalWinProb(test []cache.Match, wp *model.WinProb, boot int) []WinProbMetri
 			Base:    BaseRate(b.labels),
 		}
 	}
-	return []WinProbMetrics{mk("all", all), mk("CM", cm), mk("AP", ap)}
+	out := []WinProbMetrics{mk("all", all), mk("CM", cm), mk("AP", ap)}
+	if len(cmPro.probs) >= minSegment {
+		out = append(out, mk("CM-pro", cmPro))
+	}
+	if len(cmPub.probs) >= minSegment {
+		out = append(out, mk("CM-pub", cmPub))
+	}
+	return out
 }
 
 // strengthVariant is one way of turning a final composition into a ranking score.
@@ -623,11 +893,28 @@ func sweepHalfLife(trainSet, testSet []cache.Match, heroIDs []int, opts Options)
 	hm := features.NewHeroMap(heroIDs)
 	var out []HalfLifeRow
 	for _, hl := range opts.SweepHalfLife {
-		b := train.Bundle(trainSet, heroIDs, train.Options{HalfLifeDays: hl})
+		// Every training option except the half-life must match the main fold, or
+		// the sweep compares half-lives across differently-trained models and the
+		// comparison is meaningless the moment anyone passes --pro-weight or --epochs.
+		trainOpts := train.Options{
+			HalfLifeDays:  hl,
+			FMRank:        opts.FMRank,
+			NoPrefix:      opts.NoPrefix,
+			L2:            opts.L2,
+			Epochs:        opts.Epochs,
+			SourceWeights: train.ProWeight(opts.ProWeight),
+		}
+		b := train.Bundle(trainSet, heroIDs, trainOpts)
 		wp := &model.WinProb{Model: b.WinProb, HeroMap: hm, Calib: b.Calibration, PhaseCalib: b.PhaseCalibration}
 		pred := &model.Predictor{Pick: b.PickPredictor, Ban: b.BanPredictor, HeroMap: hm}
 
-		samples := train.BuildSamples(trainSet, hm, hl, train.SampleOptions{})
+		// ESS has to be computed over the rows training actually sees: with the
+		// default prefix expansion that is every partial board, not just the final
+		// compositions, and provenance weighting shifts it too.
+		samples := train.BuildSamples(trainSet, hm, hl, train.SampleOptions{
+			Prefix:        !opts.NoPrefix,
+			SourceWeights: trainOpts.SourceWeights,
+		})
 		weights := model.SampleWeights(samples.WinProb)
 
 		var cmAUC float64
@@ -664,7 +951,15 @@ func (r *Report) String() string {
 	b.WriteString("\n")
 
 	for _, f := range r.Folds {
-		fmt.Fprintf(&b, "\n=== fold %d: %d train / %d test matches (time-split)\n", f.Fold, f.TrainMatches, f.TestMatches)
+		fmt.Fprintf(&b, "\n=== fold %d: %d train / %d test matches (time-split, %s; %d target-domain matches in test)\n",
+			f.Fold, f.TrainMatches, f.TestMatches, orUnknown(f.SplitMode), f.TestTargets)
+		if f.SplitMode == "corpus-tail" {
+			b.WriteString("  note: test block sized by the whole corpus — the target-domain count above is\n" +
+				"        whatever the bulk pool left behind, not a quantity anyone chose\n")
+		}
+		if strings.HasPrefix(f.SplitMode, "final-holdout:") {
+			b.WriteString("  FINAL HOLDOUT: sealed ids only — do not retune on this number; one-shot report.\n")
+		}
 
 		b.WriteString("\nWIN-PROB (final comp, held-out):\n")
 		fmt.Fprintf(&b, "  %-4s %7s %8s %8s %-22s %7s %7s\n", "grp", "n", "logloss", "brier", "auc", "ece", "base")
@@ -710,22 +1005,45 @@ func (r *Report) String() string {
 			}
 			b.WriteString("\n")
 		}
-	}
 
-	if len(r.HalfLife) > 0 {
-		b.WriteString("\nRECENCY HALF-LIFE SWEEP (what the weighting costs in effective data):\n")
-		fmt.Fprintf(&b, "  %9s %9s %9s %7s %9s %9s\n", "half-life", "nominal", "ESS", "ESS%", "CM auc", "top-5")
-		for _, h := range r.HalfLife {
-			label := fmt.Sprintf("%.0fd", h.HalfLifeDays)
-			if h.HalfLifeDays <= 0 {
-				label = "uniform"
+		if len(f.PickQuality) > 0 {
+			b.WriteString("\nPICK QUALITY (does the ordering of candidates track winning?):\n")
+			fmt.Fprintf(&b, "  %-14s %-7s %7s %8s %-22s %-24s %9s\n",
+				"ranker", "grp", "matches", "picks", "auc", "Δ vs popularity", "meanRank")
+			for _, p := range f.PickQuality {
+				delta := ""
+				if p.Name != popularityRankerName {
+					delta = p.VsPopularity.String()
+					if p.VsPopularity.Significant() {
+						delta += " *"
+					}
+				}
+				fmt.Fprintf(&b, "  %-14s %-7s %7d %8d %-22s %-24s %9.3f\n",
+					p.Name, p.Group, p.N, p.Actions, p.AUC.String(), delta, p.MeanNormRank)
 			}
-			pct := 0.0
-			if h.NominalN > 0 {
-				pct = 100 * h.ESS / float64(h.NominalN)
+			b.WriteString("  (auc 0.5 = the ordering says nothing about who wins; the paired delta is\n")
+			b.WriteString("   the honest number — winning teams pick popular heroes too. * = CI excludes zero.\n")
+			b.WriteString("   Observational: it shows agreement with what winners did, not causation.)\n")
+		}
+
+		b.WriteString(formatAgreements(f.RankAgreement))
+		b.WriteString(formatLadder(f.Ladder))
+
+		if len(f.HalfLife) > 0 {
+			b.WriteString("\nRECENCY HALF-LIFE SWEEP (what the weighting costs in effective data):\n")
+			fmt.Fprintf(&b, "  %9s %9s %9s %7s %9s %9s\n", "half-life", "nominal", "ESS", "ESS%", "CM auc", "top-5")
+			for _, h := range f.HalfLife {
+				label := fmt.Sprintf("%.0fd", h.HalfLifeDays)
+				if h.HalfLifeDays <= 0 {
+					label = "uniform"
+				}
+				pct := 0.0
+				if h.NominalN > 0 {
+					pct = 100 * h.ESS / float64(h.NominalN)
+				}
+				fmt.Fprintf(&b, "  %9s %9d %9.0f %6.1f%% %9.3f %9.3f\n",
+					label, h.NominalN, h.ESS, pct, h.WinProbAUC, h.PredictorTop5)
 			}
-			fmt.Fprintf(&b, "  %9s %9d %9.0f %6.1f%% %9.3f %9.3f\n",
-				label, h.NominalN, h.ESS, pct, h.WinProbAUC, h.PredictorTop5)
 		}
 	}
 	return b.String()

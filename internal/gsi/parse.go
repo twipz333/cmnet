@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"cmnet/internal/draft"
 )
@@ -55,6 +56,7 @@ type rawMap struct {
 	RadiantScore int    `json:"radiant_score"`
 	DireScore    int    `json:"dire_score"`
 	Paused       bool   `json:"paused"`
+	WinTeam      string `json:"win_team"`
 }
 
 // rawPlayer is the local player's own line. While playing, this is all the client
@@ -70,6 +72,11 @@ type rawPlayer struct {
 	XPM      int `json:"xpm"`
 	NetWorth int `json:"net_worth"`
 	Gold     int `json:"gold"`
+	// TeamName is radiant|dire|spectator when the client sends it. This is how we
+	// learn "our side" during CM — without it the UI stuck on --side until toggled.
+	TeamName string `json:"team_name"`
+	// Team is the numeric seat (2=radiant, 3=dire) on some client builds.
+	Team int `json:"team"`
 }
 
 // rawHero is the local player's hero.
@@ -114,7 +121,6 @@ func ParseDraft(body []byte) (*draft.Snapshot, error) {
 	snap := &draft.Snapshot{}
 
 	if d := ev.Draft; d != nil {
-		snap.HasDraft = true
 		radiant := firstNonNil(d.Radiant, d.Team2)
 		dire := firstNonNil(d.Dire, d.Team3)
 		snap.RadiantPicks = extract(radiant, pickKey)
@@ -123,6 +129,12 @@ func ParseDraft(body []byte) (*draft.Snapshot, error) {
 		snap.DireBans = extract(dire, banKey)
 		snap.CurrentIsPick = d.Pick
 		snap.FirstPick = firstPickFrom(radiant, dire)
+		active := d.ActiveTeam == teamRadiant || d.ActiveTeam == teamDire
+		filled := len(snap.RadiantPicks)+len(snap.DirePicks)+len(snap.RadiantBans)+len(snap.DireBans) > 0
+		// An empty "draft":{} still arrives in-game once we subscribe to the
+		// draft section. That is not a new draft; HasDraft=false lets merge
+		// keep the completed lineup.
+		snap.HasDraft = active || filled
 		switch d.ActiveTeam {
 		case teamRadiant:
 			snap.CurrentTeam = draft.Radiant
@@ -146,6 +158,7 @@ func ParseDraft(body []byte) (*draft.Snapshot, error) {
 			RadiantScore: mp.RadiantScore,
 			DireScore:    mp.DireScore,
 			Paused:       mp.Paused,
+			WinTeam:      mp.WinTeam,
 		}
 	}
 	// The local player's own line. Attached to Live, which the front ends render
@@ -170,7 +183,55 @@ func ParseDraft(body []byte) (*draft.Snapshot, error) {
 		}
 		snap.Live.Self = self
 	}
+	if t, ok := localTeamFromPlayer(ev.Player); ok {
+		snap.LocalTeam, snap.LocalTeamOK = t, true
+	} else if t, ok := localTeamFromHero(snap); ok {
+		snap.LocalTeam, snap.LocalTeamOK = t, true
+	}
 	return snap, nil
+}
+
+// localTeamFromPlayer reads GSI player.team_name / player.team.
+func localTeamFromPlayer(p *rawPlayer) (draft.Team, bool) {
+	if p == nil {
+		return 0, false
+	}
+	switch strings.ToLower(strings.TrimSpace(p.TeamName)) {
+	case "radiant":
+		return draft.Radiant, true
+	case "dire":
+		return draft.Dire, true
+	}
+	switch p.Team {
+	case teamRadiant:
+		return draft.Radiant, true
+	case teamDire:
+		return draft.Dire, true
+	}
+	return 0, false
+}
+
+// localTeamFromHero infers our seat once our hero appears on a pick list
+// (fallback when team_name is missing mid-draft).
+func localTeamFromHero(snap *draft.Snapshot) (draft.Team, bool) {
+	if snap == nil || snap.Live == nil || snap.Live.Self == nil {
+		return 0, false
+	}
+	hid := snap.Live.Self.HeroID
+	if hid <= 0 {
+		return 0, false
+	}
+	for _, id := range snap.RadiantPicks {
+		if id == hid {
+			return draft.Radiant, true
+		}
+	}
+	for _, id := range snap.DirePicks {
+		if id == hid {
+			return draft.Dire, true
+		}
+	}
+	return 0, false
 }
 
 // AuthToken returns the token Dota echoed back, or "" when the payload carries no

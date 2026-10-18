@@ -135,3 +135,46 @@ func TestApplyGSIKeepsClockLiveWhenDraftIsUnchanged(t *testing.T) {
 			len(first.Recs), len(got.Recs))
 	}
 }
+
+func TestApplyGSIDetectsOurSide(t *testing.T) {
+	sess := New(Config{
+		GSIEvents: make(chan *draft.Snapshot),
+		OurTeam:   draft.Radiant, // default flag; GSI says we are Dire
+		FirstPick: draft.Radiant,
+		Rec:       testRecommender(t),
+	})
+	sess.ApplyGSI(&draft.Snapshot{
+		HasDraft:     true,
+		CurrentTeam:  draft.Dire,
+		LocalTeam:    draft.Dire,
+		LocalTeamOK:  true,
+		Live:         &draft.Live{MatchID: "100"},
+	})
+	if sess.OurTeam() != draft.Dire {
+		t.Fatalf("OurTeam = %v, want Dire from GSI", sess.OurTeam())
+	}
+	// Manual toggle pins against further GSI flips.
+	sess.ToggleSide() // -> Radiant, pinned
+	sess.ApplyGSI(&draft.Snapshot{
+		HasDraft:    true,
+		CurrentTeam: draft.Dire,
+		LocalTeam:   draft.Dire,
+		LocalTeamOK: true,
+		Live:        &draft.Live{MatchID: "100"},
+	})
+	if sess.OurTeam() != draft.Radiant {
+		t.Fatalf("manual pin lost: OurTeam = %v", sess.OurTeam())
+	}
+	// New match clears the pin.
+	sess.ApplyGSI(&draft.Snapshot{
+		HasDraft:    true,
+		CurrentTeam: draft.Dire,
+		LocalTeam:   draft.Dire,
+		LocalTeamOK: true,
+		Live:        &draft.Live{MatchID: "200"},
+	})
+	if sess.OurTeam() != draft.Dire {
+		t.Fatalf("new match should re-detect: OurTeam = %v", sess.OurTeam())
+	}
+}
+

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"cmnet/internal/cache"
+	"cmnet/internal/declog"
 	"cmnet/internal/scout"
 	"cmnet/internal/session"
 )
@@ -85,7 +86,7 @@ func opKnownPlayers(dbPath, snapshotPath, role string) ([]session.KnownPlayer, e
 // Deliberately separate from removing them from the snapshot: that one leaves the
 // cache warm so the next scout of the same opponent is fast, which is the whole
 // point of keeping the rows. This is the path for actually forgetting someone.
-func opForgetPlayer(dbPath string, accountID int64) (string, error) {
+func opForgetPlayer(dbPath string, accountID int64, log *declog.Logger) (string, error) {
 	store, err := cache.Open(dbPath)
 	if err != nil {
 		return "", err
@@ -94,7 +95,18 @@ func opForgetPlayer(dbPath string, accountID int64) (string, error) {
 	if err := store.ForgetPlayer(accountID); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("account %d forgotten, cached stats dropped", accountID), nil
+	// The decision log is the other place their identity ended up (§6.1): headers
+	// carry the ten account ids and the profiles as of each draft. Forgetting has
+	// to mean everywhere, or it means nothing.
+	drafts, lerr := forgetInLog(log, dbPath, accountID)
+	msg := fmt.Sprintf("account %d forgotten, cached stats dropped", accountID)
+	if lerr != nil {
+		return msg, fmt.Errorf("decision log still holds this player: %w", lerr)
+	}
+	if drafts > 0 {
+		msg += fmt.Sprintf("; redacted from %d logged drafts", drafts)
+	}
+	return msg, nil
 }
 
 // opPinPlayer keeps an account out of the automatic pruning.

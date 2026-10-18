@@ -19,6 +19,7 @@ const (
 	jobScout       = jobs.KindScout
 	jobScoutAllies = jobs.KindScoutAllies
 	jobBackfill    = jobs.KindBackfill
+	jobRankfill    = jobs.KindRankfill
 	jobAssets      = jobs.KindAssets
 )
 
@@ -105,6 +106,24 @@ func newRunner(h homeFlags) (*runner, error) {
 		},
 		MaxAttempts: 1,
 	})
+	// Rankfill shares the merge resource for the same reason backfill does: it
+	// writes the matches table and spends the same Explorer budget the bulk scan
+	// does, and the Explorer endpoint is exactly what stalls when leaned on.
+	q.Register(jobs.Spec{
+		Kind:      jobRankfill,
+		Resources: []jobs.Resource{jobs.ResMatchMerge},
+		Handler: func(ctx context.Context, j cache.Job, log jobs.Log) (string, error) {
+			var p rankfillPayload
+			if err := decodePayload(j.Payload, &p); err != nil {
+				return "", err
+			}
+			return opRankfill(ctx, rankfillOpts{
+				dbPath: h.dbPath,
+				limit:  p.Limit,
+			}, progressOf(log))
+		},
+		MaxAttempts: 1,
+	})
 	// Images touch nothing any other job writes, so they download alongside
 	// whatever else is running.
 	q.Register(jobs.Spec{
@@ -160,6 +179,14 @@ func (r *runner) Close() error { return r.st.Close() }
 // that is still queued is not queued again.
 const backfillEvery = 20 * time.Minute
 
+// rankfillEvery is how often the queue is offered another rank backfill pass.
+//
+// Faster than the stats backfill because the work is cheaper by two orders of
+// magnitude — a batched Explorer lookup per 150 matches against one detail
+// request per match — and because the backlog is strictly finite: every id asked
+// about is marked, so the query empties and the pass then costs a single count.
+const rankfillEvery = 5 * time.Minute
+
 // keepFinishedJobs is how many completed jobs stay in the history.
 //
 // Sized against what a person scrolls, not against what a disk holds: past a few
@@ -174,8 +201,15 @@ const trimEvery = 10 * time.Minute
 // Run drives the queue until ctx ends, trimming history on the way out.
 func (r *runner) Run(ctx context.Context) {
 	if r.token != "" {
-		go r.proposeBackfill(ctx)
+		go r.propose(ctx, jobBackfill, backfillEvery)
 	}
+	// No token check: the rank tier comes from OpenDota's public tables, which is
+	// also why this one is offered immediately instead of only on the timer. On a
+	// cache with nothing missing the pass is a single count and returns; on the
+	// mature cache that grew the rank column late, waiting the first interval would
+	// leave the rank filters selecting on unknowns for no reason.
+	_, _ = r.q.Enqueue(jobRankfill, jobs.PriorityBackground, "", true)
+	go r.propose(ctx, jobRankfill, rankfillEvery)
 	// One image pass per start. The set only changes when Valve adds a hero, so
 	// this is a no-op after the first run — every portrait is already on disk and
 	// the handler skips it without a request.
@@ -201,18 +235,19 @@ func (r *runner) trimPeriodically(ctx context.Context) {
 	}
 }
 
-// proposeBackfill offers a backfill pass on a slow timer. It only proposes: the
-// queue decides when to run it, and the resource rules keep it out of the way of
-// whatever the user is doing.
-func (r *runner) proposeBackfill(ctx context.Context) {
-	t := time.NewTicker(backfillEvery)
+// propose offers a pass of some upkeep kind on a slow timer. It only proposes:
+// the queue decides when to run it, and the resource rules keep it out of the way
+// of whatever the user is doing. Deduped, so a pass still sitting in the queue is
+// not queued twice.
+func (r *runner) propose(ctx context.Context, kind string, every time.Duration) {
+	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			_, _ = r.q.Enqueue(jobBackfill, jobs.PriorityBackground, "", true)
+			_, _ = r.q.Enqueue(kind, jobs.PriorityBackground, "", true)
 		}
 	}
 }
@@ -232,6 +267,11 @@ type playersPayload struct {
 
 // backfillPayload caps one backfill pass; zero means the default.
 type backfillPayload struct {
+	Limit int `json:"limit,omitempty"`
+}
+
+// rankfillPayload caps one rankfill pass; zero means the default.
+type rankfillPayload struct {
 	Limit int `json:"limit,omitempty"`
 }
 

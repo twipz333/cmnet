@@ -1,0 +1,7 @@
+{
+  "minimap": {
+    "o1": {"xpos": -1274, "ypos": 6375, "image": "minimap_enemyicon", "team": 2, "name": "npc_dota_hero_luna", "unitname": "npc_dota_hero_luna", "visionrange": 1800},
+    "o2": {"xpos": -1274, "ypos": 6267, "image": "minimap_enemyicon", "team": 2, "name": "npc_dota_hero_luna", "unitname": "npc_dota_hero_luna", "visionrange": 1800},
+    "o3": {"xpos": -1166, "ypos": 6375, "image": "minimap_enemyicon", "team": 2, "name": "npc_dota_hero_luna", "unitname": "npc_dota_hero_luna", "visionrange": 1800}
+  }
+}

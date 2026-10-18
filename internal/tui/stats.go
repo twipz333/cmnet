@@ -13,6 +13,7 @@ import (
 type (
 	StatsView   = session.StatsView
 	StatsPlayer = session.StatsPlayer
+	StatsSmurf  = session.StatsSmurf
 	StatsHero   = session.StatsHero
 )
 
@@ -123,13 +124,17 @@ func renderPlayers(players []StatsPlayer, th theme, selID int64, selAlly, ally b
 			continue
 		}
 		top := topHeroNames(p.TopHeroes, 5)
-		b.WriteString(fmt.Sprintf("%s%s: %s\n", marker, name, top))
+		smurf := ""
+		if p.Smurf != nil && p.Smurf.Label != "" {
+			smurf = " [" + p.Smurf.Label + "]"
+		}
+		b.WriteString(fmt.Sprintf("%s%s%s: %s\n", marker, name, smurf, top))
 	}
 	return b.String()
 }
 
-// topHeroNames lists the highest-affinity heroes (already sorted by hero id in the
-// snapshot, so re-sort by games desc for a readable "comfort" summary).
+// topHeroNames lists the most-played comfort heroes. opStats already sorts by
+// games desc; we re-sort here so the TUI stays correct against older payloads.
 func topHeroNames(heroes []StatsHero, n int) string {
 	if len(heroes) == 0 {
 		return "(no data)"

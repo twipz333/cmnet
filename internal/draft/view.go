@@ -46,6 +46,12 @@ type Snapshot struct {
 	// source could not tell.
 	FirstPick Team
 
+	// LocalTeam is the local player's Radiant/Dire seat from GSI (player.team_name
+	// or player.team). LocalTeamOK is false while spectating or before a side is
+	// chosen — callers must not treat the zero value as Radiant in that case.
+	LocalTeam   Team
+	LocalTeamOK bool
+
 	// HasDraft reports whether the source GSI event actually carried a draft block.
 	// Map-only in-game events (post-draft / All Pick) leave it false so the server
 	// can retain the last known picks instead of wiping them (M6).
@@ -74,6 +80,9 @@ type Live struct {
 	RadiantScore int    `json:"radiantScore,omitempty"`
 	DireScore    int    `json:"direScore,omitempty"`
 	Paused       bool   `json:"paused,omitempty"`
+	// WinTeam is radiant|dire|none from GSI map.win_team. Empty while the
+	// match is running; used to close the decision log without OpenDota.
+	WinTeam string `json:"winTeam,omitempty"`
 
 	// Our own player's line, when the client sends one. Absent while spectating
 	// and during the draft itself.

@@ -24,10 +24,14 @@ type PlayerHero struct {
 	Wins   int
 }
 
-// MatchRef is a match id with its start time.
+// MatchRef is a recent match row used for event windows and smurf heuristics.
 type MatchRef struct {
 	MatchID   int64
 	StartTime int64
+	HeroID    int
+	Won       bool // player's team won
+	PartySize int
+	LobbyType int
 }
 
 // DraftEntry is one pick/ban from a match draft.
@@ -76,7 +80,15 @@ func (s *OpenDotaSource) RecentMatches(ctx context.Context, accountID int64) ([]
 	}
 	out := make([]MatchRef, len(rows))
 	for i, r := range rows {
-		out[i] = MatchRef{MatchID: r.MatchID, StartTime: r.StartTime}
+		radiant := r.PlayerSlot < 128
+		out[i] = MatchRef{
+			MatchID:   r.MatchID,
+			StartTime: r.StartTime,
+			HeroID:    r.HeroID,
+			Won:       radiant == r.RadiantWin,
+			PartySize: r.PartySize,
+			LobbyType: r.LobbyType,
+		}
 	}
 	return out, nil
 }

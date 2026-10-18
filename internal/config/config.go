@@ -255,17 +255,21 @@ train:
   # older drafts away entirely.
   window-days: 90
 
-  # Recency half-life. Measured with 'advisor eval --sweep-half-life 7,14,30,60,-1':
-  # the predictor gets monotonically better as this shrinks (top-5 0.194 uniform →
-  # 0.246 at 14d → 0.268 at 7d) while win-prob does not care. Shorter than 7 is
-  # untested.
-  half-life: 7
+  # Recency half-life, measured over three rolling windows
+  # ('advisor eval --sweep-half-life 7,14,30,-1 --folds 3'). The predictor cannot
+  # tell 7d, 14d and 30d apart (the winner changes with the window), but win-prob on
+  # CM never gets worse as this GROWS across 7/14/30 — 7d was the worst of the three
+  # in all three windows (+0.018/+0.024/+0.004 going to 30d). Dropping the weighting
+  # entirely scores even higher on CM in two windows, but is the worst setting for
+  # the predictor everywhere, so keep some. Point estimates only, no per-point CIs:
+  # treat neighbouring values as a tie.
+  half-life: 30
 
   # Weight of pro Captains Mode drafts relative to public games. 1 = no
-  # down-weighting, which is what measurement supports today: every CM draft in
-  # the cache IS a pro game, so scaling them all changes nothing. Lower this to
-  # ~0.25 only once 'sync --public-cm' has collected public drafts to weigh them
-  # against.
+  # down-weighting. Treat this as an UNMEASURED default: the comparison that used
+  # to justify it ran while the weights never reached the predictor, so it proved
+  # nothing about that head. Now that 'sync --public-cm' has collected public CM
+  # drafts to weigh pro games against, ~0.25 is worth re-measuring.
   pro-weight: 1
 
   # Latent rank of the factorization machine; 0 skips it. Untested on this data.
@@ -282,15 +286,36 @@ serve:
   # in. Run 'advisor gsi-install' once (or start the TUI home, which installs it
   # automatically) and RESTART Dota, otherwise the game never posts anything.
   gsi: false
-  gsi-addr: 127.0.0.1:53000
+  gsi-addr: 127.0.0.1:54001
 
 # Settings for the TUI home — what you get by running 'advisor' with no
 # subcommand. The section is named after the command itself.
 advisor:
   gsi: false
-  gsi-addr: 127.0.0.1:53000
+  gsi-addr: 127.0.0.1:54001
   side: radiant
   first-pick: radiant
+
+  # Seconds before a spawn to ring / flag Due. Per-kind: 0 = use alert-lead, -1 = disable.
+  alert-lead: 15
+  # alert-lead-daynight: -1
+  # alert-lead-bounty: 10
+  # alert-lead-power: 20
+  # alert-lead-wisdom: 30
+  # alert-lead-lotus: 15
+  # alert-lead-tormentor: 45
+  # alert-lead-daynight: 10
+
+  # Active game-clock windows for alerts (seconds). -1 from = no lower limit;
+  # 0 until = no upper limit. Example: wisdom only until 35:00.
+  # alert-from-wisdom: 0
+  # alert-until-wisdom: 2100
+
+  # Shared secret for Discord remote-control (/api/remote/*).
+  # remote-token: "change-me"
+
+  # Start advisor-discord.exe as a sibling process with the web UI.
+  # discord: true
 
   # Background collection. While the app is open it keeps syncing, and retrains
   # when enough new data has arrived — the corpus takes days to fill and a few
@@ -302,9 +327,16 @@ advisor:
   auto: true
   # Per background pass. public-cm needs a token (without one the per-match detail
   # comes from OpenDota and times out for ~9 requests in 10, so it is skipped).
-  auto-public-cm: 250
-  auto-max-matches: 500
-  auto-cm-matches: 100
+  #
+  # Weighted towards public CM on purpose: it is the only stream that matches what
+  # the advisor is used for (Captains Mode at pub rank) and the scarce one. Bulk is
+  # all-pick with no bans and no draft order — it feeds final compositions and the
+  # synergy/counter matrices, which stop being empty around 45k matches, a mark the
+  # cache has already passed. Pro CM is real Captains Mode but a different
+  # population: coordinated teams where execution, not the draft, decides games.
+  auto-public-cm: 400
+  auto-max-matches: 100
+  auto-cm-matches: 50
   # A retrain needs BOTH: this much time since the last one AND this many new
   # matches. Time alone would retrain nightly on fifty new games; volume alone
   # would retrain hourly during the first days of collection.

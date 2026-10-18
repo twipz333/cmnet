@@ -5,10 +5,12 @@ import (
 	"sort"
 
 	"cmnet/internal/blend"
+	"cmnet/internal/capability"
 	"cmnet/internal/draft"
 	"cmnet/internal/features"
 	"cmnet/internal/matrices"
 	"cmnet/internal/model"
+	"cmnet/internal/roles"
 	"cmnet/internal/rules"
 )
 
@@ -19,16 +21,29 @@ const DefaultTopN = 8
 // search (the recommender falls back to one-ply win-prob scoring).
 type BeamConfig struct {
 	PruneN    int     // candidate pool size (top-N meta by predictor prior)
-	Depth     int     // rollout plies simulated past the candidate
-	Width     int     // beam width over our future picks
+	Depth     int     // CM-sequence plies simulated past the candidate (§6.4 H)
+	Width     int     // beam width over our future actions
 	LambdaSyn float64 // synergy weight in draft evaluation
 	LambdaCnt float64 // counter weight in draft evaluation
 	LambdaPos float64 // role-coverage (lining) penalty weight (#8)
+
+	// EnemyPolicy enables expectimax over the opponent predictor (± scout blend).
+	// When false, the legacy value-greedy one-action rollout is used (gate/regression).
+	EnemyPolicy bool
+	// EnemyTopK caps how many enemy actions are expanded under the policy.
+	EnemyTopK int
+	// MassFloor stops expanding more enemy actions once kept policy mass reaches it
+	// (whichever comes first with EnemyTopK). Tail mass uses V_baseline.
+	MassFloor float64
 }
 
-// DefaultBeamConfig is the M3 default tuning.
+// DefaultBeamConfig is the M3/§6.4 default tuning.
 func DefaultBeamConfig() BeamConfig {
-	return BeamConfig{PruneN: 24, Depth: 4, Width: 3, LambdaSyn: 0.10, LambdaCnt: 0.10, LambdaPos: 0.15}
+	return BeamConfig{
+		PruneN: 24, Depth: 4, Width: 3,
+		LambdaSyn: 0.10, LambdaCnt: 0.10, LambdaPos: 0.15,
+		EnemyPolicy: true, EnemyTopK: 8, MassFloor: 0.85,
+	}
 }
 
 // Recommender computes deterministic recommendations from the layer-1 models.
@@ -66,12 +81,24 @@ type Recommender struct {
 	// is comfortable on, applied to OUR pick scores. Normalized to [0,1] per hero.
 	allyAff []float64
 	allyW   float64
+
+	// Capability roster (§6.5): soft player→hero feasibility on our picks.
+	capRoster *capability.Roster
+	capLambda float64
+	// Enemy roster for lineup guesses (layer 2 SoftP); optional.
+	enemyRoster *capability.Roster
+
+	// Lineup fixes from the captain (session-only).
+	heroPosOurs    map[int]int
+	heroPosEnemy   map[int]int
+	heroPlayerOurs map[int]int64
 	// Hero pool (#4): our preferred draft heroes (by Valve id).
 	heroPool map[int]bool
 
 	// Hero positions (#8): Valve id → eligible lane positions (1-5). Enables a
 	// role-coverage penalty so our drafts can plausibly field a 1-5.
-	posByID map[int][]int
+	posByID   map[int][]int
+	rolePrior *roles.Prior
 	// metaScore caches the empty-draft predictor prior (≈ first-pick popularity),
 	// used to rank the per-position meta panel (#9) ONLY as a fallback when no
 	// STRATZ-baked per-position meta is present. Computed lazily.
@@ -176,6 +203,16 @@ func (r *Recommender) WithPositions(pos map[int][]int) *Recommender {
 	return r
 }
 
+// WithRolePrior attaches P(position|hero) for soft win-prob encoding and MAP
+// role tags on recommendations (§6.3).
+func (r *Recommender) WithRolePrior(p *roles.Prior) *Recommender {
+	if p == nil || len(p.Prob) == 0 {
+		return r
+	}
+	r.rolePrior = p
+	return r
+}
+
 // DefaultAllyWeight is the additive bonus applied to a pick's win score for a
 // fully-comfortable ally hero. Small by design: it breaks ties toward comfort
 // without overriding draft strength.
@@ -218,6 +255,69 @@ func (r *Recommender) WithHeroPool(ids []int) *Recommender {
 		r.heroPool[id] = true
 	}
 	return r
+}
+
+// WithCapability installs the §6.5 ally roster. Soft P(player plays hero) drives
+// a feasibility penalty on our pick scores; heroes are never hard-filtered.
+// Nil roster is a no-op. lambda <= 0 selects DefaultLambda.
+func (r *Recommender) WithCapability(roster *capability.Roster, lambda float64) *Recommender {
+	if roster == nil || len(roster.Players) < capability.MinRoster {
+		return r
+	}
+	r.capRoster = roster
+	if lambda <= 0 {
+		lambda = capability.DefaultLambda
+	}
+	r.capLambda = lambda
+	return r
+}
+
+// WithEnemyRoster installs SoftP for enemy lineup auto-assignment (display + sync).
+func (r *Recommender) WithEnemyRoster(roster *capability.Roster) *Recommender {
+	r.enemyRoster = roster
+	return r
+}
+
+// EnemyRoster returns the enemy SoftP roster, if any.
+func (r *Recommender) EnemyRoster() *capability.Roster { return r.enemyRoster }
+
+// CapRoster returns the ally capability roster, if any.
+func (r *Recommender) CapRoster() *capability.Roster { return r.capRoster }
+
+// RolePrior returns the loaded role prior, if any.
+func (r *Recommender) RolePrior() *roles.Prior { return r.rolePrior }
+
+// PosByID returns hero→eligible positions, if any.
+func (r *Recommender) PosByID() map[int][]int { return r.posByID }
+
+// WithLineupFix pins hero→position and hero→player from the draft lineup panel.
+func (r *Recommender) WithLineupFix(ourPos, enemyPos map[int]int, ourPlayer map[int]int64) *Recommender {
+	r.heroPosOurs = cloneIntMap(ourPos)
+	r.heroPosEnemy = cloneIntMap(enemyPos)
+	r.heroPlayerOurs = cloneInt64Map(ourPlayer)
+	return r
+}
+
+func cloneIntMap(m map[int]int) map[int]int {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[int]int, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneInt64Map(m map[int]int64) map[int]int64 {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[int]int64, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // WithScout enables log-linear blending of the enemy prediction with the frozen
@@ -298,59 +398,111 @@ func (r *Recommender) denseIdx(ids []int) []int {
 	return out
 }
 
-// roleCoverageDiff is Radiant's lane-coverage advantage: how many of the five
-// positions each side can plausibly field, differenced and normalized to [-1,1].
-//
-// This is the cheapest way to tell the strength model something a bag of heroes
-// cannot express: the same five heroes are a real draft or a broken one depending
-// on whether they can actually occupy 1-5. Zero when no position table is baked.
+// roleCoverageDiff is Radiant's soft lane-coverage advantage under the
+// assignment posterior (§6.3), normalized to roughly [-1,1].
 func (r *Recommender) roleCoverageDiff(rPicks, dPicks []int) float64 {
-	if len(r.posByID) == 0 {
+	if r.rolePrior == nil && len(r.posByID) == 0 {
 		return 0
 	}
-	return (r.roleCoverage(rPicks) - r.roleCoverage(dPicks)) / 5
+	return roles.CoverageDiff(rPicks, dPicks, r.rolePrior, r.posByID)
 }
 
-// roleCoverage is the size of the maximum hero→position matching for a lineup
-// (0-5). Greedy over positions in fixed order would misjudge flexible pools, so
-// this is a real bipartite matching (Kuhn's algorithm) — deterministic, and at
-// five slots the cost is irrelevant.
-func (r *Recommender) roleCoverage(picks []int) float64 {
-	if len(picks) == 0 {
+// mapRole returns the MAP position (1-5) for hero given the side's picks plus
+// the candidate, or 0 when roles are unavailable.
+func (r *Recommender) mapRole(picks []int, hero int) int {
+	if pos, ok := r.heroPosOurs[hero]; ok && pos >= 1 && pos <= 5 {
+		return pos
+	}
+	if r.rolePrior == nil {
 		return 0
 	}
-	// matchOf[pos] = index into picks assigned to that position, -1 if free.
-	matchOf := [6]int{-1, -1, -1, -1, -1, -1}
-	var try func(hi int, seen *[6]bool) bool
-	try = func(hi int, seen *[6]bool) bool {
-		elig, ok := r.posByID[picks[hi]]
-		if !ok {
-			return false
-		}
-		for _, pos := range elig {
-			if pos < 1 || pos > 5 || seen[pos] {
-				continue
-			}
-			seen[pos] = true
-			if matchOf[pos] == -1 || try(matchOf[pos], seen) {
-				matchOf[pos] = hi
-				return true
-			}
-		}
-		return false
-	}
-	count := 0
-	for hi := range picks {
-		var seen [6]bool
-		if try(hi, &seen) {
-			count++
+	line := append([]int(nil), picks...)
+	found := false
+	for _, id := range line {
+		if id == hero {
+			found = true
+			break
 		}
 	}
-	return float64(count)
+	if !found {
+		line = append(line, hero)
+	}
+	asg := roles.MAP(line, r.rolePrior, r.posByID)
+	if asg == nil {
+		return r.rolePrior.Mode(hero)
+	}
+	if pos, ok := asg[hero]; ok {
+		return pos
+	}
+	return r.rolePrior.Mode(hero)
+}
+
+// encodeWinProb builds schema-v2 features with soft position occupancy when a
+// role prior is present (E[logit] = w·E[x] for the linear win-prob head).
+func (r *Recommender) encodeWinProb(rPicks, dPicks []int) []float64 {
+	if r.rolePrior == nil {
+		return r.heroMap.EncodeWinProb(rPicks, dPicks)
+	}
+	rOcc := roles.ExpectedOccupancy(rPicks, r.rolePrior, r.posByID)
+	dOcc := roles.ExpectedOccupancy(dPicks, r.rolePrior, r.posByID)
+	rOcc = pinOccupancy(rOcc, r.heroPosForSide(draft.Radiant))
+	dOcc = pinOccupancy(dOcc, r.heroPosForSide(draft.Dire))
+	return r.heroMap.EncodeWinProbSoft(rPicks, dPicks, rOcc, dOcc)
+}
+
+func (r *Recommender) heroPosForSide(side draft.Team) map[int]int {
+	// OurTeam is not stored on Recommender; callers pin ours/enemy maps. Radiant
+	// seats use ours when we play Radiant — session applies maps already translated
+	// via WithLineupFix as our/enemy, so encode overlays both onto both sides by
+	// matching hero ids present on that side's picks only inside pinOccupancy.
+	out := map[int]int{}
+	for h, p := range r.heroPosOurs {
+		out[h] = p
+	}
+	for h, p := range r.heroPosEnemy {
+		out[h] = p
+	}
+	_ = side
+	return out
+}
+
+func pinOccupancy(occ map[int][roles.NumPositions]float64, fix map[int]int) map[int][roles.NumPositions]float64 {
+	if len(fix) == 0 || occ == nil {
+		return occ
+	}
+	for h, pos := range fix {
+		if pos < 1 || pos > roles.NumPositions {
+			continue
+		}
+		if _, ok := occ[h]; !ok {
+			continue
+		}
+		var row [roles.NumPositions]float64
+		row[pos-1] = 1
+		occ[h] = row
+	}
+	return occ
+}
+
+// rawWinProb is the uncalibrated win-prob with soft positions when available.
+func (r *Recommender) rawWinProb(rPicks, dPicks []int) float64 {
+	if r.WinProb == nil || r.WinProb.Model == nil {
+		return 0.5
+	}
+	if r.rolePrior == nil {
+		return r.WinProb.RawWinProb(rPicks, dPicks)
+	}
+	return r.WinProb.Model.Predict(r.encodeWinProb(rPicks, dPicks))
 }
 
 // SetBeamConfig overrides the beam tuning (call after WithMatrices).
 func (r *Recommender) SetBeamConfig(cfg BeamConfig) *Recommender {
+	if cfg.EnemyTopK <= 0 {
+		cfg.EnemyTopK = 8
+	}
+	if cfg.MassFloor <= 0 {
+		cfg.MassFloor = 0.85
+	}
 	r.beam = cfg
 	return r
 }
@@ -639,22 +791,46 @@ func (r *Recommender) rankCandidates(d draft.View, ourTeam draft.Team, step draf
 		}
 		var score float64
 		var why string
+		var factors *Factors
 		switch {
 		case beamPick:
 			if !containsInt(pool, id) {
 				continue // pruned: outside the meta pool
 			}
-			score = r.beamPickScore(ourTeam, rPicks, dPicks, id, pool)
-			why = fmt.Sprintf("win~%.1f%%", score*100)
-			score, why = r.applyAllyBias(idx, score, why)
+			score = r.beamPickScore(d, ourTeam, id, pool)
+			why = fmt.Sprintf("вин ~%.0f%%", score*100)
+			score, why, factors = r.applyAllyBias(idx, score, why, false)
+			ourPicks := rPicks
+			if ourTeam == draft.Dire {
+				ourPicks = dPicks
+			}
+			score, why, factors = r.applyCapability(ourPicks, id, score, why, factors)
 		case step.Action == draft.Pick:
 			score = r.pickScore(ourTeam, rPicks, dPicks, id)
-			why = fmt.Sprintf("win %.1f%%", score*100)
-			score, why = r.applyAllyBias(idx, score, why)
+			why = fmt.Sprintf("вин ~%.0f%%", score*100)
+			score, why, factors = r.applyAllyBias(idx, score, why, true)
+			ourPicks := rPicks
+			if ourTeam == draft.Dire {
+				ourPicks = dPicks
+			}
+			score, why, factors = r.applyCapability(ourPicks, id, score, why, factors)
 		default: // ban step
-			score, why = r.banScore(ourTeam, rPicks, dPicks, id, idx, eprobs)
+			score, why, factors = r.banScore(d, ourTeam, rPicks, dPicks, id, idx, eprobs)
 		}
-		recs = append(recs, Recommendation{HeroID: id, Score: score, Why: why})
+		role := 0
+		player := ""
+		if step.Action == draft.Pick {
+			ourPicks := rPicks
+			if ourTeam == draft.Dire {
+				ourPicks = dPicks
+			}
+			role = r.mapRole(ourPicks, id)
+			if r.capRoster != nil {
+				lineup := append(append([]int(nil), ourPicks...), id)
+				player = capability.PlayerForFixed(id, lineup, r.capRoster, r.heroPlayerOurs)
+			}
+		}
+		recs = append(recs, Recommendation{HeroID: id, Score: score, Why: why, Factors: factors, Role: role, Player: player})
 	}
 	rankRecommendations(recs)
 	if len(recs) > topN {
@@ -677,21 +853,32 @@ func containsInt(s []int, v int) bool {
 const (
 	lambdaBanThreat = 0.40 // candidate counters our current picks
 	lambdaBanSyn    = 0.20 // candidate synergizes with enemy's current picks
+	lambdaBanAlt    = 0.30 // §6.7 deficit of equivalent alternatives after the ban
 )
 
-// banScore values denying a hero: it blends how likely the enemy is to take it
-// (eprobs) with how dangerous it would be to our draft (#7). Threat = the
-// candidate's counter win rate against our current picks; synergy = its fit with
-// the enemy's current picks. Falls back to the raw enemy probability without
-// matrices. Deterministic (rounded).
-func (r *Recommender) banScore(ourTeam draft.Team, rPicks, dPicks []int, candID, idx int, eprobs []float64) (float64, string) {
-	base := eprobs[idx]
+// banScore values denying a hero (§1.4 / §6.7): P(enemy takes it) plus danger to
+// our draft plus the alternative-deficit — how much the enemy's outlook worsens
+// after this hero is removed and their policy is recomputed. Deterministic (rounded).
+func (r *Recommender) banScore(d draft.View, ourTeam draft.Team, rPicks, dPicks []int, candID, idx int, eprobs []float64) (float64, string, *Factors) {
+	base := 0.0
+	if idx >= 0 && idx < len(eprobs) {
+		base = eprobs[idx]
+	}
+	f := &Factors{EnemyProb: base}
 	if !r.beamEnabled() {
-		return base, fmt.Sprintf("enemy %.1f%%", base*100)
+		// Still apply alt-deficit when matrices are off — it only needs the predictor.
+		def := r.altDeficit(d, ourTeam, candID, eprobs)
+		f.AltDeficit = def
+		score := model.RoundScore(base + lambdaBanAlt*def)
+		why := fmt.Sprintf("враг ~%.0f%%", base*100)
+		if def > 0.01 {
+			why += fmt.Sprintf(" · дыра %.0f", def*100)
+		}
+		return score, why, f
 	}
 	ci, ok := r.heroMap.Index(candID)
 	if !ok {
-		return base, fmt.Sprintf("enemy %.1f%%", base*100)
+		return base, fmt.Sprintf("враг ~%.0f%%", base*100), f
 	}
 	var ourPicks, enemyPicks []int
 	if ourTeam == draft.Radiant {
@@ -699,17 +886,100 @@ func (r *Recommender) banScore(ourTeam draft.Team, rPicks, dPicks []int, candID,
 	} else {
 		ourPicks, enemyPicks = dPicks, rPicks
 	}
-	threat := r.meanCounterFrom(ci, ourPicks) // cand beats our heroes
-	esyn := r.meanSynergyWith(ci, enemyPicks) // cand fits enemy team
-	score := model.RoundScore(base + lambdaBanThreat*(threat-0.5) + lambdaBanSyn*(esyn-0.5))
-	why := fmt.Sprintf("enemy %.0f%%", base*100)
+	threat := r.meanCounterFrom(ci, ourPicks)
+	esyn := r.meanSynergyWith(ci, enemyPicks)
+	def := r.altDeficit(d, ourTeam, candID, eprobs)
+	f.Threat, f.EnemySynergy, f.AltDeficit = threat, esyn, def
+	score := model.RoundScore(base + lambdaBanThreat*(threat-0.5) + lambdaBanSyn*(esyn-0.5) + lambdaBanAlt*def)
+	why := fmt.Sprintf("враг ~%.0f%%", base*100)
 	if threat > 0.52 {
-		why += " counters-us"
+		why += " · контрит нас"
 	}
 	if esyn > 0.52 {
-		why += " enemy-synergy"
+		why += " · синергия врага"
 	}
-	return score, why
+	if def > 0.01 {
+		why += fmt.Sprintf(" · дыра %.0f", def*100)
+	}
+	return score, why, f
+}
+
+// altDeficit is max(0, outlook_before − outlook_after) where outlook is the
+// danger-weighted mass of the enemy next-action policy. After = same predictor
+// (± scout blend) with cand treated as already banned.
+func (r *Recommender) altDeficit(d draft.View, ourTeam draft.Team, candID int, eprobs []float64) float64 {
+	if r.Predictor == nil || r.heroMap == nil || candID <= 0 {
+		return 0
+	}
+	rPicks := d.Picks(draft.Radiant)
+	dPicks := d.Picks(draft.Dire)
+	before := r.policyOutlook(ourTeam, rPicks, dPicks, eprobs)
+
+	rBans := append([]int(nil), d.Bans(draft.Radiant)...)
+	dBans := append([]int(nil), d.Bans(draft.Dire)...)
+	if ourTeam == draft.Radiant {
+		rBans = append(rBans, candID)
+	} else {
+		dBans = append(dBans, candID)
+	}
+	step, ok := d.Current()
+	isPick := ok && step.Action == draft.Pick
+	st := features.PredictorState{
+		RadiantPicks: rPicks,
+		DirePicks:    dPicks,
+		RadiantBans:  rBans,
+		DireBans:     dBans,
+		IsPick:       isPick,
+		Actor:        int(ourTeam.Opponent()),
+		FirstPick:    int(d.FirstPickTeam()),
+	}
+	after := r.Predictor.Distribution(st)
+	if r.scoutEnabled {
+		after = blend.Blend(after, r.enemyAff2, r.enemyAff3, r.eventN, r.blendW)
+	}
+	post := r.policyOutlook(ourTeam, rPicks, dPicks, after)
+	def := before - post
+	if def < 0 {
+		return 0
+	}
+	return model.RoundScore(def)
+}
+
+// policyOutlook is the value of the enemy's best remaining option under probs:
+// max_i p_i · util_i, where util folds threat/synergy the same way ban danger does.
+// Using the best option (not the policy expectation) matches §6.7 "лучший доступный
+// вариант" and stays informative when util is flat: banning a unique high-p hero
+// drops the max, banning one of two twins barely moves it.
+func (r *Recommender) policyOutlook(ourTeam draft.Team, rPicks, dPicks []int, probs []float64) float64 {
+	if len(probs) == 0 {
+		return 0
+	}
+	var ourPicks, enemyPicks []int
+	if ourTeam == draft.Radiant {
+		ourPicks, enemyPicks = rPicks, dPicks
+	} else {
+		ourPicks, enemyPicks = dPicks, rPicks
+	}
+	best := 0.0
+	ids := r.heroMap.IDs()
+	for i, p := range probs {
+		if p <= 0 || i >= len(ids) {
+			continue
+		}
+		threat, syn := 0.5, 0.5
+		if r.counter != nil {
+			threat = r.meanCounterFrom(i, ourPicks)
+		}
+		if r.synergy != nil {
+			syn = r.meanSynergyWith(i, enemyPicks)
+		}
+		util := 1 + lambdaBanThreat*(threat-0.5) + lambdaBanSyn*(syn-0.5)
+		v := p * util
+		if v > best {
+			best = v
+		}
+	}
+	return best
 }
 
 // meanCounterFrom is the average counter win rate of hero ci against targets
@@ -751,14 +1021,38 @@ func (r *Recommender) meanSynergyWith(ci int, mates []int) float64 {
 	return sum / float64(n)
 }
 
+// applyCapability subtracts a soft feasibility penalty for our prospective lineup
+// (current our picks + cand). Never drops a hero — only reshapes the score (§6.5).
+func (r *Recommender) applyCapability(ourPicks []int, cand int, score float64, why string, f *Factors) (float64, string, *Factors) {
+	if f == nil {
+		f = &Factors{Base: score}
+	}
+	if r.capRoster == nil || r.capLambda <= 0 {
+		return score, why, f
+	}
+	lineup := append(append([]int(nil), ourPicks...), cand)
+	feas := capability.FeasibilityFixed(lineup, r.capRoster, r.heroPlayerOurs)
+	delta := model.RoundScore(-r.capLambda * (1 - feas))
+	if delta == 0 {
+		return score, why, f
+	}
+	f.Capability = delta
+	return model.RoundScore(score + delta), why + fmt.Sprintf(" · исполнимость %.0f%%", feas*100), f
+}
+
 // applyAllyBias adds the (bounded, normalized) ally-comfort bonus to a pick score
 // and tags the reason when it contributes. Deterministic: the result is rounded.
-func (r *Recommender) applyAllyBias(idx int, score float64, why string) (float64, string) {
+// isWinProb says whether the base score handed to applyAllyBias is a calibrated
+// win probability (one-ply scoring) or a beam rollout value, which is neither
+// calibrated nor bounded to [0,1].
+func (r *Recommender) applyAllyBias(idx int, score float64, why string, isWinProb bool) (float64, string, *Factors) {
+	f := &Factors{Base: score, BaseIsWinProb: isWinProb}
 	if r.allyAff == nil || idx < 0 || idx >= len(r.allyAff) || r.allyAff[idx] <= 0 {
-		return score, why
+		return score, why, f
 	}
-	score = model.RoundScore(score + r.allyW*r.allyAff[idx])
-	return score, why + " +comfort"
+	biased := model.RoundScore(score + r.allyW*r.allyAff[idx])
+	f.Comfort = biased - score
+	return biased, why + " · из наших", f
 }
 
 // draftStrength evaluates the picks currently on the board (both sides) with the
@@ -771,7 +1065,7 @@ func (r *Recommender) draftStrength(d draft.View, ourTeam draft.Team) *DraftStre
 	if len(rPicks) == 0 && len(dPicks) == 0 {
 		return nil
 	}
-	radiantProb := r.WinProb.RadiantWinProb(rPicks, dPicks)
+	radiantProb := model.RoundScore(r.WinProb.CalibrateAt(r.rawWinProb(rPicks, dPicks), len(rPicks)+len(dPicks)))
 
 	// Mid-draft, marginalize over the unfilled slots rather than scoring the board
 	// as if those heroes will never exist (see rollout.go). Calibrated per board
@@ -794,7 +1088,7 @@ func (r *Recommender) draftStrength(d draft.View, ourTeam draft.Team) *DraftStre
 		mx := r.matrices()
 		ri, di := r.denseIdx(rPicks), r.denseIdx(dPicks)
 		radiantProb = model.RoundScore(clampProb01(r.stacker.Apply(model.StackerFeatures(
-			r.WinProb.RawWinProb(rPicks, dPicks),
+			r.rawWinProb(rPicks, dPicks),
 			mx.MeanSynergy(ri)-mx.MeanSynergy(di),
 			mx.MeanCounter(ri, di),
 			r.roleCoverageDiff(rPicks, dPicks),
@@ -823,10 +1117,17 @@ func (r *Recommender) draftStrength(d draft.View, ourTeam draft.Team) *DraftStre
 
 // pickScore returns our-perspective win probability after adding candidate to our picks.
 func (r *Recommender) pickScore(ourTeam draft.Team, rPicks, dPicks []int, cand int) float64 {
+	rp, dp := rPicks, dPicks
 	if ourTeam == draft.Radiant {
-		return r.WinProb.RadiantWinProb(appendCopy(rPicks, cand), dPicks)
+		rp = appendCopy(rPicks, cand)
+	} else {
+		dp = appendCopy(dPicks, cand)
 	}
-	return model.RoundScore(1 - r.WinProb.RadiantWinProb(rPicks, appendCopy(dPicks, cand)))
+	p := model.RoundScore(r.WinProb.CalibrateAt(r.rawWinProb(rp, dp), len(rp)+len(dp)))
+	if ourTeam == draft.Dire {
+		p = model.RoundScore(1 - p)
+	}
+	return p
 }
 
 // clampProb01 bounds a value to [0,1] so the blended strength stays a probability.

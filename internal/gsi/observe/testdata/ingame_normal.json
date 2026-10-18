@@ -1,0 +1,78 @@
+{
+  "map": {
+    "matchid": "1",
+    "game_time": 100,
+    "clock_time": 50,
+    "game_state": "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS",
+    "daytime": true,
+    "paused": false,
+    "radiant_score": 0,
+    "dire_score": 0,
+    "win_team": "none"
+  },
+  "player": {
+    "team_name": "dire",
+    "kills": 0,
+    "deaths": 0,
+    "assists": 1,
+    "last_hits": 2,
+    "denies": 0,
+    "gold": 177,
+    "gold_reliable": 177,
+    "gold_unreliable": 0,
+    "gpm": 162,
+    "xpm": 154,
+    "player_slot": 3,
+    "team_slot": 4
+  },
+  "hero": {
+    "id": 9,
+    "name": "npc_dota_hero_mirana",
+    "level": 2,
+    "xp": 400,
+    "alive": true,
+    "respawn_seconds": 0,
+    "xpos": 5285,
+    "ypos": -3553,
+    "health": 420,
+    "max_health": 714,
+    "health_percent": 58,
+    "mana": 173,
+    "max_mana": 411,
+    "mana_percent": 42,
+    "smoked": false,
+    "aghanims_scepter": false,
+    "aghanims_shard": false,
+    "buyback_cost": 265,
+    "buyback_cooldown": 0
+  },
+  "abilities": {
+    "ability0": {"name": "mirana_starfall", "level": 1, "can_cast": true, "cooldown": 0, "max_cooldown": 13, "ultimate": false}
+  },
+  "items": {
+    "slot0": {"name": "item_branches", "can_cast": true, "cooldown": 0},
+    "teleport0": {"name": "item_tpscroll", "can_cast": true, "charges": 1, "cooldown": 0, "max_cooldown": 101}
+  },
+  "buildings": {
+    "dire": {
+      "dota_badguys_tower1_top": {"health": 1800, "max_health": 1800}
+    }
+  },
+  "minimap": {
+    "o150": {"xpos": 0, "ypos": 0, "image": "minimap_plaincircle", "team": 2, "unitname": "npc_dota_hero_nevermore", "visionrange": 0},
+    "o156": {"xpos": 5284, "ypos": -3555, "image": "minimap_herocircle_self", "team": 3, "name": "npc_dota_hero_mirana", "unitname": "npc_dota_hero_mirana", "visionrange": 1800},
+    "o154": {"xpos": -5637, "ypos": 5993, "image": "minimap_herocircle", "team": 3, "name": "npc_dota_hero_sven", "unitname": "npc_dota_hero_sven", "visionrange": 1800},
+    "o157": {"xpos": -5965, "ypos": 5363, "image": "minimap_enemyicon", "team": 2, "name": "npc_dota_hero_tidehunter", "unitname": "npc_dota_hero_tidehunter", "visionrange": 1800},
+    "o10": {"xpos": 100, "ypos": 200, "image": "minimap_creep", "team": 3, "unitname": "npc_dota_creep_badguys_melee", "visionrange": 750},
+    "o11": {"xpos": 110, "ypos": 210, "image": "minimap_creep", "team": 3, "unitname": "npc_dota_creep_badguys_ranged"},
+    "o12": {"xpos": 120, "ypos": 220, "image": "minimap_creep", "team": 3, "unitname": "npc_dota_creep_badguys_flagbearer"},
+    "o20": {"xpos": -2000, "ypos": 3000, "image": "minimap_ward_obs", "team": 3, "unitname": "npc_dota_observer_wards"},
+    "o30": {"xpos": -1500, "ypos": 4000, "image": "minimap_tower90", "team": 2, "unitname": "npc_dota_goodguys_tower1_mid"}
+  },
+  "events": [],
+  "roshan": {},
+  "draft": {},
+  "couriers": {},
+  "neutralitems": {},
+  "this_field_does_not_exist_in_schema": {"nested": true}
+}

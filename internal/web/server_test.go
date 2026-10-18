@@ -162,9 +162,15 @@ func TestResultMatchesCoreExactly(t *testing.T) {
 	}
 	// The wire format must preserve the core's ranking exactly: same order, same
 	// rounded scores. Re-ranking anywhere downstream is what §6 forbids.
+	//
+	// Compared field by field rather than by struct equality: Recommendation carries
+	// a Factors breakdown that is deliberately not serialised (it feeds the decision
+	// log in-process, §6.1), so it is nil on this side by design and its absence is
+	// not a divergence in what the browser is shown.
 	for i, r := range s.Result.Recs {
-		if r != want.Recs[i] {
-			t.Errorf("recs[%d] = %+v, core = %+v", i, r, want.Recs[i])
+		w := want.Recs[i]
+		if r.HeroID != w.HeroID || r.Score != w.Score || r.Why != w.Why {
+			t.Errorf("recs[%d] = %+v, core = %+v", i, r, w)
 		}
 	}
 	for i, e := range s.Result.EnemyPred {

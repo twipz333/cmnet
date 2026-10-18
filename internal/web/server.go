@@ -38,6 +38,11 @@ type Server struct {
 	gsiOnce  sync.Once
 	baseCtx  context.Context // server lifetime, for the GSI pump
 	pumpDone bool
+
+	// outcome polls OpenDota when the captain skips win/loss after a draft.
+	outcome outcomeAgent
+
+	remoteToken string // shared secret for /api/remote/*; empty = disabled
 }
 
 // New builds a server over the app's operation callbacks. The draft session is
@@ -251,6 +256,9 @@ func (s *Server) pumpGSI(ctx context.Context, evs <-chan *draft.Snapshot) {
 				continue
 			}
 			ring := sess.ApplyGSI(snap)
+			if msg := sess.TakeStatus(); msg != "" {
+				s.setStatus(msg)
+			}
 
 			// A due objective is the one thing the user reacts to in real time.
 			if ring {
@@ -284,6 +292,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/side", s.mutate(s.doSide))
 	mux.HandleFunc("/api/first-pick", s.mutate(s.doFirstPick))
 	mux.HandleFunc("/api/enemy", s.mutate(s.doAddEnemy))
+	mux.HandleFunc("/api/lineup", s.mutate(s.doLineup))
+	mux.HandleFunc("/api/reason", s.mutate(s.doReason))
+	mux.HandleFunc("/api/outcome", s.mutate(s.doOutcome))
+	mux.HandleFunc("/api/outcome/resolve", s.mutate(s.doOutcomeResolve))
+	mux.HandleFunc("/api/declog/review", s.handleDeclogReview)
 	mux.HandleFunc("/api/reload", s.mutate(s.doReload))
 	// Cached images, served from disk. The page must never reference a CDN: it is
 	// opened from a local server and has to work with no network at all, which is
@@ -296,6 +309,7 @@ func (s *Server) routes() http.Handler {
 		}
 	}
 	s.routeOps(mux)
+	s.routeRemote(mux)
 	return sameSiteOnly(mux)
 }
 
@@ -336,6 +350,8 @@ type stateDTO struct {
 	Ring   bool               `json:"ring"` // an objective just entered its alert window
 	// Auto is the background collector's state, or nil when it is not running.
 	Auto *session.AutoStatus `json:"auto"`
+	// Lineup is the pos1-5 roster panel (our seats + enemy guesses).
+	Lineup *session.LineupView `json:"lineup,omitempty"`
 }
 
 type metaDTO struct {
@@ -349,6 +365,14 @@ type metaDTO struct {
 	CanAddEnemy   bool   `json:"canAddEnemy"`
 	CanUndo       bool   `json:"canUndo"`
 	CanRedo       bool   `json:"canRedo"`
+	// Logging reports whether decisions are being recorded (§6.1); LastDecision is
+	// the step a reason would be attached to (-1 when none has been logged yet), so
+	// the UI can name it instead of asking for a reason about nothing. LogError
+	// carries the last logging failure, which the status bar shows: a log that
+	// silently stopped recording is worse than one that is off.
+	Logging      bool   `json:"logging"`
+	LastDecision int    `json:"lastDecision"`
+	LogError     string `json:"logError,omitempty"`
 	// DraftReady reports whether a bundle is loaded; false means the draft screen
 	// cannot work yet (train first). DraftError explains why.
 	DraftReady bool   `json:"draftReady"`
@@ -359,6 +383,9 @@ type metaDTO struct {
 	CanScout       bool `json:"canScout"`
 	CanScoutAllies bool `json:"canScoutAllies"`
 	CanStats       bool `json:"canStats"`
+	CanConfig      bool `json:"canConfig"`
+	CanDiscordConfig bool `json:"canDiscordConfig"`
+	CanAlerts        bool `json:"canAlerts"`
 	CanEditPool    bool `json:"canEditPool"`
 	CanEditRules   bool `json:"canEditRules"`
 }
@@ -397,8 +424,12 @@ func (s *Server) snapshot(ring bool) stateDTO {
 			CanScout:       sh.Scout != nil,
 			CanScoutAllies: sh.ScoutAllies != nil,
 			CanStats:       sh.Stats != nil,
+			CanConfig:      sh.GetConfig != nil && sh.SaveConfig != nil,
+			CanDiscordConfig: sh.GetDiscordConfig != nil && sh.SaveDiscordConfig != nil,
+			CanAlerts:        sh.GetAlerts != nil && sh.SaveAlerts != nil,
 			CanEditPool:    sh.SetHeroPool != nil,
 			CanEditRules:   sh.SetItemRules != nil,
+			LastDecision:   -1, // no decision logged yet; 0 is a real step number
 		},
 		Board:  boardDTO{RadiantPicks: []int{}, RadiantBans: []int{}, DirePicks: []int{}, DireBans: []int{}},
 		Heroes: []session.Hero{},
@@ -437,6 +468,13 @@ func (s *Server) snapshot(ring bool) stateDTO {
 	st.Meta.CanAddEnemy = sess.CanAddEnemy()
 	st.Meta.CanUndo = sess.CanUndo()
 	st.Meta.CanRedo = sess.CanRedo()
+	st.Meta.Logging = sess.Logging()
+	st.Meta.LogError = sess.LogFailure()
+	if seq, ok := sess.LastLoggedDecision(); ok {
+		st.Meta.LastDecision = seq
+	} else {
+		st.Meta.LastDecision = -1
+	}
 
 	st.Board = boardDTO{
 		RadiantPicks: nonNil(view.Picks(draft.Radiant)),
@@ -456,6 +494,11 @@ func (s *Server) snapshot(ring bool) stateDTO {
 	st.Names = names
 	st.Live = sess.Live()
 	st.Alerts = sess.Alerts()
+	lu := sess.Lineup()
+	st.Lineup = &lu
+	if msg := s.outcome.Status(); msg != "" {
+		st.Status = msg
+	}
 	return st
 }
 
@@ -560,10 +603,15 @@ func (s *Server) doStepTeam(*http.Request) (string, error) {
 	return "current step team → " + opp.String(), nil
 }
 
-func (s *Server) doSide(*http.Request) (string, error) {
+func (s *Server) doSide(r *http.Request) (string, error) {
 	sess, err := s.session()
 	if err != nil {
 		return "", err
+	}
+	if team, set, err := parseSideTeam(r); err != nil {
+		return "", err
+	} else if set {
+		return "our side → " + sess.SetSide(team).String(), nil
 	}
 	return "our side → " + sess.ToggleSide().String(), nil
 }
@@ -578,6 +626,145 @@ func (s *Server) doFirstPick(*http.Request) (string, error) {
 		return "", err
 	}
 	return "first-pick → " + nf.String() + " (draft reset)", nil
+}
+
+
+// handleDeclogReview returns the post-draft survey payload: whether the draft is
+// finished, and which of our steps diverged from the top recommendation.
+func (s *Server) handleDeclogReview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sess, err := s.session()
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ready": false, "logging": false, "choices": []any{}})
+		return
+	}
+	_, hasStep := sess.CurrentStep()
+	v := sess.View()
+	boardEmpty := len(v.Picks(draft.Radiant))+len(v.Picks(draft.Dire))+len(v.Bans(draft.Radiant))+len(v.Bans(draft.Dire)) == 0
+	ready := !hasStep && !boardEmpty
+	label := func(id int) string {
+		for _, h := range sess.Config().Heroes {
+			if h.ID == id {
+				return h.Label()
+			}
+		}
+		return strconv.Itoa(id)
+	}
+	choices := []map[string]any{}
+	if ready && sess.Logging() {
+		for _, c := range sess.OffRecChoices() {
+			choices = append(choices, map[string]any{
+				"seq":        c.Seq,
+				"action":     c.Action,
+				"chosen":     c.Chosen,
+				"chosenName": label(c.Chosen),
+				"chosenRank": c.ChosenRank,
+				"topHero":    c.TopHero,
+				"topName":    label(c.TopHero),
+				"topWhy":     c.TopWhy,
+			})
+		}
+	}
+	key := fmt.Sprintf("%v|%v|%v|%v", v.Picks(draft.Radiant), v.Picks(draft.Dire), v.Bans(draft.Radiant), v.Bans(draft.Dire))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ready":    ready,
+		"logging":  sess.Logging(),
+		"choices":  choices,
+		"draftKey": key,
+	})
+}
+
+// doReason attaches the captain's explanation to the last logged decision (§6.1).
+// Seq 0 (absent in the request) means "the most recent one", which is what the
+// single reason box in the UI means by it.
+func (s *Server) doReason(r *http.Request) (string, error) {
+	var req struct {
+		Seq  *int   `json:"seq"`
+		Text string `json:"text"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		return "", fmt.Errorf("empty reason")
+	}
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	if !sess.Logging() {
+		return "", fmt.Errorf("decision logging is off")
+	}
+	seq := -1
+	if req.Seq != nil {
+		seq = *req.Seq
+	}
+	if err := sess.LogReason(seq, text); err != nil {
+		return "", err
+	}
+	return "reason recorded", nil
+}
+
+// doOutcome closes the logged draft out with how the game went.
+func (s *Server) doOutcome(r *http.Request) (string, error) {
+	var req struct {
+		Win     bool   `json:"win"`
+		MatchID string `json:"matchId"`
+		Note    string `json:"note"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	if !sess.Logging() {
+		return "", fmt.Errorf("decision logging is off")
+	}
+	s.outcome.Stop() // manual answer wins over the auto agent
+	if err := sess.LogOutcome(req.Win, strings.TrimSpace(req.MatchID), strings.TrimSpace(req.Note)); err != nil {
+		return "", err
+	}
+	if req.Win {
+		return "outcome recorded: win", nil
+	}
+	return "outcome recorded: loss", nil
+}
+
+// doOutcomeResolve starts the background agent that finds the match on OpenDota
+// and writes win/loss into the decision log. Used when the post-draft survey is
+// skipped without an explicit outcome.
+func (s *Server) doOutcomeResolve(*http.Request) (string, error) {
+	// OpenDota agent retired: map.win_team from GSI closes the log when the match ends.
+	return "итог возьмём из GSI (win_team), когда матч закончится", nil
+}
+
+
+// doLineup sets a captain override on one lineup seat (our or enemy).
+func (s *Server) doLineup(r *http.Request) (string, error) {
+	var req struct {
+		Side      string `json:"side"`
+		Position  int    `json:"position"`
+		AccountID int64  `json:"accountId"`
+		HeroID    int    `json:"heroId"`
+		Clear     bool   `json:"clear"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	if err := sess.SetLineupSlot(req.Side, req.Position, req.AccountID, req.HeroID, req.Clear); err != nil {
+		return "", err
+	}
+	return "lineup updated", nil
 }
 
 func (s *Server) doAddEnemy(r *http.Request) (string, error) {

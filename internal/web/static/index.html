@@ -4,19 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dota 2 Draft Advisor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">DRAFT ADVISOR</div>
-    <nav class="tabs" id="tabs">
-      <button data-tab="draft" class="tab active">Драфт</button>
-      <button data-tab="data" class="tab">Данные</button>
-      <button data-tab="scout" class="tab">Разведка</button>
-      <button data-tab="stats" class="tab">Статистика</button>
-    </nav>
-    <div id="step" class="step"></div>
-  </header>
+  <div class="app">
+    <aside class="rail">
+      <div class="brand"><span class="brand-mark">DA</span><span>DRAFT<br>ADVISOR</span></div>
+      <nav class="tabs" id="tabs" aria-label="Разделы">
+        <button data-tab="draft" class="tab active"><span class="tab-index">01</span>Драфт</button>
+        <button data-tab="data" class="tab"><span class="tab-index">02</span>Данные</button>
+        <button data-tab="scout" class="tab"><span class="tab-index">03</span>Разведка</button>
+        <button data-tab="stats" class="tab"><span class="tab-index">04</span>Статистика</button>
+        <button data-tab="alerts" class="tab" id="tab-alerts"><span class="tab-index">05</span>Алерты</button>
+        <button data-tab="config" class="tab"><span class="tab-index">06</span>Конфиг</button>
+      </nav>
+      <div id="step" class="step"></div>
+      <div class="rail-foot">LOCAL DRAFT INTELLIGENCE</div>
+    </aside>
+    <div class="workspace">
 
   <!-- Warnings the binary emitted before any job existed. Hidden when there are
        none; these used to go to stderr only, invisible to a browser user. -->
@@ -25,11 +33,16 @@
   <!-- Background work: what is queued, what is running, and the log of whichever
        job is selected. Visible on every tab, because collection now continues
        while the user is doing something else. -->
-  <section id="op-banner" class="op-banner" hidden>
+  <section id="op-banner" class="op-banner collapsed" hidden>
     <div class="op-head">
-      <span id="op-name"></span>
+      <button type="button" id="op-toggle" class="op-toggle" title="Развернуть / свернуть">▸</button>
+      <div class="op-summary">
+        <span id="op-name"></span>
+        <span id="op-pills" class="op-pills"></span>
+      </div>
+      <div id="op-peek" class="op-peek">Лог задачи появится здесь.</div>
       <div class="op-tools">
-        <label class="op-filter">уровень
+        <label class="op-filter">лог
           <select id="job-level">
             <option value="">все</option>
             <option value="warn">предупреждения</option>
@@ -39,8 +52,20 @@
         <button data-action="ops/cancel" class="danger">Отменить</button>
       </div>
     </div>
-    <ul id="job-list" class="job-list"></ul>
-    <pre id="op-log" class="op-log"></pre>
+    <div id="op-body" class="op-body">
+      <div class="op-cols">
+        <div class="op-jobs">
+          <div class="op-section-label" id="op-active-label">Сейчас</div>
+          <ul id="job-list-active" class="job-list"></ul>
+          <div class="op-section-label" id="op-recent-label">Недавние</div>
+          <ul id="job-list-recent" class="job-list"></ul>
+        </div>
+        <div class="op-log-wrap">
+          <div class="op-section-label">Лог <span id="op-log-target" class="why"></span></div>
+          <div id="op-log" class="op-log"></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <main>
@@ -54,6 +79,7 @@
         <button data-action="undo" id="btn-undo">Undo</button>
         <button data-action="redo" id="btn-redo">Redo</button>
         <button data-action="reload" title="Перечитать бандл и снапшот с диска">Перезагрузить</button>
+        <button type="button" id="survey-test" class="ghost" title="Пример панели после драфта — в decisions.jsonl не пишет">Тест: После драфта</button>
       </div>
 
       <div id="gsi-note" class="notice" hidden></div>
@@ -74,24 +100,43 @@
           <div class="panel" id="enemy-panel" hidden>
             <h2>Добавить врага на лету</h2>
             <div class="row">
-              <input id="enemy-url" type="text" placeholder="account id или ссылка на профиль">
+              <input id="enemy-url" type="text" placeholder="id, OpenDota/STRATZ или steamcommunity.com/id/…">
               <button data-action="enemy">Добавить</button>
             </div>
           </div>
         </section>
 
         <section class="col col-board">
+          <div id="phase-banner" class="phase-banner" hidden></div>
           <div class="panel board">
             <h2>Доска</h2>
             <div id="board"></div>
           </div>
+          <div id="primary-action" class="panel primary-action" hidden></div>
           <div id="panels"></div>
+          <div class="panel lineup-panel" id="lineup-panel" hidden>
+            <h2>Лайнап</h2>
+            <p class="why">Переставь героя на нужную позицию (если авто угадал мид вместо хард-саппорта). Игрока закрепи отдельно. У врага advisor угадывает — можно поправить.</p>
+            <div class="lineup-grid">
+              <div class="lineup-side ours">
+                <div class="lineup-side-title"><span class="side-name">Мы</span></div>
+                <div id="lineup-our" class="lineup-seats"></div>
+              </div>
+              <div class="lineup-side enemy">
+                <div class="lineup-side-title"><span class="side-name">Враг</span></div>
+                <div id="lineup-enemy" class="lineup-seats"></div>
+              </div>
+            </div>
+          </div>
         </section>
       </div>
     </div>
 
     <!-- ---------------- DATA ---------------- -->
     <div class="screen" id="screen-data" hidden>
+      <div class="screen-heading">
+        <div><span class="eyebrow">CACHE</span><h1>Данные</h1></div>
+      </div>
       <div class="panel">
         <h2>Кэш матчей</h2>
         <p class="why">Инкрементально подтягивает CM-матчи в локальный SQLite. Модель при этом
@@ -133,12 +178,15 @@
 
     <!-- ---------------- SCOUT ---------------- -->
     <div class="screen" id="screen-scout" hidden>
+      <div class="screen-heading">
+        <div><span class="eyebrow">LAYERS 2–3</span><h1>Разведка</h1></div>
+      </div>
       <div class="panel">
-        <h2>Разведка соперников (слои 2–3)</h2>
+        <h2>Соперники (слой 2–3)</h2>
         <p class="why">ID или ссылки на профили через запятую либо пробел. Достаточно одного
           резолвнутого врага — из его матча поднимется драфт всей команды.</p>
         <div class="row">
-          <input id="scout-players" type="text" placeholder="123456789, https://stratz.com/players/…">
+          <input id="scout-players" type="text" placeholder="id или steamcommunity.com/id/ник, через запятую">
           <button data-action="ops/scout" id="btn-scout">Скаутить врагов</button>
         </div>
       </div>
@@ -146,7 +194,7 @@
         <h2>Разведка союзников</h2>
         <p class="why">Комфорт-герои нашей команды — персонализируют наши пик-рекомендации.</p>
         <div class="row">
-          <input id="allies-players" type="text" placeholder="id или ссылки через запятую">
+          <input id="allies-players" type="text" placeholder="id или steamcommunity.com/id/… через запятую">
           <button data-action="ops/scout-allies" id="btn-allies">Скаутить союзников</button>
         </div>
       </div>
@@ -164,7 +212,7 @@
           Список локальный, в снапшот не попадает и на другие машины не уезжает.</p>
 
         <div class="row roster-add">
-          <input id="player-ref" type="text" placeholder="id или ссылка на профиль — добавить в список">
+          <input id="player-ref" type="text" placeholder="id или steamcommunity.com/id/…">
           <select id="player-add-role">
             <option value="ally">союзник</option>
             <option value="enemy">враг</option>
@@ -191,11 +239,16 @@
 
     <!-- ---------------- STATS ---------------- -->
     <div class="screen" id="screen-stats" hidden>
+      <div class="screen-heading">
+        <div><span class="eyebrow">SNAPSHOT</span><h1>Статистика</h1></div>
+        <div class="row">
+          <button data-action="stats-refresh" type="button">Обновить</button>
+          <button data-action="stats/clear-layer3" class="danger" id="btn-clear3" type="button">Очистить слой 3</button>
+        </div>
+      </div>
       <div class="panel">
         <h2>Снапшот</h2>
         <div id="stats-path" class="why">—</div>
-        <button data-action="stats-refresh">Обновить</button>
-        <button data-action="stats/clear-layer3" class="danger" id="btn-clear3">Очистить драфты ивента (слой 3)</button>
       </div>
       <div class="panel">
         <h2>Враги (слой 2)</h2>
@@ -220,9 +273,84 @@
         <button data-action="stats/item-rules">Сохранить правила</button>
       </div>
     </div>
+
+
+    <!-- ---------------- ALERTS ---------------- -->
+    <div class="screen" id="screen-alerts" hidden>
+      <div class="screen-heading">
+        <div><span class="eyebrow">GAME CLOCK</span><h1>Алерты</h1></div>
+        <div id="alerts-status" class="why"></div>
+      </div>
+      <div class="panel alerts-defaults">
+        <div class="panel-title-row"><div><h2>Настройки по умолчанию</h2><p class="why">Используются, если правило объекта не переопределено.</p></div><button id="alerts-save" type="button">Сохранить алерты</button></div>
+        <div class="alert-default-grid">
+          <label>Предупреждение, сек.<input id="alerts-default-lead" type="number" min="0" step="1"></label>
+          <label>Шаблон TTS<input id="alerts-default-tts" type="text" placeholder="{{label}} через {{nextIn}} секунд"></label>
+        </div>
+      </div>
+      <section class="panel"><div class="panel-title-row"><div><h2>Объекты карты</h2><p class="why">Lead: 0 — по умолчанию, −1 — выключить. From/Until — границы игрового времени в секундах.</p></div></div><div id="alerts-kinds" class="alerts-kinds"></div></section>
+      <section class="panel"><div class="panel-title-row"><div><h2>Свои напоминания</h2><p class="why">Время: <code>mm:ss</code> или число секунд. Шаблон поддерживает {{label}}, {{nextIn}}, {{nextAt}}.</p></div><button id="alerts-add-custom" type="button" class="ghost">+ Добавить</button></div><div id="alerts-custom" class="alerts-custom"></div></section>
+      <div class="alerts-lower">
+        <section class="panel"><h2>Ближайшие алерты</h2><div id="alerts-live" class="alerts-live"></div></section>
+        <section class="panel"><div class="panel-title-row"><div><h2>Кэш TTS</h2><p class="why">Локальные готовые аудиофайлы.</p></div><button id="alerts-cache-clear" type="button" class="danger">Очистить всё</button></div><div id="alerts-cache" class="alerts-cache"></div></section>
+      </div>
+    </div>
+
+    <!-- ---------------- CONFIG ---------------- -->
+    <div class="screen" id="screen-config" hidden>
+      <div class="panel">
+        <h2>Конфиг advisor</h2>
+        <div id="config-path" class="why">—</div>
+        <p class="why" id="config-note"></p>
+        <div class="row">
+          <button type="button" id="config-refresh">Обновить</button>
+          <button type="button" id="config-save">Сохранить</button>
+        </div>
+        <div id="config-status" class="why"></div>
+      </div>
+      <div id="config-form"></div>
+
+      <div class="panel" id="discord-config-panel" hidden>
+        <h2>Discord бот (discord.yaml)</h2>
+        <div id="discord-config-path" class="why">—</div>
+        <p class="why" id="discord-config-note"></p>
+        <div class="row">
+          <button type="button" id="discord-config-refresh">Обновить</button>
+          <button type="button" id="discord-config-save">Сохранить</button>
+        </div>
+        <div id="discord-config-status" class="why"></div>
+      </div>
+      <div id="discord-config-form"></div>
+    </div>
   </main>
 
   <footer id="statusbar" class="statusbar"></footer>
+    </div>
+  </div>
+
+
+  <!-- Post-draft survey (§6.1): non-blocking dock — reasons for off-rec steps.
+       Win/loss comes from GSI map.win_team; manual buttons are a fallback. -->
+  <aside id="survey" class="survey-dock" hidden>
+    <div class="survey-dock-head">
+      <h2>После драфта <span id="survey-mode-badge" class="survey-badge" hidden>ТЕСТ</span></h2>
+      <button class="modal-close" id="survey-skip" type="button" title="Закрыть">✕</button>
+    </div>
+    <p class="why" id="survey-intro">После всего драфта — по одному блоку на каждый шаг, где взяли не #1 совет. В моменте заполнять не нужно.</p>
+    <div id="survey-steps"></div>
+    <div class="survey-dock-actions">
+      <button type="button" id="survey-save" class="survey-outcome-btn">Сохранить причины</button>
+      <button type="button" id="survey-skip-btn" class="ghost">Закрыть</button>
+    </div>
+    <details class="survey-outcome-fallback">
+      <summary>Итог вручную (если GSI не пришлёт)</summary>
+      <div class="row">
+        <button type="button" id="survey-win" class="survey-outcome-btn">Выиграли</button>
+        <button type="button" id="survey-loss" class="survey-outcome-btn">Проиграли</button>
+      </div>
+      <p class="why">Обычно итог пишется сам из <code>win_team</code>, когда матч закончится.</p>
+    </details>
+  </aside>
 
   <div id="matchups" class="modal" hidden>
     <div class="modal-body">
@@ -234,6 +362,7 @@
 
   <!-- charts.js first: app.js calls into it when the Data tab opens. -->
   <script src="/charts.js"></script>
+  <script src="/alerts.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

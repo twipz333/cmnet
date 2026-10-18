@@ -17,6 +17,11 @@ type ResolvedPlayer struct {
 	AccountID int64
 	Nickname  string
 	Resolved  bool
+	// Discovered marks a player the user never named: recovered from a teammate's
+	// match record (§8.1). Carried through to the snapshot so the UI can say where
+	// a profile came from — a name the captain never typed appearing in the enemy
+	// list is otherwise indistinguishable from a bug.
+	Discovered bool
 }
 
 // BuildLayer2 fetches per-player hero affinity within windowDays and assembles
@@ -31,10 +36,19 @@ func BuildLayer2(ctx context.Context, src Source, players []ResolvedPlayer, wind
 		if ctx.Err() != nil {
 			break
 		}
-		pa := PlayerAffinity{AccountID: p.AccountID, Nickname: p.Nickname, Resolved: p.Resolved}
+		pa := PlayerAffinity{AccountID: p.AccountID, Nickname: p.Nickname, Resolved: p.Resolved, Discovered: p.Discovered}
 		if p.Resolved {
 			if heroes, err := src.PlayerHeroes(ctx, p.AccountID, windowDays); err == nil {
 				pa.Heroes = heroAffinities(heroes)
+				careerGames := 0
+				if career, err := src.PlayerHeroes(ctx, p.AccountID, 0); err == nil {
+					careerGames = sumHeroGames(career)
+				}
+				var matches []MatchRef
+				if refs, err := src.RecentMatches(ctx, p.AccountID); err == nil {
+					matches = refs
+				}
+				pa.Smurf = AssessSmurf(careerGames, matches)
 				progress(fmt.Sprintf("layer 2: player %d/%d (account %d) — %d heroes",
 					i+1, len(players), p.AccountID, len(pa.Heroes)))
 			} else {
@@ -46,6 +60,16 @@ func BuildLayer2(ctx context.Context, src Source, players []ResolvedPlayer, wind
 		out.Players = append(out.Players, pa)
 	}
 	return out
+}
+
+func sumHeroGames(rows []PlayerHero) int {
+	n := 0
+	for _, r := range rows {
+		if r.Games > 0 {
+			n += r.Games
+		}
+	}
+	return n
 }
 
 // heroAffinities converts raw per-hero rows into smoothed affinity, sorted by

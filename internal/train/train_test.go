@@ -5,6 +5,7 @@ import (
 
 	"cmnet/internal/cache"
 	"cmnet/internal/features"
+	"cmnet/internal/roles"
 )
 
 func mkMatch(id, start int64, radWin bool, patch string, mmr *int, rPicks, dPicks []int) cache.Match {
@@ -35,16 +36,16 @@ func TestRetrainResizesToHeroList(t *testing.T) {
 	if len(b3.PickPredictor.Weights) != 3 {
 		t.Errorf("predictor classes = %d, want 3", len(b3.PickPredictor.Weights))
 	}
-	if len(b3.WinProb.Weights) != 3 {
-		t.Errorf("winprob features = %d, want 3", len(b3.WinProb.Weights))
+	if want := 3 * (1 + features.WinProbPositions); len(b3.WinProb.Weights) != want {
+		t.Errorf("winprob features = %d, want %d", len(b3.WinProb.Weights), want)
 	}
 
 	b4 := Bundle(matches, []int{1, 2, 3, 4}, Options{CreatedAt: "2026-01-01T00:00:00Z"})
 	if len(b4.PickPredictor.Weights) != 4 {
 		t.Errorf("retrained predictor classes = %d, want 4", len(b4.PickPredictor.Weights))
 	}
-	if len(b4.WinProb.Weights) != 4 {
-		t.Errorf("retrained winprob features = %d, want 4", len(b4.WinProb.Weights))
+	if want := 4 * (1 + features.WinProbPositions); len(b4.WinProb.Weights) != want {
+		t.Errorf("retrained winprob features = %d, want %d", len(b4.WinProb.Weights), want)
 	}
 	hm := features.NewHeroMap(b4.HeroIDs)
 	if _, ok := hm.Index(4); !ok {
@@ -109,5 +110,51 @@ func TestRecencyWeightingIsDeterministicAndDecays(t *testing.T) {
 	wpu := BuildSamples(matches, hm, -1, SampleOptions{}).WinProb
 	if wpu[0].Weight != wpu[1].Weight {
 		t.Errorf("disabled recency should be uniform: %v vs %v", wpu[0].Weight, wpu[1].Weight)
+	}
+}
+
+
+func TestRoleFeaturesInSamplesAndBundle(t *testing.T) {
+	pos := func(p int) *int { return &p }
+	m := cache.Match{
+		ID: 1, StartTime: 1000, RadiantWin: true,
+		PickBans: []cache.PickBan{
+			{Ord: 0, HeroID: 1, IsPick: true, Team: 0},
+			{Ord: 1, HeroID: 2, IsPick: true, Team: 0},
+			{Ord: 2, HeroID: 3, IsPick: true, Team: 1},
+			{Ord: 3, HeroID: 4, IsPick: true, Team: 1},
+		},
+		Players: []cache.MatchPlayer{
+			{HeroID: 1, IsRadiant: true, Position: pos(1)},
+			{HeroID: 2, IsRadiant: true, Position: pos(2)},
+			{HeroID: 3, IsRadiant: false, Position: pos(3)},
+			{HeroID: 4, IsRadiant: false, Position: pos(4)},
+		},
+	}
+	hm := features.NewHeroMap([]int{1, 2, 3, 4})
+	s := BuildSamples([]cache.Match{m}, hm, -1, SampleOptions{})
+	if len(s.WinProb) == 0 {
+		t.Fatal("no win-prob samples")
+	}
+	x := s.WinProb[0].X
+	if len(x) != hm.WinProbLen() {
+		t.Fatalf("feat len=%d want %d", len(x), hm.WinProbLen())
+	}
+	n := hm.Len()
+	i1, _ := hm.Index(1)
+	if x[n+i1*features.WinProbPositions+0] != 1 {
+		t.Fatalf("hard position for hero 1 not encoded")
+	}
+	prior := roles.BuildPrior([]cache.Match{m}, 0)
+	elig := map[int][]int{1: {1}, 2: {2}, 3: {3}, 4: {4}}
+	b := Bundle([]cache.Match{m}, []int{1, 2, 3, 4}, Options{
+		CreatedAt: "2026-01-01T00:00:00Z", RolePrior: prior, HeroPositions: elig,
+		NoPrefix: true, ValFrac: -1, Epochs: 20,
+	})
+	if len(b.RolePrior) == 0 {
+		t.Fatal("RolePrior not stamped")
+	}
+	if len(b.HeroPositions) == 0 {
+		t.Fatal("HeroPositions not stamped")
 	}
 }

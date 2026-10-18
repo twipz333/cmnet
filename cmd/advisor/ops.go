@@ -10,18 +10,23 @@ import (
 	"sync"
 	"time"
 
+	"cmnet/internal/alerts"
 	"cmnet/internal/blend"
 	"cmnet/internal/bundle"
 	"cmnet/internal/cache"
+	"cmnet/internal/capability"
+	"cmnet/internal/declog"
 	"cmnet/internal/heroagg"
 	"cmnet/internal/model"
 	"cmnet/internal/objectives"
 	"cmnet/internal/recommender"
+	"cmnet/internal/roles"
 	"cmnet/internal/rules"
 	"cmnet/internal/scout"
 	"cmnet/internal/session"
 	"cmnet/internal/sources/opendota"
 	"cmnet/internal/sources/stratz"
+	"cmnet/internal/startup"
 	"cmnet/internal/train"
 	"cmnet/internal/tui"
 )
@@ -30,6 +35,43 @@ import (
 type logFunc func(string)
 
 func discard(string) {}
+
+var activePatchIdx *opendota.PatchIndex
+
+// ensurePatchLabels loads OpenDota /constants/patch and backfills empty (and
+// legacy numeric) patch columns from match start_time. Without this the status
+// bar stays on "patch —" forever: STRATZ/bulk ingest never wrote the field, and
+// train had nothing to stamp into the bundle.
+func ensurePatchLabels(ctx context.Context, od *opendota.Client, store *cache.Store, log logFunc) *opendota.PatchIndex {
+	if log == nil {
+		log = discard
+	}
+	rows, err := od.Patches(ctx)
+	if err != nil {
+		log(fmt.Sprintf("patch labels: skipped (%v)", err))
+		return nil
+	}
+	idx := opendota.NewPatchIndex(rows)
+	var windows []cache.PatchWindow
+	for _, r := range idx.Ranges() {
+		windows = append(windows, cache.PatchWindow{Name: r.Name, Start: r.Start, End: r.End})
+	}
+	if len(windows) > 0 {
+		windows[0].Start = 0 // anything older than the first known patch still gets a label
+	}
+	n, err := store.BackfillPatches(windows, idx.ByID())
+	if err != nil {
+		log(fmt.Sprintf("patch labels: backfill failed (%v)", err))
+		return idx
+	}
+	if n > 0 {
+		log(fmt.Sprintf("patch labels: labelled %d matches (latest %s)", n, idx.Latest()))
+	} else {
+		log(fmt.Sprintf("patch labels: up to date (latest %s)", idx.Latest()))
+	}
+	activePatchIdx = idx
+	return idx
+}
 
 // opSync runs an incremental sync and returns a summary. Progress lines go to log.
 func opSync(ctx context.Context, o syncOpts, log logFunc) (string, error) {
@@ -56,6 +98,9 @@ func opSync(ctx context.Context, o syncOpts, log logFunc) (string, error) {
 		return "", fmt.Errorf("store heroes: %w", err)
 	}
 	log(fmt.Sprintf("heroes: %d cached", len(cached)))
+
+	patchIdx := ensurePatchLabels(ctx, od, store, log)
+	_ = patchIdx // converters use time backfill; index kept for future detail writes
 
 	since := time.Now().AddDate(0, 0, -o.windowDays).Unix()
 	log(fmt.Sprintf("scanning bulk (game_mode %d, rank %d-%d), last %d days, cap %d matches",
@@ -600,6 +645,14 @@ func fetchProCMDrafts(ctx context.Context, od *opendota.Client, sc *stratz.Clien
 			if !ok {
 				continue // fetch failed, not CM, or no usable pick/ban detail
 			}
+			// Same completeness gate as the public CM path. A timed-out detail
+			// fetch yields a match with a handful of actions and no bans, which
+			// looks like a CM draft to everything downstream: it teaches the
+			// predictor a draft with no ban phase, and — since bans are what marks
+			// a real action order — it would also silently lose its prefix rows.
+			if !isCompleteCMDraft(cm) {
+				continue
+			}
 			// Provenance: these come from /proMatches, a different population
 			// from public Captains Mode (see fetchPublicCMDrafts).
 			cm.GameMode = 2
@@ -665,6 +718,9 @@ func stratzDetailToCacheMatch(m *stratz.MatchDetail) (cache.Match, bool) {
 	if m.DurationSeconds > 0 {
 		d := m.DurationSeconds
 		out.Duration = &d
+	}
+	if activePatchIdx != nil {
+		out.Patch = activePatchIdx.NameByTime(m.StartDateTime)
 	}
 	for _, pb := range m.PickBans {
 		team := 1
@@ -748,7 +804,17 @@ func detailToCacheMatch(m *opendota.Match) (cache.Match, bool) {
 		out.Duration = &d
 	}
 	if m.Patch > 0 {
-		out.Patch = strconv.Itoa(m.Patch)
+		if activePatchIdx != nil {
+			if name := activePatchIdx.NameByID(m.Patch); name != "" {
+				out.Patch = name
+			} else {
+				out.Patch = strconv.Itoa(m.Patch)
+			}
+		} else {
+			out.Patch = strconv.Itoa(m.Patch)
+		}
+	} else if activePatchIdx != nil {
+		out.Patch = activePatchIdx.NameByTime(m.StartTime)
 	}
 	if m.LobbyType > 0 {
 		out.LobbyType = strconv.Itoa(m.LobbyType)
@@ -954,6 +1020,9 @@ func publicToCacheMatch(r opendota.PublicMatch) cache.Match {
 		Source:     cache.SourceBulk,
 		RankTier:   &tier,
 	}
+	if activePatchIdx != nil {
+		out.Patch = activePatchIdx.NameByTime(r.StartTime)
+	}
 	ord := 0
 	for _, h := range r.RadiantTeam {
 		out.PickBans = append(out.PickBans, cache.PickBan{Ord: ord, HeroID: h, IsPick: true, Team: 0})
@@ -978,6 +1047,7 @@ func opTrain(ctx context.Context, o trainOpts, log logFunc) (string, error) {
 	defer store.Close()
 
 	log("loading cache…")
+	patchIdx := ensurePatchLabels(ctx, opendota.New(), store, log)
 	heroes, err := store.Heroes()
 	if err != nil {
 		return "", err
@@ -999,6 +1069,46 @@ func opTrain(ctx context.Context, o trainOpts, log logFunc) (string, error) {
 	}
 	log(fmt.Sprintf("%d matches in window, %d heroes", len(matches), len(heroIDs)))
 
+	// Auto-stamp the bundle patch tag from the corpus when the caller did not pass
+	// --patch. Otherwise the status bar forever shows "patch —" even after sync
+	// labelled every match.
+	if o.patchTag == "" {
+		o.patchTag = cache.DominantPatch(matches)
+		if o.patchTag == "" && patchIdx != nil {
+			o.patchTag = patchIdx.Latest()
+		}
+		if o.patchTag != "" {
+			log(fmt.Sprintf("patch tag: auto %s", o.patchTag))
+		}
+	}
+
+	// Position meta (#9) + hero positions (#8) BEFORE train.Bundle: the strength
+	// stacker fits StackFeatRole on the same coverage feature serve will apply
+	// (§6.3). Baking them afterwards left the stacker weight trained on zeros.
+	var positionMeta map[int][]bundle.PosHero
+	var heroPositions map[int][]int
+	if o.token != "" {
+		if pm, hp, err := stratzPositionMeta(ctx, o, log); err != nil {
+			log(fmt.Sprintf("stratz position meta: skipped (%v) — falling back to roles", err))
+			heroPositions = fetchHeroPositions(ctx, log)
+			if len(heroPositions) > 0 {
+				log(fmt.Sprintf("hero positions: %d heroes mapped (roles → 1-5)", len(heroPositions)))
+			}
+		} else {
+			positionMeta = pm
+			heroPositions = hp
+			log(fmt.Sprintf("stratz position meta: %d positions, %d heroes with positions", len(pm), len(hp)))
+		}
+	} else {
+		heroPositions = fetchHeroPositions(ctx, log)
+		if len(heroPositions) > 0 {
+			log(fmt.Sprintf("hero positions: %d heroes mapped (roles → 1-5; pass --token for real per-position meta)", len(heroPositions)))
+		}
+	}
+
+	rolePrior := roles.BuildPrior(matches, roles.Laplace)
+	log(fmt.Sprintf("role prior: %d heroes with position counts from match_players", len(rolePrior.Prob)))
+
 	b := train.Bundle(matches, heroIDs, train.Options{
 		WindowDays:    o.windowDays,
 		PatchTag:      o.patchTag,
@@ -1010,28 +1120,12 @@ func opTrain(ctx context.Context, o trainOpts, log logFunc) (string, error) {
 		SourceWeights: train.ProWeight(o.proWeight),
 		FMRank:        o.fmRank,
 		NoPrefix:      o.noPrefix,
+		HeroPositions: heroPositions,
+		RolePrior:     rolePrior,
 		Progress:      log,
 	})
-
-	// Position meta (#9) + hero positions (#8). With a STRATZ token we bake REAL
-	// per-position meta (popularity + win rate per lane) into the bundle, which also
-	// yields accurate position eligibility. Without a token we fall back to the
-	// coarse OpenDota role mapping (positions only, no per-position meta).
-	if o.token != "" {
-		if pm, hp, err := stratzPositionMeta(ctx, o, log); err != nil {
-			log(fmt.Sprintf("stratz position meta: skipped (%v) — falling back to roles", err))
-			if pos := fetchHeroPositions(ctx, log); len(pos) > 0 {
-				b.HeroPositions = pos
-				log(fmt.Sprintf("hero positions: %d heroes mapped (roles → 1-5)", len(pos)))
-			}
-		} else {
-			b.PositionMeta = pm
-			b.HeroPositions = hp
-			log(fmt.Sprintf("stratz position meta: %d positions, %d heroes with positions", len(pm), len(hp)))
-		}
-	} else if pos := fetchHeroPositions(ctx, log); len(pos) > 0 {
-		b.HeroPositions = pos
-		log(fmt.Sprintf("hero positions: %d heroes mapped (roles → 1-5; pass --token for real per-position meta)", len(pos)))
+	if len(positionMeta) > 0 {
+		b.PositionMeta = positionMeta
 	}
 
 	// Aggregates from the corpus this bundle was actually trained on: per-position
@@ -1058,9 +1152,16 @@ func opTrain(ctx context.Context, o trainOpts, log logFunc) (string, error) {
 
 // Watermarks for the background worker's retrain trigger: when the bundle was
 // last built, and how large the cache was at that moment.
+//
+// The count that drives the trigger is public CM only. It has its OWN key rather
+// than reusing metaLastTrainCount, whose stored value is a total over every
+// provenance: reading that total as a public-CM count would make "new drafts
+// since the last train" come out tens of thousands negative, and the retrain
+// would then never fire again.
 const (
-	metaLastTrainUnix  = "auto_last_train_unix"
-	metaLastTrainCount = "auto_last_train_count"
+	metaLastTrainUnix    = "auto_last_train_unix"
+	metaLastTrainCount   = "auto_last_train_count"
+	metaLastTrainCMCount = "auto_last_train_cm_count"
 )
 
 // markTrained records that a bundle was just built. It runs for MANUAL training
@@ -1078,6 +1179,9 @@ func markTrained(store *cache.Store) {
 	}
 	_ = store.SetMeta(metaLastTrainUnix, fmt.Sprint(time.Now().Unix()))
 	_ = store.SetMeta(metaLastTrainCount, fmt.Sprint(n))
+	if cm, err := store.CountMatchesBySource(cache.SourcePublicCM); err == nil {
+		_ = store.SetMeta(metaLastTrainCMCount, fmt.Sprint(cm))
+	}
 }
 
 // fetchHeroPositions builds hero id → eligible positions (1-5) from OpenDota hero
@@ -1232,7 +1336,7 @@ func resolvePlayersAs(ctx context.Context, players []string, dbPath string,
 	resolved := make([]scout.ResolvedPlayer, 0, len(players))
 	var ids []int64
 	for _, ref := range players {
-		id, err := scout.ParseAccountID(ref)
+		id, err := scout.ResolveAccountID(ctx, nil, ref)
 		if err != nil {
 			log(fmt.Sprintf("%s → unresolved: %v", ref, err))
 			resolved = append(resolved, scout.ResolvedPlayer{Nickname: ref, Resolved: false})
@@ -1364,6 +1468,34 @@ func personaNames(ctx context.Context, dbPath string, ids []int64) map[int64]str
 // playerLabel is what the Statistics screen shows for a player: their display name
 // when known, otherwise the account id. The pasted reference (often a profile URL)
 // is never shown — that is what the user was complaining about.
+// displayNick prefers the OpenDota persona, then a human nickname the user typed,
+// and never a bare account id / profile URL in recommendation chrome.
+func displayNick(persona, raw string) string {
+	if persona != "" {
+		return persona
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || isRawPlayerRef(raw) {
+		return "игрок"
+	}
+	return raw
+}
+
+func isRawPlayerRef(s string) bool {
+	ls := strings.ToLower(s)
+	if strings.Contains(ls, "://") || strings.Contains(ls, "opendota") ||
+		strings.Contains(ls, "dotabuff") || strings.Contains(ls, "steamcommunity") ||
+		strings.Contains(ls, "steamcommunitx") {
+		return true
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 func playerLabel(name string, accountID int64, resolved bool, ref string) string {
 	if name != "" {
 		return name
@@ -1441,6 +1573,7 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 	}
 	if fresh.Layer2 != nil {
 		cachePlayerAffinity(o.dbPath, fresh.Layer2.Players, o.windowDays)
+		rememberDiscovered(ctx, o.dbPath, fresh.Layer2.Players, log)
 	}
 	l2, l3 := 0, 0
 	err = editSnapshot(o.outPath, func(snap *scout.OpponentSnapshot) error {
@@ -1472,9 +1605,13 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 		log = discard
 	}
 	resolved := resolvePlayersAs(ctx, players, o.dbPath, cache.RoleAlly, log)
-	allies := scout.BuildLayer2(ctx, scout.NewOpenDotaSource(), resolved, o.windowDays, log)
+	src := scout.NewOpenDotaSource()
+	// One typed ally should recover the rest of the stack from their recent matches,
+	// same idea as enemy scout via layer 3 — otherwise capability sees a one-row roster.
+	allies := scout.ExpandWithTeammates(ctx, src, resolved, o.windowDays, 4, log)
 	if allies != nil {
 		cachePlayerAffinity(o.dbPath, allies.Players, o.windowDays)
+		rememberDiscoveredAs(ctx, o.dbPath, allies.Players, cache.RoleAlly, log)
 	}
 	n := 0
 	if err := editSnapshot(o.outPath, func(snap *scout.OpponentSnapshot) error {
@@ -1487,6 +1624,49 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 		return "", err
 	}
 	return fmt.Sprintf("snapshot %s: allies %d players", o.outPath, n), nil
+}
+
+// rememberDiscovered files the teammates layer 3 recovered into the address book,
+// looking up their display names the same way a named opponent gets one.
+//
+// Without this they would be affinity rows with no name attached anywhere, and the
+// roster screen would show four bare account_ids next to the one opponent the
+// captain actually typed. Best-effort, like the rest of the address book writes:
+// this runs while the user waits for a scout, and failing to name someone is not a
+// reason to fail the scout.
+func rememberDiscovered(ctx context.Context, dbPath string, players []scout.PlayerAffinity, log logFunc) {
+	rememberDiscoveredAs(ctx, dbPath, players, cache.RoleEnemy, log)
+}
+
+func rememberDiscoveredAs(ctx context.Context, dbPath string, players []scout.PlayerAffinity, role cache.KnownRole, log logFunc) {
+	var found []scout.ResolvedPlayer
+	var ids []int64
+	for _, p := range players {
+		if !p.Discovered || p.AccountID <= 0 {
+			continue
+		}
+		found = append(found, scout.ResolvedPlayer{AccountID: p.AccountID, Resolved: true, Discovered: true})
+		ids = append(ids, p.AccountID)
+	}
+	if len(found) == 0 {
+		return
+	}
+	names := personaNames(ctx, dbPath, ids)
+	for i := range found {
+		if n := names[found[i].AccountID]; n != "" {
+			found[i].Nickname = n
+		}
+		log(fmt.Sprintf("discovered teammate: account_id %d (%s)", found[i].AccountID,
+			orDefault(found[i].Nickname, "no public profile name")))
+	}
+	rememberScouted(dbPath, found, names, role)
+}
+
+func orDefault(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // mergeLayer2 merges fresh players into existing, deduped by account_id (fresh
@@ -1626,6 +1806,42 @@ func opClearLayer3(snapshotPath string) (string, error) {
 }
 
 // opSetHeroPool merges a preferred hero pool (#4) into the snapshot.
+// opClearScout drops every player from the enemy or ally layer of the snapshot.
+// Clearing enemies also drops layer 3 (event drafts hang off the enemy squad).
+func opClearScout(snapshotPath string, ally bool) (string, error) {
+	n, none := 0, false
+	if err := editSnapshot(snapshotPath, func(snap *scout.OpponentSnapshot) error {
+		layer := snap.Layer2
+		if ally {
+			layer = snap.Allies
+		}
+		if layer == nil || len(layer.Players) == 0 {
+			none = true
+			return nil
+		}
+		n = len(layer.Players)
+		layer.Players = nil
+		if !ally {
+			snap.Layer3 = nil
+		}
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	if none {
+		return "nothing to clear", nil
+	}
+	kind := "enemy"
+	if ally {
+		kind = "ally"
+	}
+	msg := fmt.Sprintf("cleared %d %s players from snapshot", n, kind)
+	if !ally {
+		msg += " (+ layer 3)"
+	}
+	return msg, nil
+}
+
 func opSetHeroPool(ids []int, outPath string) (string, error) {
 	if err := editSnapshot(outPath, func(snap *scout.OpponentSnapshot) error {
 		snap.HeroPool = ids
@@ -1718,17 +1934,36 @@ func opStats(snapshotPath, dbPath string) (tui.StatsView, error) {
 				Nickname:  playerLabel(names[p.AccountID], p.AccountID, p.Resolved, p.Nickname),
 				Resolved:  p.Resolved,
 			}
+			if p.Smurf != nil {
+				sp.Smurf = &tui.StatsSmurf{
+					Score: p.Smurf.Score, Level: p.Smurf.Level,
+					Label: p.Smurf.Label, Reasons: append([]string(nil), p.Smurf.Reasons...),
+				}
+			}
 			for _, h := range p.Heroes {
 				sp.TopHeroes = append(sp.TopHeroes, tui.StatsHero{
-					ID: h.HeroID, Name: heroName(nameByID, h.HeroID), Games: h.Games, WinRate: h.WinRate,
+					ID: h.HeroID, Name: heroName(nameByID, h.HeroID),
+					Games: h.Games, WinRate: h.WinRate, Aff: h.Aff,
 				})
 			}
+			// Comfort summary: most-played first (not hero_id order from the snapshot).
+			sort.SliceStable(sp.TopHeroes, func(i, j int) bool {
+				if sp.TopHeroes[i].Games != sp.TopHeroes[j].Games {
+					return sp.TopHeroes[i].Games > sp.TopHeroes[j].Games
+				}
+				return sp.TopHeroes[i].ID < sp.TopHeroes[j].ID
+			})
 			out = append(out, sp)
 		}
 		return out
 	}
 	view.EnemyPlayers = toPlayers(snap.Layer2)
 	view.AllyPlayers = toPlayers(snap.Allies)
+	if snap.Layer2 != nil {
+		view.WindowDays = snap.Layer2.WindowDays
+	} else if snap.Allies != nil {
+		view.WindowDays = snap.Allies.WindowDays
+	}
 	if snap.Layer3 != nil {
 		view.Layer3Drafts = snap.Layer3.DraftsObserved
 	}
@@ -1811,6 +2046,15 @@ func bundlePositionMeta(b *bundle.Bundle) map[int][]recommender.MetaHero {
 
 // buildScanConfig loads the bundle (+optional snapshot) and assembles the draft
 // screen config (without GSI wiring; the caller attaches events if needed).
+
+// rolePriorFromBundle wraps the baked P(pos|hero) table for serve-time callers.
+func rolePriorFromBundle(b *bundle.Bundle) *roles.Prior {
+	if b == nil || len(b.RolePrior) == 0 {
+		return nil
+	}
+	return &roles.Prior{Prob: b.RolePrior}
+}
+
 func buildScanConfig(o serveOpts) (tui.Config, error) {
 	b, err := bundle.Load(o.bundlePath)
 	if err != nil {
@@ -1833,23 +2077,54 @@ func buildScanConfig(o serveOpts) (tui.Config, error) {
 	)
 	rec.WithMatrices(b.SynergyMatrix, b.CounterMatrix)
 	rec.WithStacker(b.StrengthStacker)
-	rec.WithPositions(b.HeroPositions)          // #8 lining checks
+	rec.WithPositions(b.HeroPositions) // #8 lining checks
+	if len(b.RolePrior) > 0 {
+		rec.WithRolePrior(&roles.Prior{Prob: b.RolePrior}) // §6.3 soft roles
+	}
 	rec.WithPositionMeta(bundlePositionMeta(b)) // #9 real per-position meta (STRATZ)
 
 	// The opponent snapshot (layers 2-3) is optional: when it hasn't been scouted
 	// yet, fall back cleanly to layer 1 (meta) instead of failing.
+	var loaded *scout.OpponentSnapshot
 	if o.snapshotPath != "" {
 		if _, statErr := os.Stat(o.snapshotPath); statErr == nil {
 			snap, err := scout.LoadSnapshot(o.snapshotPath)
 			if err != nil {
 				return tui.Config{}, fmt.Errorf("load snapshot: %w", err)
 			}
+			loaded = snap
 			aff2 := snap.Aff2Vector(hm)
 			aff3, n := snap.Aff3Vector(hm)
 			rec.WithScout(aff2, aff3, n, blend.DefaultWeights())
 			rec.WithAllies(snap.AllyAffVector(hm)) // #3 personalize our picks
 			rec.WithHeroPool(snap.HeroPool)        // #4 pool contention alert
-			if len(snap.ItemRules) > 0 {           // #10 advice rules
+			// Resolve display names before capability/lineup so recommendations
+			// never surface a raw account id as "player".
+			var nameIDs []int64
+			for _, l2 := range []*scout.Layer2{snap.Allies, snap.Layer2} {
+				if l2 == nil {
+					continue
+				}
+				for _, pl := range l2.Players {
+					if pl.AccountID > 0 {
+						nameIDs = append(nameIDs, pl.AccountID)
+					}
+				}
+			}
+			personas := personaNames(context.Background(), o.dbPath, nameIDs)
+			if rost := capability.FromAllies(snap.Allies, b.HeroIDs, capability.DefaultAlpha); rost != nil {
+				for i := range rost.Players {
+					rost.Players[i].Nickname = displayNick(personas[rost.Players[i].AccountID], rost.Players[i].Nickname)
+				}
+				rec.WithCapability(rost, capability.DefaultLambda) // §6.5 soft feasibility
+			}
+			if er := capability.FromLayer2(snap.Layer2, b.HeroIDs, capability.DefaultAlpha, 1); er != nil {
+				for i := range er.Players {
+					er.Players[i].Nickname = displayNick(personas[er.Players[i].AccountID], er.Players[i].Nickname)
+				}
+				rec.WithEnemyRoster(er)
+			}
+			if len(snap.ItemRules) > 0 { // #10 advice rules
 				_, idByName := heroNameMaps(o.dbPath)
 				rec.WithRules(rules.Parse(snap.ItemRules, ruleTokenResolver(idByName)))
 			}
@@ -1864,19 +2139,37 @@ func buildScanConfig(o serveOpts) (tui.Config, error) {
 		PatchTag:      b.PatchTag,
 		Rec:           rec,
 		Objectives:    objs, // M6: objective spawn timers (bundle, or compiled-in fallback)
+		AlertLeads:    o.alertLeads,
+		AlertWindows:  o.alertWindows,
+		AlertFile:     loadAlertFile(o),
+		// §6.1: what was advised and what the captain did. Local file, bounded
+		// retention, never shared; nil when logging is off or could not be opened.
+		Log:       o.log,
+		LogHeader: logHeaderFrom(context.Background(), o.dbPath, loaded, rolePriorFromBundle(b)),
 		// Mid-draft enemy scout (#3): merge one profile into the snapshot, then
 		// rebuild the recommender so layers 2-3 blend in live.
-		AddEnemy: func(url string) (*recommender.Recommender, string, error) {
+		AddEnemy: func(url string) (*recommender.Recommender, declog.Header, string, error) {
 			summary, err := opScout(context.Background(), []string{url},
 				scoutOpts{outPath: o.snapshotPath, dbPath: o.dbPath, windowDays: 30}, nil)
 			if err != nil {
-				return nil, "", err
+				return nil, declog.Header{}, "", err
 			}
 			nc, err := buildScanConfig(o)
 			if err != nil {
-				return nil, summary, err
+				return nil, declog.Header{}, summary, err
 			}
-			return nc.Rec, summary, nil
+			// The rebuilt header travels with the recommender: the advice from here on
+			// rests on the new snapshot, and the log has to record which one (§6.1).
+			return nc.Rec, nc.LogHeader, summary, nil
 		},
 	}, nil
+}
+
+func loadAlertFile(o serveOpts) *alerts.File {
+	path := alerts.Find(o.alertsPath)
+	f, err := alerts.EnsureFile(path, o.alertLeads, o.alertWindows)
+	if err != nil {
+		startup.Warnf("alerts.yaml: %v", err)
+	}
+	return f
 }

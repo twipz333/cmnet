@@ -19,11 +19,32 @@ const CMPhases = 6
 // maxActionInPhase is the longest phase (six bans), sizing the within-phase index.
 const maxActionInPhase = 6
 
-// WinProbLen is the win-prob input length: one signed slot per hero.
-func (h *HeroMap) WinProbLen() int { return h.Len() }
+// WinProbPositions is the number of lane slots encoded per hero (positions 1-5).
+const WinProbPositions = 5
 
-// EncodeWinProb builds the win-prob feature vector: +1 where Radiant holds the
-// hero, -1 where Dire does, 0 when nobody has it.
+// WinProbLen is the win-prob input length: N main effects + N*5 position slots.
+func (h *HeroMap) WinProbLen() int { return h.Len() * (1 + WinProbPositions) }
+
+// WinProbHeroes recovers the hero-map size from a feature vector length.
+// Schema v2 vectors are 6N long; legacy v1 vectors are N long (N not divisible by
+// 6, or treated as main-only when the caller knows the map size).
+func WinProbHeroes(featLen int) int {
+	if featLen > 0 && featLen%(1+WinProbPositions) == 0 {
+		return featLen / (1 + WinProbPositions)
+	}
+	return featLen
+}
+
+// EncodeWinProb builds the win-prob feature vector.
+//
+// Layout (schema v2):
+//
+//	[0:N]     antisymmetric main effects (+1 Radiant / -1 Dire / 0 absent)
+//	[N:6N]    (hero, position) block: for dense index i and position p in 1..5,
+//	          slot N + i*5 + (p-1) gets the same sign when that assignment is set.
+//
+// Without position maps the position block stays zero — bulk matches and callers
+// that have not yet attached a role prior still train/infer on main effects alone.
 //
 // This ANTISYMMETRIC encoding replaces the older two-block layout (radiant
 // multi-hot followed by dire multi-hot). A draft is symmetric under swapping the
@@ -34,38 +55,84 @@ func (h *HeroMap) WinProbLen() int { return h.Len() }
 // as the model's bias term. It also makes side-swap augmentation unnecessary:
 // swapping sides maps x to -x analytically rather than approximately.
 func (h *HeroMap) EncodeWinProb(radiantPicks, direPicks []int) []float64 {
+	return h.EncodeWinProbPositions(radiantPicks, direPicks, nil, nil)
+}
+
+// EncodeWinProbPositions is EncodeWinProb with hard hero→position labels
+// (training on finished CM drafts where match_players.position is known).
+func (h *HeroMap) EncodeWinProbPositions(radiantPicks, direPicks []int, radiantPos, direPos map[int]int) []float64 {
 	n := h.Len()
-	x := make([]float64, n)
-	for _, id := range radiantPicks {
-		if i, ok := h.Index(id); ok {
-			x[i] += 1
+	x := make([]float64, n*(1+WinProbPositions))
+	set := func(ids []int, pos map[int]int, sign float64) {
+		for _, id := range ids {
+			i, ok := h.Index(id)
+			if !ok {
+				continue
+			}
+			x[i] += sign
+			if pos == nil {
+				continue
+			}
+			p, ok := pos[id]
+			if !ok || p < 1 || p > WinProbPositions {
+				continue
+			}
+			x[n+i*WinProbPositions+(p-1)] += sign
 		}
 	}
-	for _, id := range direPicks {
-		if i, ok := h.Index(id); ok {
-			x[i] -= 1
+	set(radiantPicks, radiantPos, 1)
+	set(direPicks, direPos, -1)
+	return x
+}
+
+// EncodeWinProbSoft fills the position block with expected occupancy weights
+// (serve-time marginalization: E[logit] = w·E[x] for a linear model).
+//
+// occ maps hero id → [5] posterior mass on positions 1..5. Mass may be soft;
+// main effects stay hard ±1 for heroes already on the board.
+func (h *HeroMap) EncodeWinProbSoft(radiantPicks, direPicks []int, radiantOcc, direOcc map[int][WinProbPositions]float64) []float64 {
+	n := h.Len()
+	x := h.EncodeWinProb(radiantPicks, direPicks)
+	fill := func(ids []int, occ map[int][WinProbPositions]float64, sign float64) {
+		if occ == nil {
+			return
+		}
+		for _, id := range ids {
+			i, ok := h.Index(id)
+			if !ok {
+				continue
+			}
+			row, ok := occ[id]
+			if !ok {
+				continue
+			}
+			base := n + i*WinProbPositions
+			for p := 0; p < WinProbPositions; p++ {
+				x[base+p] += sign * row[p]
+			}
 		}
 	}
+	fill(radiantPicks, radiantOcc, 1)
+	fill(direPicks, direOcc, -1)
 	return x
 }
 
 // EncodeWinProbExpected is EncodeWinProb with additional EXPECTED heroes: a
 // probability mass per dense index for the slots each side has not filled yet.
 //
-// This is how the strength readout marginalizes over the rest of the draft
-// instead of pretending the empty slots are empty. The model is linear in its
-// features, so the expected logit of a random completion is exactly the logit of
-// the expected feature vector — no sampling, no rollout tree, no nondeterminism.
-// Passing nil for either side reduces to EncodeWinProb.
+// Expected mass lands on main effects only. Position mass for unfinished slots
+// is not guessed here — the live recommender already soft-encodes heroes that
+// are on the board. Passing nil for either side reduces to EncodeWinProb.
 func (h *HeroMap) EncodeWinProbExpected(radiantPicks, direPicks []int, expRadiant, expDire []float64) []float64 {
 	x := h.EncodeWinProb(radiantPicks, direPicks)
+	n := h.Len()
 	for i, v := range expRadiant {
-		if i < len(x) {
+		if i < n {
 			x[i] += v
 		}
 	}
 	for i, v := range expDire {
-		if i < len(x) {
+		if i < n {
 			x[i] -= v
 		}
 	}

@@ -12,6 +12,54 @@ type Recommendation struct {
 	HeroID int     `json:"heroId"`
 	Score  float64 `json:"score"`
 	Why    string  `json:"why"`
+	// Role is the MAP lane (1-5) under the current board's assignment posterior (§6.3).
+	// Zero when no role prior is loaded.
+	Role int `json:"role,omitempty"`
+	// Player is the ally nickname the capability layer assigns to this hero (§6.5).
+	// Empty when no full ally roster is loaded.
+	Player string `json:"player,omitempty"`
+	// Factors are the parts Score was assembled from, where they exist separately.
+	//
+	// Deliberately excluded from the wire format (`json:"-"`): the web DTO and the
+	// cross-platform determinism golden both serialise this struct, and a field that
+	// changes neither the ranking nor what is displayed has no business changing
+	// either of those. It is read in-process by the decision log (§6.1), which needs
+	// to know why a score was what it was long after the fact.
+	Factors *Factors `json:"-"`
+}
+
+// Factors is the decomposition of a recommendation score. Only the parts the core
+// actually computes separately are here: a ban score is literally built from these
+// three terms plus weights, and the ally-comfort bonus is an explicit offset. The
+// pick score from beam search is NOT decomposable this way — it is the outcome of a
+// rollout, not a sum of named contributions — so for picks only WinProb is set, and
+// nothing here pretends otherwise (see §6.4).
+type Factors struct {
+	// Base is the pick score before the comfort offset.
+	//
+	// Deliberately NOT called a win probability: with beam search on it is the value
+	// of a rollout — win-prob plus synergy, counter and role-coverage adjustments —
+	// which is not a probability and is not confined to [0,1]. Only in the one-ply
+	// fallback does it happen to be a calibrated win-prob. Naming it after the
+	// quantity it sometimes is would put a wrong label on the majority of records.
+	Base float64 `json:"base,omitempty"`
+	// BaseIsWinProb reports whether Base is that calibrated win probability (one-ply
+	// scoring) rather than a beam rollout value, so a reader never has to guess
+	// which of the two a record holds.
+	BaseIsWinProb bool `json:"baseIsWinProb,omitempty"`
+	// Comfort is how much ally comfort moved the pick score (#3).
+	Comfort float64 `json:"comfort,omitempty"`
+	// Capability is how much the §6.5 feasibility penalty moved the pick score
+	// (typically <= 0). Zero when no roster is loaded.
+	Capability float64 `json:"capability,omitempty"`
+	// EnemyProb is P(the enemy takes this next) — the base of a ban score.
+	EnemyProb float64 `json:"enemyProb,omitempty"`
+	// Threat is the candidate's mean counter win rate against our picks, and
+	// EnemySynergy its mean synergy with the enemy's. Both centered at 0.5.
+	Threat       float64 `json:"threat,omitempty"`
+	EnemySynergy float64 `json:"enemySynergy,omitempty"`
+	// AltDeficit is how much the enemy's post-ban outlook worsens if we ban this hero (§6.7).
+	AltDeficit float64 `json:"altDeficit,omitempty"`
 }
 
 // EnemyPick is a predicted next enemy action.
