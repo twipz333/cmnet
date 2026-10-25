@@ -128,7 +128,6 @@ func ParseDraft(body []byte) (*draft.Snapshot, error) {
 		snap.DirePicks = extract(dire, pickKey)
 		snap.DireBans = extract(dire, banKey)
 		snap.CurrentIsPick = d.Pick
-		snap.FirstPick = firstPickFrom(radiant, dire)
 		active := d.ActiveTeam == teamRadiant || d.ActiveTeam == teamDire
 		filled := len(snap.RadiantPicks)+len(snap.DirePicks)+len(snap.RadiantBans)+len(snap.DireBans) > 0
 		// An empty "draft":{} still arrives in-game once we subscribe to the
@@ -143,6 +142,13 @@ func ParseDraft(body []byte) (*draft.Snapshot, error) {
 		default:
 			// No active team -> the draft phase is over (or not started).
 			snap.Done = true
+		}
+		snap.FirstPick = inferFirstPick(snap)
+		if !snap.Done {
+			cur, _ := snap.Current()
+			if fp, ok := draft.DefaultOrder().InferFirstPick(sideCount(snap, draft.Radiant), sideCount(snap, draft.Dire), &cur); ok {
+				snap.FirstPick = fp
+			}
 		}
 	} else {
 		// Map-only event: no draft block, so the draft phase is not in progress.
@@ -244,20 +250,24 @@ func AuthToken(body []byte) string {
 	return ev.Auth.Token
 }
 
-// firstPickFrom infers which side drafts first from the state of the board.
-//
-// GSI does not label it, and Snapshot.FirstPick was consequently never set at all
-// — it stayed at its zero value, Radiant, and the CM schedule was read off that
-// whether or not it was true. Half the time the phase and the whose-turn display
-// were wrong for the entire draft.
-//
-// The inference is the first ban: CM alternates strictly, so whichever side has
-// more actions on the board acted first. Equal counts mean either nothing has
-// happened yet or the two are in step, and the zero value stands — which is no
-// worse than what it did before, and correct as soon as the first action lands.
-func firstPickFrom(radiant, dire map[string]json.RawMessage) draft.Team {
-	r := len(extract(radiant, pickKey)) + len(extract(radiant, banKey))
-	d := len(extract(dire, pickKey)) + len(extract(dire, banKey))
+func sideCount(s *draft.Snapshot, t draft.Team) draft.SideCount {
+	return draft.SideCount{Picks: len(s.Picks(t)), Bans: len(s.Bans(t))}
+}
+
+// inferFirstPick reads the seating off the board alone, under the 7.34+ schedule
+// (draft.Order.InferFirstPick); ParseDraft refines it with the current step. A
+// board the schedule cannot produce falls back to the older count rule.
+func inferFirstPick(s *draft.Snapshot) draft.Team {
+	if fp, ok := draft.DefaultOrder().InferFirstPick(sideCount(s, draft.Radiant), sideCount(s, draft.Dire), nil); ok {
+		return fp
+	}
+	return firstPickFromCounts(len(s.RadiantPicks)+len(s.RadiantBans), len(s.DirePicks)+len(s.DireBans))
+}
+
+// firstPickFromCounts is the pre-7.34 rule — "whoever has more actions on the
+// board moved first", which held only while the opening alternated strictly —
+// kept as a fallback for boards the current schedule cannot explain.
+func firstPickFromCounts(r, d int) draft.Team {
 	if d > r {
 		return draft.Dire
 	}

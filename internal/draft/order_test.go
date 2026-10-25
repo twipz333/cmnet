@@ -81,3 +81,29 @@ func TestFeaturePhasesMatchDefaultOrder(t *testing.T) {
 		t.Fatalf("features phase bounds %v != draft phases %v", got, want)
 	}
 }
+
+func TestInferFirstPick(t *testing.T) {
+	o := DefaultOrder()
+	for _, fp := range []Team{Radiant, Dire} {
+		d := New(fp)
+		for i := 0; i < CMSteps; i++ {
+			cur, _ := d.Current()
+			r := SideCount{len(d.Picks(Radiant)), len(d.Bans(Radiant))}
+			di := SideCount{len(d.Picks(Dire)), len(d.Bans(Dire))}
+			got, ok := o.InferFirstPick(r, di, &cur)
+			if !ok || got != fp {
+				t.Fatalf("fp=%v step %d: inferred %v ok=%v", fp, i, got, ok)
+			}
+			_ = d.Apply(i + 1)
+		}
+	}
+	// After the opening seven bans the second-pick side has MORE actions — the
+	// old "more actions moved first" rule gets this wrong.
+	got, ok := o.InferFirstPick(SideCount{0, 3}, SideCount{0, 4}, nil)
+	if !ok || got != Radiant {
+		t.Fatalf("3 vs 4 bans: inferred %v ok=%v, want Radiant", got, ok)
+	}
+	if _, ok := o.InferFirstPick(SideCount{}, SideCount{}, nil); ok {
+		t.Fatal("an empty board with no current step cannot tell the seating")
+	}
+}

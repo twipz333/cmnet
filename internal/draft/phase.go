@@ -199,3 +199,47 @@ func NextStepOf(seq []Step, from int, team Team) (idx int, step Step, ok bool) {
 	}
 	return -1, Step{}, false
 }
+
+// SideCount is how many picks and bans one side has on the board.
+type SideCount struct{ Picks, Bans int }
+
+// InferFirstPick works out which side drafts first from the board and, when
+// known, the step the game says is current — the only things a live source such
+// as GSI reports. It tries both seatings under o and returns the one whose first
+// len(board) steps produce exactly these per-side pick/ban counts and whose next
+// step is cur. ok is false when neither or both seatings fit (an empty board
+// with no current step, or a board this schedule cannot produce).
+//
+// Under the pre-7.34 schedule "whoever has more actions went first" was enough
+// because the opening alternated strictly. The 7.34+ opening (F F S S F S S)
+// breaks that: after seven bans the second-pick side has MORE actions.
+func (o Order) InferFirstPick(radiant, dire SideCount, cur *Step) (fp Team, ok bool) {
+	n := radiant.Picks + radiant.Bans + dire.Picks + dire.Bans
+	var fits []Team
+	for _, cand := range []Team{Radiant, Dire} {
+		seq := o.Sequence(cand)
+		if n > len(seq) {
+			continue
+		}
+		var got [2]SideCount
+		for _, st := range seq[:n] {
+			c := &got[st.Team]
+			if st.Action == Pick {
+				c.Picks++
+			} else {
+				c.Bans++
+			}
+		}
+		if got[Radiant] != radiant || got[Dire] != dire {
+			continue
+		}
+		if cur != nil && n < len(seq) && seq[n] != *cur {
+			continue
+		}
+		fits = append(fits, cand)
+	}
+	if len(fits) != 1 {
+		return Radiant, false
+	}
+	return fits[0], true
+}
