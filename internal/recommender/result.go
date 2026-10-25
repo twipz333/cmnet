@@ -35,17 +35,13 @@ type Recommendation struct {
 // rollout, not a sum of named contributions — so for picks only WinProb is set, and
 // nothing here pretends otherwise (see §6.4).
 type Factors struct {
-	// Base is the pick score before the comfort offset.
-	//
-	// Deliberately NOT called a win probability: with beam search on it is the value
-	// of a rollout — win-prob plus synergy, counter and role-coverage adjustments —
-	// which is not a probability and is not confined to [0,1]. Only in the one-ply
-	// fallback does it happen to be a calibrated win-prob. Naming it after the
-	// quantity it sometimes is would put a wrong label on the majority of records.
+	// Base is the pick score before the comfort offset: our-perspective
+	// boardStrength after the pick (one-ply), or its expectation under the
+	// planner (beam/expectimax) — on the strength readout's scale either way.
 	Base float64 `json:"base,omitempty"`
-	// BaseIsWinProb reports whether Base is that calibrated win probability (one-ply
-	// scoring) rather than a beam rollout value, so a reader never has to guess
-	// which of the two a record holds.
+	// BaseIsWinProb reports whether Base is such a probability. True for every
+	// pick score the advisor builds today; kept so records from before the
+	// planner and the strength bar shared a scoring function stay readable.
 	BaseIsWinProb bool `json:"baseIsWinProb,omitempty"`
 	// Comfort is how much ally comfort moved the pick score (#3).
 	Comfort float64 `json:"comfort,omitempty"`

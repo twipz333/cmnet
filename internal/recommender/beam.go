@@ -42,77 +42,33 @@ func (r *Recommender) prunePool(d draft.View, dist []float64) []int {
 	return pool
 }
 
-// evalDraft scores a (partial) draft from ourTeam's perspective: win probability
-// plus synergy and counter adjustments. Result is rounded for platform stability.
 // ScoreDraft exposes the value the search ranks candidates by, for offline
-// evaluation. It is not the raw win probability: it is what the advisor actually
-// orders picks with, matrices and lining penalty included. Measuring win-prob
-// alone would grade a component the user never sees on its own.
+// evaluation (eval's "advisor" ranker): our-perspective boardStrength, the same
+// number the strength bar shows.
 func (r *Recommender) ScoreDraft(ourTeam draft.Team, myPicks, enemyPicks []int) float64 {
 	return r.evalDraft(ourTeam, myPicks, enemyPicks)
 }
 
+// evalDraft is the planner's leaf value: P(we win) for a (partial) board, read
+// through boardStrength — exactly the function behind the strength readout.
+//
+// It used to be its own formula: calibrated win-prob plus fixed 0.10 synergy and
+// counter terms and a 0.15 lining penalty, while the strength bar used the
+// bundle's fitted stacker. The search therefore ranked picks by one quantity and
+// the user judged them by another, and the "win ~X%" next to a pick was not a
+// probability at all. One function now serves both, so the number beside a
+// recommendation is the expected strength the bar will show if the draft goes
+// the way the planner expects.
 func (r *Recommender) evalDraft(ourTeam draft.Team, myPicks, enemyPicks []int) float64 {
-	var base float64
-	if ourTeam == draft.Radiant {
-		base = model.RoundScore(r.WinProb.CalibrateAt(r.rawWinProb(myPicks, enemyPicks), len(myPicks)+len(enemyPicks)))
-	} else {
-		base = model.RoundScore(1 - r.WinProb.CalibrateAt(r.rawWinProb(enemyPicks, myPicks), len(myPicks)+len(enemyPicks)))
+	rp, dp := myPicks, enemyPicks
+	if ourTeam == draft.Dire {
+		rp, dp = enemyPicks, myPicks
 	}
-	adj := r.beam.LambdaSyn*(r.meanSynergy(myPicks)-r.meanSynergy(enemyPicks)) +
-		r.beam.LambdaCnt*(r.meanCounter(myPicks, enemyPicks)-0.5)
-	// Lining penalty (#8): discount drafts whose heroes can't cover distinct
-	// positions 1-5 (e.g. four hard carries). Only our own composition is checked.
-	if r.posByID != nil && r.beam.LambdaPos > 0 {
-		adj -= r.beam.LambdaPos * (1 - r.coverage(myPicks))
+	p := r.boardStrength(rp, dp, r.rawWinProb(rp, dp))
+	if ourTeam == draft.Dire {
+		p = model.RoundScore(1 - p)
 	}
-	return model.RoundScore(base + adj)
-}
-
-// coverage returns the fraction of our heroes that can be assigned to distinct
-// lane positions (1-5) — a max bipartite matching of heroes to positions divided
-// by min(len, 5). 1.0 means every hero has a distinct plausible lane; lower means
-// role overlap (a draft that is hard to actually realize). 1.0 when positions are
-// unknown or there are no picks.
-func (r *Recommender) coverage(picks []int) float64 {
-	if len(picks) == 0 {
-		return 1
-	}
-	need := len(picks)
-	if need > 5 {
-		need = 5
-	}
-	// posOfHero[i] = eligible positions for picks[i]; unknown heroes can fill any.
-	posOfHero := make([][]int, len(picks))
-	for i, id := range picks {
-		if p, ok := r.posByID[id]; ok && len(p) > 0 {
-			posOfHero[i] = p
-		} else {
-			posOfHero[i] = []int{1, 2, 3, 4, 5}
-		}
-	}
-	posToHero := map[int]int{} // position -> matched hero index
-	var augment func(hi int, seen map[int]bool) bool
-	augment = func(hi int, seen map[int]bool) bool {
-		for _, p := range posOfHero[hi] {
-			if seen[p] {
-				continue
-			}
-			seen[p] = true
-			if cur, taken := posToHero[p]; !taken || augment(cur, seen) {
-				posToHero[p] = hi
-				return true
-			}
-		}
-		return false
-	}
-	matched := 0
-	for hi := range picks {
-		if augment(hi, map[int]bool{}) {
-			matched++
-		}
-	}
-	return float64(matched) / float64(need)
+	return p
 }
 
 // meanSynergy is the average teammate-synergy win rate among ids (0.5 if < 2).

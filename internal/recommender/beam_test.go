@@ -80,7 +80,7 @@ func TestBeamRecommendDeterministic(t *testing.T) {
 
 func TestBeamPruningLimitsRecs(t *testing.T) {
 	r := beamRecommender(40, randomishWeights(80))
-	r.SetBeamConfig(BeamConfig{PruneN: 10, Depth: 2, Width: 2, LambdaSyn: 0.1, LambdaCnt: 0.1})
+	r.SetBeamConfig(BeamConfig{PruneN: 10, Depth: 2, Width: 2})
 	res := r.Recommend(firstPickDraft(t), draft.Radiant, 100)
 	// Only the pruned meta pool (10) can appear as recommendations.
 	if len(res.Recs) > 10 {

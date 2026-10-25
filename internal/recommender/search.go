@@ -20,12 +20,13 @@ const DefaultTopN = 8
 // BeamConfig tunes the M3 beam-search pick recommender. Zero values disable beam
 // search (the recommender falls back to one-ply win-prob scoring).
 type BeamConfig struct {
-	PruneN    int     // candidate pool size (top-N meta by predictor prior)
-	Depth     int     // CM-sequence plies simulated past the candidate (§6.4 H)
-	Width     int     // beam width over our future actions
-	LambdaSyn float64 // synergy weight in draft evaluation
-	LambdaCnt float64 // counter weight in draft evaluation
-	LambdaPos float64 // role-coverage (lining) penalty weight (#8)
+	PruneN int // candidate pool size (top-N meta by predictor prior)
+	Depth  int // CM-sequence plies simulated past the candidate (§6.4 H)
+	Width  int // beam width over our future actions
+	// LambdaPos weights the role-coverage (lining) differential in boardStrength's
+	// fallback for bundles without a stacker (#8). The stacker learns that weight
+	// itself; the synergy/counter weights of the fallback are strengthLambda.
+	LambdaPos float64
 
 	// EnemyPolicy enables expectimax over the opponent predictor (± scout blend).
 	// When false, the legacy value-greedy one-action rollout is used (gate/regression).
@@ -41,7 +42,7 @@ type BeamConfig struct {
 func DefaultBeamConfig() BeamConfig {
 	return BeamConfig{
 		PruneN: 24, Depth: 4, Width: 3,
-		LambdaSyn: 0.10, LambdaCnt: 0.10, LambdaPos: 0.15,
+		LambdaPos:   0.15,
 		EnemyPolicy: true, EnemyTopK: 8, MassFloor: 0.85,
 	}
 }
@@ -812,7 +813,9 @@ func (r *Recommender) rankCandidates(d draft.View, ourTeam draft.Team, step draf
 			}
 			score = r.beamPickScore(d, ourTeam, id, pool)
 			why = fmt.Sprintf("вин ~%.0f%%", score*100)
-			score, why, factors = r.applyAllyBias(idx, score, why, false)
+			// The planner's value is an expectation of boardStrength — a probability
+			// on the strength bar's own scale, not a bespoke rollout score.
+			score, why, factors = r.applyAllyBias(idx, score, why, true)
 			ourPicks := rPicks
 			if ourTeam == draft.Dire {
 				ourPicks = dPicks
@@ -1071,43 +1074,17 @@ func (r *Recommender) draftStrength(d draft.View, ourTeam draft.Team) *DraftStre
 	if len(rPicks) == 0 && len(dPicks) == 0 {
 		return nil
 	}
-	radiantProb := model.RoundScore(r.WinProb.CalibrateAt(r.rawWinProb(rPicks, dPicks), len(rPicks)+len(dPicks)))
-
 	// Mid-draft, marginalize over the unfilled slots rather than scoring the board
-	// as if those heroes will never exist (see rollout.go). Calibrated per board
-	// size afterwards, since a three-pick read and a full-lineup read are
-	// different quantities.
+	// as if those heroes will never exist (see rollout.go). The marginalized logit
+	// replaces the raw one going into boardStrength — previously the stacker path
+	// recomputed from the bare board and silently threw the rollout away.
+	raw := r.rawWinProb(rPicks, dPicks)
 	if r.rollout {
-		if raw, ok := r.rolloutStrength(d, rPicks, dPicks); ok {
-			radiantProb = model.RoundScore(r.WinProb.CalibrateAt(raw, len(rPicks)+len(dPicks)))
+		if rr, ok := r.rolloutStrength(d, rPicks, dPicks); ok {
+			raw = rr
 		}
 	}
-
-	// Combine the win-prob model with the synergy/counter lift.
-	//
-	// Preferred path: the bundle's fitted stacker, which learned the weights on a
-	// held-out validation block and works in log-odds, where win-rate
-	// contributions actually add up. Fallback: the old fixed-lambda blend in
-	// probability space, kept so bundles baked before the stacker still produce a
-	// strength readout instead of silently dropping the pair signal.
-	if r.stacker != nil && r.matrices() != nil {
-		mx := r.matrices()
-		ri, di := r.denseIdx(rPicks), r.denseIdx(dPicks)
-		radiantProb = model.RoundScore(clampProb01(r.stacker.Apply(model.StackerFeatures(
-			r.rawWinProb(rPicks, dPicks),
-			mx.MeanSynergy(ri)-mx.MeanSynergy(di),
-			mx.MeanCounter(ri, di),
-			r.roleCoverageDiff(rPicks, dPicks),
-		))))
-	} else if r.synergy != nil && r.counter != nil {
-		lam := r.strengthLambda
-		if lam == 0 {
-			lam = DefaultStrengthLambda
-		}
-		adj := lam*(r.meanSynergy(rPicks)-r.meanSynergy(dPicks)) +
-			lam*(r.meanCounter(rPicks, dPicks)-0.5)
-		radiantProb = model.RoundScore(clampProb01(radiantProb + adj))
-	}
+	radiantProb := r.boardStrength(rPicks, dPicks, raw)
 
 	ourProb := radiantProb
 	if ourTeam == draft.Dire {
@@ -1121,19 +1098,48 @@ func (r *Recommender) draftStrength(d draft.View, ourTeam draft.Team) *DraftStre
 	}
 }
 
-// pickScore returns our-perspective win probability after adding candidate to our picks.
+// pickScore returns our-perspective strength after adding candidate to our picks
+// (the one-ply path: same boardStrength the planner and the strength bar use).
 func (r *Recommender) pickScore(ourTeam draft.Team, rPicks, dPicks []int, cand int) float64 {
-	rp, dp := rPicks, dPicks
-	if ourTeam == draft.Radiant {
-		rp = appendCopy(rPicks, cand)
-	} else {
-		dp = appendCopy(dPicks, cand)
-	}
-	p := model.RoundScore(r.WinProb.CalibrateAt(r.rawWinProb(rp, dp), len(rp)+len(dp)))
+	my, enemy := rPicks, dPicks
 	if ourTeam == draft.Dire {
-		p = model.RoundScore(1 - p)
+		my, enemy = dPicks, rPicks
 	}
-	return p
+	return r.evalDraft(ourTeam, appendCopy(my, cand), enemy)
+}
+
+// boardStrength is P(Radiant wins) for a board given the win-prob head's raw
+// output for it — the ONE scoring function behind the strength readout, the
+// one-ply pick score and the planner's leaves.
+//
+// Preferred: the bundle's stacker, fitted out-of-sample, combining the win-prob
+// logit with the synergy/counter and role-coverage differentials in log-odds.
+// Fallback for bundles without one: board-size-calibrated win-prob, plus the
+// fixed-lambda pair lift and lining terms in probability space.
+func (r *Recommender) boardStrength(rPicks, dPicks []int, raw float64) float64 {
+	if r.stacker != nil && r.matrices() != nil {
+		mx := r.matrices()
+		ri, di := r.denseIdx(rPicks), r.denseIdx(dPicks)
+		return model.RoundScore(clampProb01(r.stacker.Apply(model.StackerFeatures(
+			raw,
+			mx.MeanSynergy(ri)-mx.MeanSynergy(di),
+			mx.MeanCounter(ri, di),
+			r.roleCoverageDiff(rPicks, dPicks),
+		))))
+	}
+	p := r.WinProb.CalibrateAt(raw, len(rPicks)+len(dPicks))
+	if r.synergy != nil && r.counter != nil {
+		lam := r.strengthLambda
+		if lam == 0 {
+			lam = DefaultStrengthLambda
+		}
+		p += lam*(r.meanSynergy(rPicks)-r.meanSynergy(dPicks)) +
+			lam*(r.meanCounter(rPicks, dPicks)-0.5)
+	}
+	if r.beam.LambdaPos > 0 {
+		p += r.beam.LambdaPos * r.roleCoverageDiff(rPicks, dPicks)
+	}
+	return model.RoundScore(clampProb01(p))
 }
 
 // clampProb01 bounds a value to [0,1] so the blended strength stays a probability.

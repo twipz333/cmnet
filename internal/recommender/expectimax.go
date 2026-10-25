@@ -126,9 +126,27 @@ func (r *Recommender) expectimaxOur(st searchState, depth int, ourTeam draft.Tea
 		id   int
 		heur float64
 	}
+	// Which of our actions to expand. A pick is judged by the board it leaves. A
+	// ban leaves our board exactly as it was, so judging it that way scored every
+	// ban the same and the width cut kept whichever heroes had the lowest ids;
+	// a ban is judged by how likely the enemy is to PICK the hero next instead —
+	// the same base the live ban score uses.
+	step, _ := st.step()
+	var denyProb []float64
+	if step.Action == draft.Ban {
+		denyProb = r.searchEnemyPickPolicy(st, ourTeam)
+	}
 	cands := make([]cand, 0, len(pool))
 	for _, id := range pool {
 		if st.taken(id) {
+			continue
+		}
+		if denyProb != nil {
+			h := 0.0
+			if idx, ok := r.heroMap.Index(id); ok && idx < len(denyProb) {
+				h = denyProb[idx]
+			}
+			cands = append(cands, cand{id: id, heur: h})
 			continue
 		}
 		ns := st.apply(id)
@@ -227,4 +245,22 @@ func (r *Recommender) enemyStepPolicy(st searchState) []float64 {
 	}
 	b := boardState{rPicks: st.rPicks, dPicks: st.dPicks, rBans: st.rBans, dBans: st.dBans, firstPick: st.firstPick}
 	return r.blendEnemy(r.Predictor.Distribution(predictorState(b, step.Team, step.Action, st.cursor)), step.Action)
+}
+
+// searchEnemyPickPolicy is the enemy's distribution for their next PICK after st's
+// cursor, on st's board (scout-blended like every enemy policy). Nil when the
+// enemy has no pick left.
+func (r *Recommender) searchEnemyPickPolicy(st searchState, ourTeam draft.Team) []float64 {
+	if r.Predictor == nil {
+		return nil
+	}
+	enemy := ourTeam.Opponent()
+	for i := st.cursor; i < len(st.seq); i++ {
+		if st.seq[i].Team != enemy || st.seq[i].Action != draft.Pick {
+			continue
+		}
+		b := boardState{rPicks: st.rPicks, dPicks: st.dPicks, rBans: st.rBans, dBans: st.dBans, firstPick: st.firstPick}
+		return r.blendEnemy(r.Predictor.Distribution(predictorState(b, enemy, draft.Pick, i)), draft.Pick)
+	}
+	return nil
 }
