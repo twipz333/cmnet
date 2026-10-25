@@ -23,8 +23,11 @@ pairstats-cache/
 pairstats*.html
 pairstats*.png
 
-# downloaded hero/item/avatar images (re-fetchable, and not ours to redistribute)
-assets/
+# downloaded hero/item/avatar images (re-fetchable, and not ours to redistribute).
+# Anchored to the repo root: the bare "assets/" pattern also matched the Go
+# package internal/assets, which was therefore never committed and left every
+# clean checkout unbuildable (cmd/advisor and internal/web import it).
+/assets/
 
 # graphify knowledge graph output
 graphify-out/
