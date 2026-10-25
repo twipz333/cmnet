@@ -19,6 +19,8 @@ const PANELS = [
   // recs rendered in #primary-action — keep skip so we do not duplicate.
   { key: 'recs', skip: true },
   { key: 'enemyPred', title: 'Предикт врага', render: renderEnemyPred, secondary: true },
+  // Which enemy action enemyPred is for; shown in that panel's title, not on its own.
+  { key: 'enemyStep', skip: true },
   { key: 'poolAlert', title: 'Наш пул под угрозой', render: renderEnemyPred, secondary: true },
   { key: 'safeToLet', title: 'Не бойся — пусть берут', render: renderSafeToLet, secondary: true },
   { key: 'positionMeta', title: 'Мета по позициям', render: renderPositionMeta, secondary: true },
@@ -317,6 +319,16 @@ function dangerNote(e) {
   return null;
 }
 
+// panelTitle names the enemy panel after the action it predicts: on our turn it
+// is the enemy's NEXT step, which may be a ban or a pick.
+function panelTitle(panel) {
+  const st = state.result && state.result.enemyStep;
+  if (panel.key === 'enemyPred' && st) {
+    return panel.title + ' · следующий ' + (st.isPick ? 'пик' : 'бан');
+  }
+  return panel.title;
+}
+
 function renderEnemyPred(list) {
   const box = el('div', 'items');
   list.forEach((e, i) => {
@@ -386,7 +398,7 @@ function renderPanels() {
 
   primary.forEach(([panel, value]) => {
     const box = el('section', 'panel');
-    box.append(el('h2', null, panel.title));
+    box.append(el('h2', null, panelTitle(panel)));
     box.append(isEmpty(value) ? el('div', 'why', panel.empty) : panel.render(value));
     host.append(box);
   });
@@ -397,7 +409,7 @@ function renderPanels() {
     wrap.append(el('summary', null, 'Дополнительно (' + secondary.length + ')'));
     secondary.forEach(([panel, value]) => {
       const box = el('section', 'panel');
-      box.append(el('h2', null, panel.title));
+      box.append(el('h2', null, panelTitle(panel)));
       box.append(isEmpty(value) ? el('div', 'why', panel.empty) : panel.render(value));
       wrap.append(box);
     });

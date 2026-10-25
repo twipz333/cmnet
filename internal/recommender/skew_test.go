@@ -146,3 +146,19 @@ func TestRolloutPredictsEachSideAtItsOwnPick(t *testing.T) {
 		t.Fatalf("Dire's next pick = %d %+v %v, want index %d", ord, step, ok, openingBans+1)
 	}
 }
+
+// When the enemy has nothing left to do, there is no enemy move to predict.
+func TestNoEnemyPredictionWhenTheyAreDone(t *testing.T) {
+	r := zeroRecommender([]int{1, 2, 3})
+	d := draft.New(draft.Dire) // Radiant picks last (step 23)
+	for i := 0; i < draft.CMSteps-1; i++ {
+		_ = d.Apply(100 + i)
+	}
+	res := r.Recommend(d, draft.Radiant, 8)
+	if !res.OurTurn || !res.IsPick {
+		t.Fatal("setup: the last step should be our pick")
+	}
+	if res.EnemyStep != nil || len(res.EnemyPred) != 0 {
+		t.Fatalf("enemy step %+v, %d predictions; want none", res.EnemyStep, len(res.EnemyPred))
+	}
+}

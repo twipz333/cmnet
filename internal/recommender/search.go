@@ -579,16 +579,21 @@ func (r *Recommender) Recommend(d draft.View, ourTeam draft.Team, topN int) Resu
 	nextProbs := r.orZeros(enemyNext)
 	pickProbs := r.orZeros(enemyPick)
 
-	// Enemy prediction: their next move over untaken heroes.
-	res.EnemyPred = r.topEnemy(d, ourTeam, nextProbs, enemyNext.step.Action, topN)
+	// Enemy prediction: their next move over untaken heroes. Nothing when they
+	// have no move left (the last steps of the draft can all be ours).
+	if enemyNext.ok() {
+		res.EnemyPred = r.topEnemy(d, ourTeam, nextProbs, enemyNext.step.Action, topN)
 
-	// Pool contention (#4): our preferred heroes the enemy is most likely to take
-	// with their next move, pick or ban.
-	res.PoolAlert = r.poolAlert(d, ourTeam, nextProbs, enemyNext.step.Action, topN)
+		// Pool contention (#4): our preferred heroes the enemy is most likely to
+		// take with their next move, pick or ban.
+		res.PoolAlert = r.poolAlert(d, ourTeam, nextProbs, enemyNext.step.Action, topN)
+	}
 
 	// The other half of the ban decision: what they are likely to PICK and we can
 	// afford to let them have.
-	res.SafeToLet = r.safeToLet(d, ourTeam, pickProbs, topN)
+	if enemyPick.ok() {
+		res.SafeToLet = r.safeToLet(d, ourTeam, pickProbs, topN)
+	}
 
 	// Patch meta per position (#9): top available heroes for each lane, with
 	// taken/banned heroes removed.

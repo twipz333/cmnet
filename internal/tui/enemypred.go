@@ -8,7 +8,16 @@ import (
 // viewEnemy renders the predicted next enemy move.
 func (m model) viewEnemy(width int) string {
 	var b strings.Builder
-	b.WriteString(m.th.title.Render("ENEMY PREDICTION"))
+	title := "ENEMY PREDICTION"
+	if st := m.result.EnemyStep; st != nil {
+		// On our turn this is the enemy's NEXT step, which may be a ban or a pick.
+		if st.IsPick {
+			title += " · next pick"
+		} else {
+			title += " · next ban"
+		}
+	}
+	b.WriteString(m.th.title.Render(title))
 	b.WriteByte('\n')
 
 	if len(m.result.EnemyPred) == 0 {
