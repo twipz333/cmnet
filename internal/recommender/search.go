@@ -108,6 +108,9 @@ type Recommender struct {
 	// position panel reads it directly instead of the coarse global-score fallback.
 	posMeta map[int][]MetaHero
 
+	// cmOrder is the draft schedule (bundle-inferred, else draft.DefaultOrder).
+	cmOrder draft.Order
+
 	// Item/advice rules (#10), evaluated against the enemy draft.
 	rules []rules.Rule
 }
@@ -494,6 +497,20 @@ func (r *Recommender) rawWinProb(rPicks, dPicks []int) float64 {
 	}
 	return r.WinProb.Model.Predict(r.encodeWinProb(rPicks, dPicks))
 }
+
+// WithCMOrder sets the Captains Mode schedule the planner and the enemy-step
+// lookup follow — normally the bundle's inferred order. Nil or invalid keeps the
+// built-in schedule.
+func (r *Recommender) WithCMOrder(o draft.Order) *Recommender {
+	if o.Valid() {
+		r.cmOrder = append(draft.Order(nil), o...)
+	}
+	return r
+}
+
+// CMOrder returns the schedule in use (the built-in one when none was set), so a
+// manual board can be laid out by the same order the recommender plans with.
+func (r *Recommender) CMOrder() draft.Order { return r.cmOrder.OrDefault() }
 
 // SetBeamConfig overrides the beam tuning (call after WithMatrices).
 func (r *Recommender) SetBeamConfig(cfg BeamConfig) *Recommender {

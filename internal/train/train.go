@@ -580,6 +580,8 @@ func Bundle(matches []cache.Match, heroIDs []int, opts Options) *bundle.Bundle {
 	// matches — which have no order — get theirs reconstructed by alternating
 	// sides. See the prefix block in BuildSamples for why.
 	cmMatches := withBansMatches(matches)
+	orderRep := InferOrder(cmMatches)
+	progress(orderRep.Note(features.PhaseBounds()))
 	predSource := cmMatches
 	if len(predSource) == 0 {
 		// No ban data cached yet (e.g. only the picks-only bulk sync has run, or the
@@ -703,6 +705,7 @@ func Bundle(matches []cache.Match, heroIDs []int, opts Options) *bundle.Bundle {
 		CounterMatrix:    mx.Counter,
 		Objectives:       objectives.DefaultObjectives(),
 		HeroPositions:    opts.HeroPositions,
+		CMOrder:          orderRep.Order,
 	}
 	if opts.RolePrior != nil && len(opts.RolePrior.Prob) > 0 {
 		b.RolePrior = opts.RolePrior.Prob

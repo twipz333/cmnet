@@ -95,7 +95,8 @@ func buildSnapshot(t *testing.T) []byte {
 		&model.Predictor{Pick: loaded.PickPredictor, Ban: loaded.BanPredictor, HeroMap: hm},
 	)
 
-	// Fixed input: Radiant first pick, advance through the four opening bans.
+	// Fixed input: Radiant first pick, four opening bans applied (under the 7.34+
+	// schedule the next step is Radiant's third ban).
 	d := draft.New(draft.Radiant)
 	for _, hero := range []int{1, 2, 3, 4} {
 		if err := d.Apply(hero); err != nil {

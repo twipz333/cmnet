@@ -2077,6 +2077,7 @@ func buildScanConfig(o serveOpts) (tui.Config, error) {
 	)
 	rec.WithMatrices(b.SynergyMatrix, b.CounterMatrix)
 	rec.WithStacker(b.StrengthStacker)
+	rec.WithCMOrder(b.CMOrder)         // schedule the bundle's drafts were played under
 	rec.WithPositions(b.HeroPositions) // #8 lining checks
 	if len(b.RolePrior) > 0 {
 		rec.WithRolePrior(&roles.Prior{Prob: b.RolePrior}) // §6.3 soft roles

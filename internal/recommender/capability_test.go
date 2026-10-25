@@ -53,7 +53,7 @@ func TestCapabilityPenaltyChangesScore(t *testing.T) {
 	}
 
 	d := draft.New(draft.Radiant)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < draft.DefaultOrder().Phases()[0]; i++ {
 		_ = d.Apply(900 + i)
 	}
 	base := r.Recommend(d, draft.Radiant, 5)

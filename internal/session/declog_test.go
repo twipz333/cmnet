@@ -38,25 +38,21 @@ func loadOne(t *testing.T, path string) declog.Draft {
 func TestManualApplyLogsOnlyOurSteps(t *testing.T) {
 	sess, path := loggedSession(t, Config{OurTeam: draft.Radiant, FirstPick: draft.Radiant})
 
-	// CM opens with alternating bans; with Radiant first-picking, step 0 is ours.
-	first, _ := sess.CurrentStep()
-	if first.Team != draft.Radiant {
-		t.Fatalf("expected the first step to be ours, got %v", first.Team)
-	}
-	if err := sess.Apply(1); err != nil {
-		t.Fatal(err)
-	}
-	second, _ := sess.CurrentStep()
-	if second.Team == draft.Radiant {
-		t.Fatal("expected the second step to belong to the opponent")
-	}
-	if err := sess.Apply(2); err != nil {
-		t.Fatal(err)
+	// 7.34+ CM opens F F S: with Radiant first-picking, steps 0-1 are ours and
+	// step 2 is the opponent's.
+	for i, wantOurs := range []bool{true, true, false} {
+		step, _ := sess.CurrentStep()
+		if (step.Team == draft.Radiant) != wantOurs {
+			t.Fatalf("step %d team = %v, want ours=%v", i, step.Team, wantOurs)
+		}
+		if err := sess.Apply(i + 1); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	d := loadOne(t, path)
-	if len(d.Decisions) != 1 {
-		t.Fatalf("%d decisions logged, want only ours", len(d.Decisions))
+	if len(d.Decisions) != 2 {
+		t.Fatalf("%d decisions logged, want only our two", len(d.Decisions))
 	}
 	dec := d.Decisions[0]
 	if dec.Seq != 0 || dec.Chosen != 1 {
@@ -319,9 +315,11 @@ func TestSideSwapStartsANewLoggedDraft(t *testing.T) {
 	if err := sess.Apply(1); err != nil {
 		t.Fatal(err)
 	}
-	sess.ToggleSide() // now Dire; step 1 belongs to us
-	if err := sess.Apply(2); err != nil {
-		t.Fatal(err)
+	sess.ToggleSide() // now Dire; step 1 is still Radiant's, step 2 is ours (F F S)
+	for _, hero := range []int{2, 3} {
+		if err := sess.Apply(hero); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	drafts, err := declog.Load(path)

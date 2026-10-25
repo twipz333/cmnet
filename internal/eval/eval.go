@@ -493,7 +493,8 @@ func evalFold(trainSet, testSet []cache.Match, heroIDs []int, opts Options) *Fol
 	rec := recommender.New(wp, pred).
 		WithMatrices(b.SynergyMatrix, b.CounterMatrix).
 		WithStacker(b.StrengthStacker).
-		WithPositions(b.HeroPositions)
+		WithPositions(b.HeroPositions).
+		WithCMOrder(b.CMOrder)
 	if len(b.RolePrior) > 0 {
 		rec.WithRolePrior(&roles.Prior{Prob: b.RolePrior})
 	}

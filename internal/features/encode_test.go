@@ -154,9 +154,10 @@ func TestEncodePredictorActorCentricAndLayout(t *testing.T) {
 	}
 	assertOneHot("step", got[base:base+CMSteps], 5)
 	base += CMSteps
-	assertOneHot("phase", got[base:base+CMPhases], 1)
+	// Step 5 is the sixth ban of the opening seven-ban phase (7.34+ schedule).
+	assertOneHot("phase", got[base:base+CMPhases], 0)
 	base += CMPhases
-	assertOneHot("action in phase", got[base:base+maxActionInPhase], 1)
+	assertOneHot("action in phase", got[base:base+maxActionInPhase], 5)
 }
 
 func TestEncodePredictorDerivesUnknownOrd(t *testing.T) {
@@ -176,7 +177,7 @@ func TestPhaseOfCaptainsModeBoundaries(t *testing.T) {
 	for ord := -1; ord <= 24; ord++ {
 		wantPhase, wantIn := -1, -1
 		start := 0
-		for phase, size := range []int{4, 4, 6, 4, 4, 2} {
+		for phase, size := range []int{7, 2, 3, 6, 4, 2} {
 			if ord >= start && ord < start+size {
 				wantPhase, wantIn = phase, ord-start
 				break

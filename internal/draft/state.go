@@ -16,9 +16,16 @@ type DraftState struct {
 	redo       []int // heroes undone and available to redo (LIFO); cleared by a fresh Apply.
 }
 
-// New creates an empty Captains Mode draft for the given first-pick team.
+// New creates an empty Captains Mode draft for the given first-pick team under the
+// built-in schedule.
 func New(firstPick Team) *DraftState {
-	seq := CMSequence(firstPick)
+	return NewWithOrder(firstPick, nil)
+}
+
+// NewWithOrder creates an empty draft under schedule o (typically the order the
+// bundle was trained on). An invalid or nil o falls back to the built-in schedule.
+func NewWithOrder(firstPick Team, o Order) *DraftState {
+	seq := o.OrDefault().Sequence(firstPick)
 	return &DraftState{
 		FirstPick:  firstPick,
 		Seq:        seq,

@@ -16,8 +16,9 @@ const CMSteps = 24
 // between adjacent steps when per-step data is thin.
 const CMPhases = 6
 
-// maxActionInPhase is the longest phase (six bans), sizing the within-phase index.
-const maxActionInPhase = 6
+// maxActionInPhase is the longest phase (the opening seven bans), sizing the
+// within-phase index.
+const maxActionInPhase = 7
 
 // WinProbPositions is the number of lane slots encoded per hero (positions 1-5).
 const WinProbPositions = 5
@@ -240,8 +241,14 @@ func (h *HeroMap) EncodePredictor(s PredictorState) []float64 {
 }
 
 // cmPhaseBounds is the number of actions in each Captains Mode phase, matching
-// draft.cmPattern: 4 bans, 4 picks, 6 bans, 4 picks, 4 bans, 2 picks.
-var cmPhaseBounds = [CMPhases]int{4, 4, 6, 4, 4, 2}
+// draft.DefaultOrder().Phases() — the 7.34-7.41 schedule: 7 bans, 2 picks,
+// 3 bans, 6 picks, 4 bans, 2 picks. (A draft test pins the two together; the old
+// 4/4/6/4/4/2 split described a schedule that has not existed since 7.33.)
+var cmPhaseBounds = [CMPhases]int{7, 2, 3, 6, 4, 2}
+
+// PhaseBounds returns the phase lengths the encoder assumes, so training can warn
+// when the drafts it learns from were played under a different schedule.
+func PhaseBounds() []int { return append([]int(nil), cmPhaseBounds[:]...) }
 
 // PhaseOf maps a 0-based draft step index to its phase and its index within that
 // phase. Returns (-1, -1) for out-of-range steps.

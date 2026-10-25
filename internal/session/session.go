@@ -163,7 +163,7 @@ func New(cfg Config) *Session {
 		// Start from an empty, not-yet-known draft; events fill it in.
 		s.view = &draft.Snapshot{CurrentTeam: cfg.FirstPick, CurrentIsPick: false}
 	} else {
-		s.drafts = draft.New(cfg.FirstPick)
+		s.drafts = draft.NewWithOrder(cfg.FirstPick, s.cmOrder())
 		s.view = s.drafts
 	}
 	s.recompute()
@@ -464,6 +464,16 @@ func (s *Session) SetSide(team draft.Team) draft.Team {
 	return s.cfg.OurTeam
 }
 
+// cmOrder is the schedule the manual board follows: the one the recommender plans
+// with (the bundle's inferred order), so the board and the planner never disagree
+// about whose turn it is. Callers hold s.mu or are constructing s.
+func (s *Session) cmOrder() draft.Order {
+	if s.cfg.Rec == nil {
+		return draft.DefaultOrder()
+	}
+	return s.cfg.Rec.CMOrder()
+}
+
 // ToggleFirstPick flips the first-pick side. The CM step sequence depends on it, so
 // this resets the manual draft. Returns the new first-pick side.
 func (s *Session) ToggleFirstPick() (draft.Team, error) {
@@ -474,7 +484,7 @@ func (s *Session) ToggleFirstPick() (draft.Team, error) {
 	}
 	nf := s.cfg.FirstPick.Opponent()
 	s.cfg.FirstPick = nf
-	s.drafts = draft.New(nf)
+	s.drafts = draft.NewWithOrder(nf, s.cmOrder())
 	s.view = s.drafts
 	// The board is gone, so what follows is a different draft in the log too.
 	s.resetLogDraft()

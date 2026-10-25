@@ -86,7 +86,7 @@ func (r *Recommender) beamPickScore(d draft.View, ourTeam draft.Team, cand int, 
 
 func (r *Recommender) searchStateFrom(d draft.View) searchState {
 	fp := d.FirstPickTeam()
-	seq := draft.CMSequence(fp)
+	seq := r.CMOrder().Sequence(fp)
 	cursor := len(d.Picks(draft.Radiant)) + len(d.Picks(draft.Dire)) +
 		len(d.Bans(draft.Radiant)) + len(d.Bans(draft.Dire))
 	if cursor > len(seq) {

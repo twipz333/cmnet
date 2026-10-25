@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"cmnet/internal/atomicfile"
+	"cmnet/internal/draft"
 	"cmnet/internal/features"
 	"cmnet/internal/heroagg"
 	"cmnet/internal/matrices"
@@ -66,6 +67,14 @@ type Bundle struct {
 	// available, else coarsely from OpenDota hero roles. Used to penalize drafts
 	// that can't field a plausible 1-5. Empty/omitted disables lining checks.
 	HeroPositions map[int][]int `json:"hero_positions,omitempty"`
+
+	// CMOrder is the Captains Mode schedule the training drafts were actually
+	// played under, recovered from their recorded action order (train.InferOrder).
+	// Serve drives the manual board and the planner from it, so a patch that
+	// reshuffles the draft is picked up by retraining instead of by editing code.
+	// Omitted when the cache holds too few complete drafts to read it from; serve
+	// then uses draft.DefaultOrder.
+	CMOrder draft.Order `json:"cm_order,omitempty"`
 
 	// RolePrior is P(position|hero) over the CM corpus used at train time (§6.3).
 	// Serve uses it to form a joint distribution over valid hero→position

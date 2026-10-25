@@ -1,31 +1,31 @@
 {
-  "bundle_version": "d3f8cb5df0b18b7e8921e155edfe9d79ded18c8f75976f930162577377113b5b",
+  "bundle_version": "70d2754c7abc884c94ee2bcaacc41bc73479fddd31f2d641e2c6bdde13889c5b",
   "our_turn": true,
-  "is_pick": true,
+  "is_pick": false,
   "recs": [
     {
-      "heroId": 5,
-      "score": 0.97927,
-      "why": "вин ~98%"
+      "heroId": 6,
+      "score": 0.5944,
+      "why": "враг ~59%"
     },
     {
-      "heroId": 6,
-      "score": 0.97313,
-      "why": "вин ~97%"
+      "heroId": 5,
+      "score": 0.4056,
+      "why": "враг ~41%"
     }
   ],
   "enemy_pred": [
     {
-      "heroId": 5,
-      "prob": 0.80918,
+      "heroId": 6,
+      "prob": 0.5944,
       "source": "meta",
       "threat": 0,
       "fit": 0,
       "danger": 0
     },
     {
-      "heroId": 6,
-      "prob": 0.19082,
+      "heroId": 5,
+      "prob": 0.4056,
       "source": "meta",
       "threat": 0,
       "fit": 0,

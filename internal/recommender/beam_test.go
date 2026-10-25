@@ -49,8 +49,8 @@ func beamRecommender(n int, wpWeights []float64) *Recommender {
 func firstPickDraft(t *testing.T) *draft.DraftState {
 	t.Helper()
 	d := draft.New(draft.Radiant)
-	// Advance through the four opening bans so the next step is a pick.
-	for i := 0; i < 4; i++ {
+	// Advance through the opening ban phase so the next step is a pick.
+	for i := 0; i < openingBans; i++ {
 		if err := d.Apply(900 + i); err != nil { // ids outside the model's hero set
 			t.Fatalf("apply ban %d: %v", i, err)
 		}
