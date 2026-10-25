@@ -1,0 +1,658 @@
+// Package web is the local browser front end: a small HTTP server over the same
+// session and operations the TUI uses. It renders nothing itself and computes
+// nothing — it serialises the core's Result and streams state changes — so both
+// front ends stay byte-identical in what they show (§6/§8).
+package web
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	// Aliased: this package already has an embed.FS called assets for the static UI.
+	assetstore "cmnet/internal/assets"
+	"cmnet/internal/draft"
+	"cmnet/internal/objectives"
+	"cmnet/internal/recommender"
+	"cmnet/internal/session"
+)
+
+// Server serves the web UI and its JSON API. It offers everything the terminal
+// shell does: the draft scan screen plus sync/train/scout and snapshot editing.
+type Server struct {
+	shell session.ShellConfig
+	addr  string
+	hub   *hub
+
+	mu       sync.Mutex
+	sess     *session.Session // built lazily from shell.BuildScan; nil until then
+	sessErr  string           // why the last build failed, for the status bar
+	status   string           // last human-readable outcome
+	gsiOnce  sync.Once
+	baseCtx  context.Context // server lifetime, for the GSI pump
+	pumpDone bool
+}
+
+// New builds a server over the app's operation callbacks. The draft session is
+// built on demand (and rebuilt after train/scout), so the UI still comes up when
+// no bundle exists yet — the user can go straight to Train.
+func New(shell session.ShellConfig, addr string) *Server {
+	s := &Server{shell: shell, addr: addr, hub: newHub()}
+	if shell.Auto != nil {
+		// A bundle trained in the background is of no use while the server keeps
+		// serving the one it loaded at startup. Rebuilding the session picks it up,
+		// and pushing a frame lets every open browser see that it happened.
+		shell.Auto.SetOnTrained(func() error {
+			if err := s.reloadSession(); err != nil {
+				return err // reported in the worker's status and retried later
+			}
+			s.broadcast(false)
+			return nil
+		})
+	}
+	return s
+}
+
+// autoStatus projects the background worker's state for the browser, or nil when
+// there is no worker.
+func autoStatus(a *session.Auto) *session.AutoStatus {
+	if a == nil {
+		return nil
+	}
+	st := a.Status()
+	return &st
+}
+
+// NewForSession builds a server over an already-constructed draft session, for
+// callers that have no shell operations to offer. Nothing in the binary does —
+// the browser UI is always the full shell (`advisor --web`), so that a screen is
+// never silently inert — but tests use it to exercise the draft screen alone.
+func NewForSession(sess *session.Session, addr string) *Server {
+	s := New(session.ShellConfig{}, addr)
+	s.sess = sess
+	return s
+}
+
+// Addr returns the address the server is listening on (resolved after Run binds).
+func (s *Server) Addr() string { return s.addr }
+
+// Run starts the HTTP server and blocks until ctx is cancelled or it fails.
+func (s *Server) Run(ctx context.Context) error {
+	ln, err := net.Listen("tcp", s.addr)
+	if err != nil {
+		return fmt.Errorf("listen %s: %w", s.addr, err)
+	}
+	s.addr = ln.Addr().String()
+
+	s.mu.Lock()
+	s.baseCtx = ctx
+	s.mu.Unlock()
+
+	// Build the draft session up front when possible so GSI events are not missed
+	// while the user is still on another screen. A failure is not fatal: it is
+	// reported in the UI and retried on the next request.
+	_, _ = s.session()
+
+	srv := &http.Server{
+		Handler:           s.routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() {
+		<-ctx.Done()
+		// Jobs are not cancelled on shutdown: they are rows, and the queue hands an
+		// interrupted one back to be resumed next start. Killing them here would
+		// throw away a sync's remaining band for no reason.
+		shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutCtx)
+	}()
+
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+// --- session lifecycle ------------------------------------------------------
+
+// session returns the draft session, building it on first use. The error is also
+// cached as a status string so the UI can explain why the draft screen is empty.
+func (s *Server) session() (*session.Session, error) {
+	s.mu.Lock()
+	if s.sess != nil {
+		sess := s.sess
+		s.mu.Unlock()
+		s.startGSIPump(sess)
+		return sess, nil
+	}
+	build := s.shell.BuildScan
+	s.mu.Unlock()
+
+	if build == nil {
+		return nil, fmt.Errorf("draft screen is not available in this mode")
+	}
+	cfg, err := build()
+	if err != nil {
+		s.mu.Lock()
+		s.sessErr = err.Error()
+		s.mu.Unlock()
+		return nil, err
+	}
+	sess := session.New(cfg)
+
+	s.mu.Lock()
+	s.sess = sess
+	s.sessErr = ""
+	s.mu.Unlock()
+
+	s.startGSIPump(sess)
+	return sess, nil
+}
+
+// reloadSession rebuilds the draft session so a freshly trained bundle or a new
+// opponent snapshot takes effect without restarting the binary.
+func (s *Server) reloadSession() error {
+	s.mu.Lock()
+	build := s.shell.BuildScan
+	s.mu.Unlock()
+	if build == nil {
+		return nil // nothing to reload in session-only mode
+	}
+	cfg, err := build()
+	if err != nil {
+		s.mu.Lock()
+		s.sessErr = err.Error()
+		s.mu.Unlock()
+		return err
+	}
+	sess := session.New(cfg)
+
+	s.mu.Lock()
+	s.sess = sess
+	s.sessErr = ""
+	s.mu.Unlock()
+
+	s.startGSIPump(sess)
+	return nil
+}
+
+// startGSIPump wires GSI events into whatever session is current. It runs once per
+// server: the event channel outlives individual sessions (the shell creates one
+// GSI server for the whole run), so the pump looks the session up per event
+// instead of capturing it.
+func (s *Server) startGSIPump(sess *session.Session) {
+	evs := sess.Config().GSIEvents
+	if evs == nil {
+		return
+	}
+	s.gsiOnce.Do(func() {
+		s.mu.Lock()
+		ctx := s.baseCtx
+		s.pumpDone = true
+		s.mu.Unlock()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		go s.pumpGSI(ctx, evs)
+	})
+}
+
+// gsiFrameInterval bounds how often GSI traffic is pushed to browsers. Dota posts
+// up to ten events a second and most of them only move the clock; every push
+// serialises the whole state and makes the page re-render, so they are coalesced.
+// The state carried is always the latest, so dropping intermediate frames loses
+// nothing.
+const gsiFrameInterval = 250 * time.Millisecond
+
+// pumpGSI feeds live draft snapshots into the current session and pushes the
+// resulting state to every connected browser.
+//
+// Every event is APPLIED (the session must not miss a pick), but the pushes are
+// rate-limited: a coalesced frame is scheduled instead of sent, unless an
+// objective just came due, which browsers have to hear about at once.
+func (s *Server) pumpGSI(ctx context.Context, evs <-chan *draft.Snapshot) {
+	var (
+		pending  bool
+		lastSent time.Time
+		timer    = time.NewTimer(time.Hour)
+	)
+	timer.Stop()
+	defer timer.Stop()
+
+	flush := func(ring bool) {
+		pending = false
+		lastSent = time.Now()
+		s.broadcast(ring)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			if pending {
+				flush(false)
+			}
+		case snap, ok := <-evs:
+			if !ok {
+				return
+			}
+			s.mu.Lock()
+			sess := s.sess
+			s.mu.Unlock()
+			if sess == nil {
+				continue
+			}
+			ring := sess.ApplyGSI(snap)
+
+			// A due objective is the one thing the user reacts to in real time.
+			if ring {
+				timer.Stop()
+				flush(true)
+				continue
+			}
+			if wait := gsiFrameInterval - time.Since(lastSent); wait > 0 {
+				if !pending {
+					pending = true
+					timer.Reset(wait)
+				}
+				continue
+			}
+			flush(false)
+		}
+	}
+}
+
+func (s *Server) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", staticHandler())
+	mux.HandleFunc("/api/state", s.handleState)
+	mux.HandleFunc("/api/events", s.handleEvents)
+	mux.HandleFunc("/api/matchups", s.handleMatchups)
+	mux.HandleFunc("/api/apply", s.mutate(s.doApply))
+	mux.HandleFunc("/api/undo", s.mutate(s.doUndo))
+	mux.HandleFunc("/api/redo", s.mutate(s.doRedo))
+	mux.HandleFunc("/api/step-action", s.mutate(s.doStepAction))
+	mux.HandleFunc("/api/step-team", s.mutate(s.doStepTeam))
+	mux.HandleFunc("/api/side", s.mutate(s.doSide))
+	mux.HandleFunc("/api/first-pick", s.mutate(s.doFirstPick))
+	mux.HandleFunc("/api/enemy", s.mutate(s.doAddEnemy))
+	mux.HandleFunc("/api/reload", s.mutate(s.doReload))
+	// Cached images, served from disk. The page must never reference a CDN: it is
+	// opened from a local server and has to work with no network at all, which is
+	// also how a laptop behaves on a Battle Cup night more often than one would
+	// like. A missing file 404s and the UI falls back to its text chip.
+	if s.shell.AssetsDir != "" {
+		st, err := assetstore.New(s.shell.AssetsDir)
+		if err == nil {
+			mux.Handle("/assets/", st.Handler("/assets/"))
+		}
+	}
+	s.routeOps(mux)
+	return sameSiteOnly(mux)
+}
+
+// sameSiteOnly rejects cross-site state-changing requests. The server is bound to
+// loopback with no auth (it is a local tool), but any page in the user's browser
+// can POST to localhost — this keeps a random tab from driving their draft or
+// firing scout requests.
+func sameSiteOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			switch r.Header.Get("Sec-Fetch-Site") {
+			case "", "same-origin", "none":
+				// Same-origin, or a client that sends no fetch metadata (curl).
+			default:
+				http.Error(w, "cross-site requests are not allowed", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// --- state ------------------------------------------------------------------
+
+// stateDTO is the whole UI state in one object. Result is embedded verbatim, so a
+// new core field reaches the browser without touching this file.
+type stateDTO struct {
+	Meta   metaDTO            `json:"meta"`
+	Board  boardDTO           `json:"board"`
+	Step   *stepDTO           `json:"step"`
+	Result recommender.Result `json:"result"`
+	Heroes []session.Hero     `json:"heroes"` // still available, in bundle order
+	Names  map[string]string  `json:"names"`  // hero id -> display label
+	Live   *draft.Live        `json:"live"`
+	Alerts []objectives.Alert `json:"alerts"`
+	Ops    opsDTO             `json:"ops"`
+	Status string             `json:"status"`
+	Ring   bool               `json:"ring"` // an objective just entered its alert window
+	// Auto is the background collector's state, or nil when it is not running.
+	Auto *session.AutoStatus `json:"auto"`
+}
+
+type metaDTO struct {
+	BundleVersion string `json:"bundleVersion"`
+	PatchTag      string `json:"patchTag"`
+	OurTeam       string `json:"ourTeam"`
+	FirstPick     string `json:"firstPick"`
+	GSIMode       bool   `json:"gsiMode"`
+	GSISeen       bool   `json:"gsiSeen"`
+	HasMatrices   bool   `json:"hasMatrices"`
+	CanAddEnemy   bool   `json:"canAddEnemy"`
+	CanUndo       bool   `json:"canUndo"`
+	CanRedo       bool   `json:"canRedo"`
+	// DraftReady reports whether a bundle is loaded; false means the draft screen
+	// cannot work yet (train first). DraftError explains why.
+	DraftReady bool   `json:"draftReady"`
+	DraftError string `json:"draftError"`
+	// Which shell operations this build offers, so the UI can disable the rest.
+	CanSync        bool `json:"canSync"`
+	CanTrain       bool `json:"canTrain"`
+	CanScout       bool `json:"canScout"`
+	CanScoutAllies bool `json:"canScoutAllies"`
+	CanStats       bool `json:"canStats"`
+	CanEditPool    bool `json:"canEditPool"`
+	CanEditRules   bool `json:"canEditRules"`
+}
+
+type boardDTO struct {
+	RadiantPicks []int `json:"radiantPicks"`
+	RadiantBans  []int `json:"radiantBans"`
+	DirePicks    []int `json:"direPicks"`
+	DireBans     []int `json:"direBans"`
+}
+
+// empty reports whether nothing has been drafted yet.
+func (b boardDTO) empty() bool {
+	return len(b.RadiantPicks)+len(b.RadiantBans)+len(b.DirePicks)+len(b.DireBans) == 0
+}
+
+type stepDTO struct {
+	Team   string `json:"team"`
+	Action string `json:"action"`
+	IsOurs bool   `json:"isOurs"`
+}
+
+// snapshot builds the current state payload. It never fails: without a session the
+// draft fields are empty and meta.draftError explains why.
+func (s *Server) snapshot(ring bool) stateDTO {
+	s.mu.Lock()
+	sess, sessErr, status, sh := s.sess, s.sessErr, s.status, s.shell
+	s.mu.Unlock()
+
+	st := stateDTO{
+		Meta: metaDTO{
+			DraftReady:     sess != nil,
+			DraftError:     sessErr,
+			CanSync:        sh.Sync != nil,
+			CanTrain:       sh.Train != nil,
+			CanScout:       sh.Scout != nil,
+			CanScoutAllies: sh.ScoutAllies != nil,
+			CanStats:       sh.Stats != nil,
+			CanEditPool:    sh.SetHeroPool != nil,
+			CanEditRules:   sh.SetItemRules != nil,
+		},
+		Board:  boardDTO{RadiantPicks: []int{}, RadiantBans: []int{}, DirePicks: []int{}, DireBans: []int{}},
+		Heroes: []session.Hero{},
+		Names:  map[string]string{},
+		Ops:    s.jobsView(),
+		Status: status,
+		Auto:   autoStatus(sh.Auto),
+		Ring:   ring,
+	}
+	if sess == nil {
+		return st
+	}
+
+	cfg := sess.Config()
+	view := sess.View()
+
+	names := make(map[string]string, len(cfg.Heroes))
+	for _, h := range cfg.Heroes {
+		names[strconv.Itoa(h.ID)] = h.Label()
+	}
+	if step, ok := sess.CurrentStep(); ok {
+		st.Step = &stepDTO{
+			Team:   step.Team.String(),
+			Action: step.Action.String(),
+			IsOurs: step.Team == cfg.OurTeam,
+		}
+	}
+
+	st.Meta.BundleVersion = cfg.BundleVersion
+	st.Meta.PatchTag = cfg.PatchTag
+	st.Meta.OurTeam = cfg.OurTeam.String()
+	st.Meta.FirstPick = cfg.FirstPick.String()
+	st.Meta.GSIMode = sess.GSIMode()
+	st.Meta.GSISeen = sess.GSISeen()
+	st.Meta.HasMatrices = sess.HasMatrices()
+	st.Meta.CanAddEnemy = sess.CanAddEnemy()
+	st.Meta.CanUndo = sess.CanUndo()
+	st.Meta.CanRedo = sess.CanRedo()
+
+	st.Board = boardDTO{
+		RadiantPicks: nonNil(view.Picks(draft.Radiant)),
+		RadiantBans:  nonNil(view.Bans(draft.Radiant)),
+		DirePicks:    nonNil(view.Picks(draft.Dire)),
+		DireBans:     nonNil(view.Bans(draft.Dire)),
+	}
+	// Hold back the background retrain while a draft is on the board: applying a new
+	// bundle rebuilds the session, and a rebuilt session is an empty board. A frame
+	// is built on every poll, so this beats often enough to stay true throughout a
+	// draft and expires by itself once the browser stops asking.
+	if sh.Auto != nil && !st.Board.empty() {
+		sh.Auto.TouchDraft()
+	}
+	st.Result = sess.Result()
+	st.Heroes = sess.AvailableHeroes()
+	st.Names = names
+	st.Live = sess.Live()
+	st.Alerts = sess.Alerts()
+	return st
+}
+
+// nonNil keeps empty slices as [] in JSON instead of null, so the front end can
+// treat every list the same way.
+func nonNil(v []int) []int {
+	if v == nil {
+		return []int{}
+	}
+	return v
+}
+
+func (s *Server) setStatus(msg string) {
+	s.mu.Lock()
+	s.status = msg
+	s.mu.Unlock()
+}
+
+func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
+	// Retry a failed build on every poll so the draft screen recovers by itself
+	// once a bundle appears.
+	_, _ = s.session()
+	writeJSON(w, http.StatusOK, s.snapshot(false))
+}
+
+// --- mutations --------------------------------------------------------------
+
+// mutate wraps a state transition: run it, record its outcome as the status line,
+// broadcast the new state to every listener, and answer the caller with it. A
+// failed transition is not an HTTP error — it is a message for the status bar, the
+// same way the TUI reports it.
+func (s *Server) mutate(fn func(*http.Request) (string, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		msg, err := fn(r)
+		if err != nil {
+			s.setStatus(err.Error())
+		} else {
+			s.setStatus(msg)
+		}
+		s.broadcast(false)
+		writeJSON(w, http.StatusOK, s.snapshot(false))
+	}
+}
+
+type heroReq struct {
+	HeroID int `json:"heroId"`
+}
+
+func (s *Server) doApply(r *http.Request) (string, error) {
+	var req heroReq
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	return "", sess.Apply(req.HeroID)
+}
+
+func (s *Server) doUndo(*http.Request) (string, error) {
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	return "", sess.Undo()
+}
+
+func (s *Server) doRedo(*http.Request) (string, error) {
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	return "", sess.Redo()
+}
+
+func (s *Server) doStepAction(*http.Request) (string, error) {
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	na, err := sess.ToggleStepAction()
+	if err != nil {
+		return "", err
+	}
+	return "current step → " + na.String(), nil
+}
+
+func (s *Server) doStepTeam(*http.Request) (string, error) {
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	opp, err := sess.ToggleStepTeam()
+	if err != nil {
+		return "", err
+	}
+	return "current step team → " + opp.String(), nil
+}
+
+func (s *Server) doSide(*http.Request) (string, error) {
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	return "our side → " + sess.ToggleSide().String(), nil
+}
+
+func (s *Server) doFirstPick(*http.Request) (string, error) {
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	nf, err := sess.ToggleFirstPick()
+	if err != nil {
+		return "", err
+	}
+	return "first-pick → " + nf.String() + " (draft reset)", nil
+}
+
+func (s *Server) doAddEnemy(r *http.Request) (string, error) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	url := strings.TrimSpace(req.URL)
+	if url == "" {
+		return "", fmt.Errorf("empty enemy id or profile URL")
+	}
+	sess, err := s.session()
+	if err != nil {
+		return "", err
+	}
+	summary, err := sess.AddEnemy(url)
+	if err != nil {
+		return "", fmt.Errorf("add enemy: %w", err)
+	}
+	return summary, nil
+}
+
+func (s *Server) doReload(*http.Request) (string, error) {
+	if err := s.reloadSession(); err != nil {
+		return "", err
+	}
+	return "bundle and snapshot reloaded", nil
+}
+
+// --- matchups ---------------------------------------------------------------
+
+func (s *Server) handleMatchups(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.URL.Query().Get("hero"))
+	if err != nil {
+		http.Error(w, "hero query parameter must be a hero id", http.StatusBadRequest)
+		return
+	}
+	sess, err := s.session()
+	if err != nil {
+		writeJSON(w, http.StatusOK, matchupsDTO{})
+		return
+	}
+	syn, counters, counteredBy, ok := sess.Matchups(id, matchupsTopN)
+	writeJSON(w, http.StatusOK, matchupsDTO{
+		Found: ok, Synergy: syn, Counters: counters, CounteredBy: counteredBy,
+	})
+}
+
+type matchupsDTO struct {
+	Found       bool                    `json:"found"`
+	Synergy     []recommender.HeroScore `json:"synergy"`
+	Counters    []recommender.HeroScore `json:"counters"`
+	CounteredBy []recommender.HeroScore `json:"counteredBy"`
+}
+
+// matchupsTopN matches the TUI's matrices overlay so both front ends show the same
+// number of matchups.
+const matchupsTopN = 12
+
+// --- helpers ----------------------------------------------------------------
+
+func decode(r *http.Request, v any) error {
+	defer r.Body.Close()
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+	if err := dec.Decode(v); err != nil {
+		return fmt.Errorf("bad request body: %w", err)
+	}
+	return nil
+}
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}

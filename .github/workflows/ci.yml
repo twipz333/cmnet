@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Build + test on each OS. Determinism is verified in the cross-platform job below.
+  build-test:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./...
+
+  # Hard gate: the runtime binary must build fully static (no CGO) for Windows.
+  static-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: static windows build (CGO_ENABLED=0)
+        env:
+          CGO_ENABLED: '0'
+          GOOS: windows
+          GOARCH: amd64
+        run: go build -o advisor.exe ./cmd/advisor
+
+  # Cross-platform determinism (§6/§12): the same bundle + same input must produce a
+  # byte-identical ranking on Windows and Linux. Both OSes run the golden test
+  # against the same committed golden file, so any platform float drift fails here.
+  determinism:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: cross-platform golden ranking
+        run: go test -run TestGoldenRankingByteIdentical -count=1 ./internal/determinism/

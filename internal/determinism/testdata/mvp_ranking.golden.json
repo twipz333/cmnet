@@ -1,0 +1,37 @@
+{
+  "bundle_version": "b55941ddc86f7541c3c4f6d202571c17383f81c2cd72445237e0f05e72d1c013",
+  "our_turn": true,
+  "is_pick": true,
+  "recs": [
+    {
+      "heroId": 5,
+      "score": 0.97927,
+      "why": "win 97.9%"
+    },
+    {
+      "heroId": 6,
+      "score": 0.97313,
+      "why": "win 97.3%"
+    }
+  ],
+  "enemy_pred": [
+    {
+      "heroId": 5,
+      "prob": 0.80918,
+      "source": "meta",
+      "threat": 0,
+      "fit": 0,
+      "danger": 0
+    },
+    {
+      "heroId": 6,
+      "prob": 0.19082,
+      "source": "meta",
+      "threat": 0,
+      "fit": 0,
+      "danger": 0
+    }
+  ],
+  "safe_to_let": null,
+  "pool_alert": null
+}

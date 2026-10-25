@@ -1,0 +1,573 @@
+:root {
+  --bg: #0f1216;
+  --panel: #171b21;
+  --panel-2: #1e242c;
+  --line: #2a323d;
+  --fg: #dfe5ec;
+  --dim: #8a95a3;
+  --accent: #6fb3ff;
+  --radiant: #6ec46e;
+  --dire: #e06a6a;
+  --warn: #e0b562;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* --- top bar --- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.brand { font-weight: 700; letter-spacing: 2px; color: var(--accent); }
+
+.step { margin-left: auto; font-size: 15px; }
+.step .ours { color: var(--accent); font-weight: 600; }
+.step .theirs { color: var(--warn); font-weight: 600; }
+
+.tabs { display: flex; gap: 4px; }
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 6px 12px;
+  color: var(--dim);
+}
+.tab:hover:not(:disabled) { color: var(--fg); border-color: var(--line); }
+.tab.active { color: var(--accent); border-color: var(--accent); }
+
+.controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+
+button {
+  background: var(--panel-2);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .4; cursor: default; }
+
+input[type="search"], input[type="text"] {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 6px 9px;
+  font: inherit;
+  width: 100%;
+}
+input:focus { outline: none; border-color: var(--accent); }
+
+/* --- layout --- */
+
+main { flex: 1; padding: 14px; }
+
+.screen { display: flex; flex-direction: column; gap: 14px; }
+.screen[hidden] { display: none; }
+
+.cols {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* --- long-operation banner --- */
+
+.op-banner {
+  margin: 0 14px;
+  margin-top: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.op-banner[hidden] { display: none; }
+.op-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.op-head > span { font-weight: 600; }
+.op-tools { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.op-filter { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+.op-filter select {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+/* Queued and running work. One row per job: several may be in flight now, which
+   is the whole point of the queue, so a single headline cannot describe it. */
+.job-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.job {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+.job:hover { background: var(--panel-2); }
+.job.sel { border-color: var(--line); background: var(--panel-2); }
+.job-state { color: var(--dim); min-width: 92px; }
+.job-kind { font-weight: 600; }
+.job-time { color: var(--dim); font-variant-numeric: tabular-nums; }
+.job-tail {
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.job-running .job-state { color: var(--accent); }
+.job-failed .job-state { color: var(--dire); }
+.job-done .job-state { color: var(--radiant); }
+.job-cancelled .job-state, .job-pending .job-state { color: var(--dim); }
+
+.op-log {
+  margin: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  font: 12px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* Levels are the reason the log is structured: "show me only what went wrong" is
+   not expressible once the fields are flattened into a formatted string. */
+.log-line { color: var(--dim); }
+.log-warn { color: var(--warn); }
+.log-error { color: var(--dire); }
+.log-phase { color: var(--fg); opacity: 0.75; margin-top: 4px; }
+
+button.danger { border-color: #5a3237; }
+button.danger:hover:not(:disabled) { border-color: var(--dire); color: var(--dire); }
+button.small { padding: 2px 8px; font-size: 12px; }
+
+.warn-panel { border-left: 3px solid var(--warn); }
+
+/* An inline explanation of why controls nearby are inert — greyed-out buttons on
+   their own read as a broken page. */
+.notice {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+textarea {
+  width: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 8px 10px;
+  font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  resize: vertical;
+  margin-bottom: 10px;
+}
+textarea:focus { outline: none; border-color: var(--accent); }
+
+.item.player { grid-template-columns: 1fr auto; }
+
+p.why { margin: 0 0 10px; }
+code { font: 12px ui-monospace, Consolas, monospace; color: var(--accent); }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 600;
+}
+
+/* h3 sits UNDER h2 in the hierarchy and must look it. With no rule at all it
+   inherited the browser default (~1.17em bold), which rendered the subheadings
+   inside a panel larger than the panel's own title. */
+.panel h3, main h3 {
+  margin: 10px 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* The dim explanatory note. Scoped to .item only, so every .why outside a list
+   row — the paragraph under a chart heading, mostly — rendered as full-strength
+   14px body text and competed with the content it was explaining. */
+.why { color: var(--dim); font-size: 12px; line-height: 1.5; }
+
+/* Failure is red wherever it appears. Scoped to .statusbar only, which meant a
+   failed operation's result line was styled exactly like a successful one. */
+.off { color: var(--dire); }
+
+.row { display: flex; gap: 8px; }
+
+/* --- hero picker --- */
+
+.hero-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+.hero-list li {
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hero-list li:hover { background: var(--panel-2); }
+.hero-list li.sel { background: var(--panel-2); border-left: 2px solid var(--accent); }
+.hero-list .id { color: var(--dim); font-size: 12px; }
+
+/* --- board --- */
+
+.board-side { margin-bottom: 8px; }
+.board-side .label { display: inline-block; width: 92px; color: var(--dim); font-size: 12px; }
+.board-side.radiant .name { color: var(--radiant); }
+.board-side.dire .name { color: var(--dire); }
+.board-heroes { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.chip.ban { opacity: .55; text-decoration: line-through; }
+
+.strength { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.strength .big { font-size: 20px; font-weight: 700; }
+.strength .note { color: var(--warn); font-size: 12px; }
+
+/* --- generic list panels --- */
+
+.items { display: flex; flex-direction: column; gap: 3px; }
+
+.item {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.item:hover { background: var(--panel-2); }
+.item .rank { color: var(--dim); font-size: 12px; text-align: right; }
+.item .why { color: var(--dim); font-size: 12px; }
+.item .val { font-variant-numeric: tabular-nums; color: var(--accent); }
+.item .src { color: var(--dim); font-size: 11px; text-transform: uppercase; }
+
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+
+.advice li { margin-bottom: 4px; }
+
+.alert-due { color: var(--warn); font-weight: 600; }
+
+.raw { color: var(--dim); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+
+/* --- status bar --- */
+
+.statusbar {
+  padding: 7px 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 12px;
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.statusbar .msg { color: var(--fg); }
+.statusbar .ok { color: var(--radiant); }
+.statusbar .off { color: var(--dire); }
+
+/* --- modal --- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal[hidden] { display: none; }
+.modal-body {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px;
+  max-width: 760px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
+}
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: none;
+  background: none;
+  color: var(--dim);
+  font-size: 16px;
+}
+
+/* --- data screen: corpus charts --- */
+
+.corpus-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.corpus-head button { align-self: flex-start; }
+
+/* Headline numbers. Proportional figures on purpose: tabular digits make a big
+   standalone number look loose, and these are read one at a time, not compared
+   down a column. */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.stat-label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.stat-value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+.stat-why { color: var(--dim); font-size: 12px; margin-top: 4px; }
+
+/* Charts are authored at the container's measured pixel width, so the element
+   must render at its own size. `width: 100%` here is what made a 720-unit viewBox
+   stretch to 1900px — a 2.6x scale applied to the type as much as to the bars, so
+   a 12px label came out at ~31px. max-width keeps it from overflowing if the
+   container shrinks between a repaint and the debounced resize.
+
+   It scales BOTH ways, which is the other half of the same bug: a chart authored
+   wider than its box is shrunk here, type included. That is why every chart is
+   drawn through drawInto(), which measures the box it is actually going into. */
+.viz { max-width: 100%; height: auto; display: block; margin-top: 4px; overflow: visible; }
+
+/* A chart with a natural size the column cannot always give it (the calendar:
+   weeks x cell) scrolls sideways instead of being squeezed — squeezing shrinks the
+   type, and clipping would drop weeks off the end without saying so. max-width is
+   cancelled inside, or the SVG would shrink to the scroll box and there would be
+   nothing to scroll. */
+.viz-scroll { max-width: 100%; overflow-x: auto; }
+.viz-scroll .viz { max-width: none; }
+
+/* The calendar's scale strip: swatches only, no text between them. */
+.viz-swatch-strip { vertical-align: middle; }
+
+/* Startup warnings sit above everything: they explain why a feature is inert. */
+.startup {
+  margin: 14px 14px 0;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.startup[hidden] { display: none; }
+
+/* Per-source liveness rows. */
+.src-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.src-card + .src-card { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.src-summary { margin-top: 2px; font-variant-numeric: tabular-nums; }
+.src-name { font-weight: 600; min-width: 84px; font-size: 13px; }
+.src-state { color: var(--fg); }
+.src-state.warnish { color: var(--warn); }
+.src-counters { color: var(--dim); font-variant-numeric: tabular-nums; }
+.src-err { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The phase chip in a job row: what the job is doing right now, as opposed to
+   which job it is. */
+.job-phase {
+  color: var(--accent);
+  background: var(--panel-2);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+/* --- hero portraits ---------------------------------------------------------
+
+   Sized in the layout so a missing image leaves no hole: the element removes
+   itself on error and the text label — which was always the real content — closes
+   up. Dota's portraits are 16:9, cropped to a square would decapitate half the
+   roster, so they stay wide. */
+.hero-icon {
+  width: 32px;
+  height: 18px;
+  object-fit: cover;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 6px;
+  flex: none;
+}
+.hero-cell { display: inline-flex; align-items: center; gap: 0; min-width: 0; }
+.chip .hero-icon { width: 26px; height: 15px; margin-right: 5px; }
+
+/* --- known players ---------------------------------------------------------- */
+
+.known-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.known {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+.known:hover { background: var(--panel-2); }
+.known.pinned { border-color: var(--line); }
+.known-name { font-weight: 600; }
+.known-tick { margin: 0 2px 0 0; accent-color: var(--accent); }
+/* Being in the current lineup is the state that matters most at a glance. */
+.known.in-snapshot { border-left: 2px solid var(--accent); }
+.known-in { color: var(--accent); font-size: 12px; }
+.roster-add { margin-bottom: 6px; }
+.roster-add select, .roster-tools select {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font: inherit;
+}
+.roster-tools { flex-wrap: wrap; align-items: center; }
+.known-role, .known-cached, .known-seen { color: var(--dim); font-size: 12px; }
+/* Push the row's buttons to the right edge, whatever metadata is present. */
+.known button { margin-left: auto; }
+.known button + button { margin-left: 6px; }
+
+/* Chrome is recessive and solid — never dashed, never competing with the data. */
+.viz-grid { stroke: var(--line); stroke-width: 1; }
+.viz-axis { stroke: var(--line); stroke-width: 1; }
+
+/* Text wears text tokens, never the series colour. */
+.viz-tick { fill: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+.viz-label { fill: var(--fg); font-size: 12px; }
+.viz-value { fill: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.viz-mark { cursor: default; outline: none; }
+.viz-mark:hover, .viz-mark:focus-visible { opacity: .85; }
+.viz-mark:focus-visible { stroke: var(--fg); stroke-width: 1.5; }
+
+.viz-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 0 2px; color: var(--dim); font-size: 12px; }
+.viz-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.viz-swatch { display: block; }
+
+/* The table twin: every value the charts show, as text. */
+.viz-table { margin-top: 10px; }
+.viz-table summary { color: var(--dim); font-size: 12px; cursor: pointer; }
+.viz-table table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+.viz-table th, .viz-table td { text-align: left; padding: 3px 8px 3px 0; border-bottom: 1px solid var(--line); }
+.viz-table td { font-variant-numeric: tabular-nums; color: var(--dim); }
+.viz-table td:first-child { color: var(--fg); }
+.viz-table th { color: var(--dim); font-weight: 500; }
+
+.viz-tip {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+}
+.viz-tip[hidden] { display: none; }
+.viz-tip div:first-child { font-weight: 600; }
+
+/* --- width -------------------------------------------------------------------
+
+   Three sizes rather than one breakpoint. The page was authored for a laptop and
+   simply stretched: on a 1900px screen the hero picker stayed at its 300px column
+   while everything else grew, and the Data screen ran one panel per full-width
+   row, so reading it was mostly scrolling. */
+
+@media (max-width: 900px) {
+  .cols { grid-template-columns: 1fr; }
+  .topbar { gap: 8px; }
+  .step { margin-left: 0; width: 100%; }
+}
+
+/* Wide: the hero picker earns more room, and the Data screen pairs its panels. */
+@media (min-width: 1400px) {
+  .cols { grid-template-columns: 360px 1fr; }
+  #corpus { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  /* The headline tiles and the two day-histograms are the width of the screen;
+     the rest pairs up. Explicit rather than automatic: these are the panels whose
+     x-axis is a month of days, and halving them makes the ticks illegible.
+
+     Marked with a class rather than counted with :nth-of-type — that counts
+     ELEMENTS of the type, not elements matching the class, so the stats row being
+     the first div silently shifted the count by one and spanned the wrong panel. */
+  #corpus > .stats-row,
+  #corpus > .panel.wide { grid-column: 1 / -1; }
+}
+
+/* Very wide: cap the text column so a maximised window does not produce
+   40-word lines, but let the charts use the room. */
+@media (min-width: 2000px) {
+  main { max-width: 1900px; margin: 0 auto; width: 100%; }
+  .op-banner { max-width: 1900px; margin-left: auto; margin-right: auto; }
+}
