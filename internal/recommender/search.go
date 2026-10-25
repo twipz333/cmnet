@@ -137,7 +137,7 @@ func (r *Recommender) positionMeta(d draft.View) []PositionMeta {
 		return nil
 	}
 	if r.metaScore == nil {
-		r.metaScore = r.Predictor.Distribution(features.PredictorState{IsPick: true})
+		r.metaScore = r.Predictor.Distribution(r.firstPickState())
 	}
 	out := make([]PositionMeta, 0, 5)
 	for pos := 1; pos <= 5; pos++ {
@@ -539,15 +539,6 @@ func (r *Recommender) Recommend(d draft.View, ourTeam draft.Team, topN int) Resu
 	}
 	step, ok := d.Current()
 
-	pstate := features.PredictorState{
-		RadiantPicks: d.Picks(draft.Radiant),
-		DirePicks:    d.Picks(draft.Dire),
-		RadiantBans:  d.Bans(draft.Radiant),
-		DireBans:     d.Bans(draft.Dire),
-		IsPick:       ok && step.Action == draft.Pick,
-	}
-	dist := r.Predictor.Distribution(pstate)
-
 	res := Result{}
 
 	// Current draft strength: win-prob of the picks already on the board, so the user
@@ -562,22 +553,35 @@ func (r *Recommender) Recommend(d draft.View, ourTeam draft.Team, topN int) Resu
 	res.OurTurn = step.Team == ourTeam
 	res.IsPick = step.Action == draft.Pick
 
-	// Blended enemy next-move distribution (shared by the enemy panel and the
-	// pool-contention alert).
-	eprobs := dist
-	if r.scoutEnabled {
-		eprobs = blend.Blend(dist, r.enemyAff2, r.enemyAff3, r.eventN, r.blendW)
+	// The current step's distribution, for whoever is acting now (us, on our turn).
+	// It prunes our pick candidates to the heroes this seat plausibly takes here.
+	dist := r.Predictor.Distribution(predictorState(boardOf(d), step.Team, step.Action, boardCursor(d)))
+
+	// What the ENEMY does next. On their turn that is the current step; on ours it
+	// is their next step in the schedule — previously this panel showed the
+	// distribution of the current step even on our turn, i.e. a prediction of our
+	// own move labelled as the enemy's.
+	enemyNext := r.enemyPolicy(d, ourTeam, false)
+	enemyPick := enemyNext
+	if !enemyNext.ok() || enemyNext.step.Action != draft.Pick {
+		enemyPick = r.enemyPolicy(d, ourTeam, true)
 	}
+	if enemyNext.ok() {
+		res.EnemyStep = &EnemyStep{Ord: enemyNext.ord, IsPick: enemyNext.step.Action == draft.Pick}
+	}
+	nextProbs := r.orZeros(enemyNext)
+	pickProbs := r.orZeros(enemyPick)
 
-	// Enemy prediction: next-move distribution over untaken heroes.
-	res.EnemyPred = r.topEnemy(d, ourTeam, eprobs, topN)
+	// Enemy prediction: their next move over untaken heroes.
+	res.EnemyPred = r.topEnemy(d, ourTeam, nextProbs, topN)
 
-	// Pool contention (#4): our preferred heroes the enemy is most likely to grab.
-	res.PoolAlert = r.poolAlert(d, ourTeam, eprobs, topN)
+	// Pool contention (#4): our preferred heroes the enemy is most likely to take
+	// with their next move, pick or ban.
+	res.PoolAlert = r.poolAlert(d, ourTeam, nextProbs, topN)
 
-	// The other half of the ban decision: what they are likely to take and we can
+	// The other half of the ban decision: what they are likely to PICK and we can
 	// afford to let them have.
-	res.SafeToLet = r.safeToLet(d, ourTeam, eprobs, topN)
+	res.SafeToLet = r.safeToLet(d, ourTeam, pickProbs, topN)
 
 	// Patch meta per position (#9): top available heroes for each lane, with
 	// taken/banned heroes removed.
@@ -589,9 +593,9 @@ func (r *Recommender) Recommend(d draft.View, ourTeam draft.Team, topN int) Resu
 	}
 
 	// Recommendations for the current step. Picks use the raw layer-1 prior for
-	// pruning (§9: picks stay on layer 1); bans use the blended enemy probability
-	// as their "how likely is the enemy to take this" base.
-	res.Recs = r.rankCandidates(d, ourTeam, step, dist, eprobs, topN)
+	// pruning (§9: picks stay on layer 1); bans use the blended probability of the
+	// enemy PICKING the hero as their "deny it" base.
+	res.Recs = r.rankCandidates(d, ourTeam, step, dist, pickProbs, topN)
 	return res
 }
 
@@ -932,28 +936,21 @@ func (r *Recommender) altDeficit(d draft.View, ourTeam draft.Team, candID int, e
 	dPicks := d.Picks(draft.Dire)
 	before := r.policyOutlook(ourTeam, rPicks, dPicks, eprobs)
 
-	rBans := append([]int(nil), d.Bans(draft.Radiant)...)
-	dBans := append([]int(nil), d.Bans(draft.Dire)...)
+	// Recompute the enemy's next PICK with cand already banned by us — the same
+	// action eprobs describes (their next pick), so before and after are comparable.
+	ord, step, ok := r.nextAction(d, ourTeam.Opponent(), true)
+	if !ok {
+		return 0
+	}
+	b := boardOf(d)
+	b.rBans = append([]int(nil), b.rBans...)
+	b.dBans = append([]int(nil), b.dBans...)
 	if ourTeam == draft.Radiant {
-		rBans = append(rBans, candID)
+		b.rBans = append(b.rBans, candID)
 	} else {
-		dBans = append(dBans, candID)
+		b.dBans = append(b.dBans, candID)
 	}
-	step, ok := d.Current()
-	isPick := ok && step.Action == draft.Pick
-	st := features.PredictorState{
-		RadiantPicks: rPicks,
-		DirePicks:    dPicks,
-		RadiantBans:  rBans,
-		DireBans:     dBans,
-		IsPick:       isPick,
-		Actor:        int(ourTeam.Opponent()),
-		FirstPick:    int(d.FirstPickTeam()),
-	}
-	after := r.Predictor.Distribution(st)
-	if r.scoutEnabled {
-		after = blend.Blend(after, r.enemyAff2, r.enemyAff3, r.eventN, r.blendW)
-	}
+	after := r.blendEnemy(r.Predictor.Distribution(predictorState(b, ourTeam.Opponent(), step.Action, ord)), step.Action)
 	post := r.policyOutlook(ourTeam, rPicks, dPicks, after)
 	def := before - post
 	if def < 0 {

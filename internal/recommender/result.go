@@ -96,6 +96,9 @@ type Result struct {
 	Recs []Recommendation `json:"recs"`
 	// EnemyPred is the ranked predicted next enemy move.
 	EnemyPred []EnemyPick `json:"enemyPred"`
+	// EnemyStep says which action EnemyPred is for: on the enemy's turn the current
+	// step, on ours their next step in the schedule. Nil when they have none left.
+	EnemyStep *EnemyStep `json:"enemyStep,omitempty"`
 	// PoolAlert lists our preferred-pool heroes (#4) that are still available,
 	// ranked by how likely the enemy is to pick/ban them next — i.e. the ones to
 	// secure or expect contested. Empty when no hero pool is configured.
@@ -145,4 +148,10 @@ type MetaHero struct {
 type PositionMeta struct {
 	Position int        `json:"position"`
 	Heroes   []MetaHero `json:"heroes"`
+}
+
+// EnemyStep identifies the enemy action a prediction refers to.
+type EnemyStep struct {
+	Ord    int  `json:"ord"`    // 0-based index in the draft sequence
+	IsPick bool `json:"isPick"` // false = ban
 }

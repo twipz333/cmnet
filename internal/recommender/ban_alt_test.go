@@ -21,19 +21,19 @@ func TestAltDeficitUniqueHeroHigherThanTwin(t *testing.T) {
 		pred.Pick.Weights[i] = make([]float64, hm.PredictorLen())
 		pred.Ban.Weights[i] = make([]float64, hm.PredictorLen())
 	}
-	// Ban head: hero 1 very likely, heroes 2 and 3 equally next (twins).
-	pred.Ban.Bias[0] = 4
-	pred.Ban.Bias[1] = 2
-	pred.Ban.Bias[2] = 2
+	// Pick head: hero 1 very likely, heroes 2 and 3 equally next (twins). A ban
+	// denies a hero the enemy would PICK, so the deficit is measured on their
+	// pick policy, not on what they would ban.
+	pred.Pick.Bias[0] = 4
+	pred.Pick.Bias[1] = 2
+	pred.Pick.Bias[2] = 2
 
 	wp := &model.WinProb{Model: &model.BinaryLogReg{Weights: make([]float64, hm.WinProbLen())}, HeroMap: hm}
 	r := New(wp, pred)
 
 	d := draft.New(draft.Radiant)
-	// Opening bans — current step is still a ban.
-	eprobs := r.Predictor.Distribution(features.PredictorState{
-		IsPick: false, Actor: int(draft.Dire), FirstPick: int(draft.Radiant),
-	})
+	// Opening bans — current step is still a ban; eprobs is Dire's next pick.
+	eprobs := r.orZeros(r.teamPolicy(d, draft.Dire, true))
 	defUnique := r.altDeficit(d, draft.Radiant, 1, eprobs)
 	defTwin := r.altDeficit(d, draft.Radiant, 2, eprobs)
 	if defUnique <= defTwin {

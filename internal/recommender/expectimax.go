@@ -3,9 +3,7 @@ package recommender
 import (
 	"sort"
 
-	"cmnet/internal/blend"
 	"cmnet/internal/draft"
-	"cmnet/internal/features"
 	"cmnet/internal/model"
 )
 
@@ -227,19 +225,6 @@ func (r *Recommender) enemyStepPolicy(st searchState) []float64 {
 	if !ok || r.Predictor == nil {
 		return make([]float64, n)
 	}
-	pstate := features.PredictorState{
-		RadiantPicks: st.rPicks,
-		DirePicks:    st.dPicks,
-		RadiantBans:  st.rBans,
-		DireBans:     st.dBans,
-		IsPick:       step.Action == draft.Pick,
-		Actor:        int(step.Team),
-		Ord:          st.cursor,
-		FirstPick:    int(st.firstPick),
-	}
-	dist := r.Predictor.Distribution(pstate)
-	if r.scoutEnabled {
-		dist = blend.Blend(dist, r.enemyAff2, r.enemyAff3, r.eventN, r.blendW)
-	}
-	return dist
+	b := boardState{rPicks: st.rPicks, dPicks: st.dPicks, rBans: st.rBans, dBans: st.dBans, firstPick: st.firstPick}
+	return r.blendEnemy(r.Predictor.Distribution(predictorState(b, step.Team, step.Action, st.cursor)), step.Action)
 }

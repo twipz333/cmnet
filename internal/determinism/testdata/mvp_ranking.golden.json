@@ -4,28 +4,28 @@
   "is_pick": false,
   "recs": [
     {
-      "heroId": 6,
-      "score": 0.5944,
-      "why": "враг ~59%"
+      "heroId": 5,
+      "score": 0.51731,
+      "why": "враг ~52%"
     },
     {
-      "heroId": 5,
-      "score": 0.4056,
-      "why": "враг ~41%"
+      "heroId": 6,
+      "score": 0.48269,
+      "why": "враг ~48%"
     }
   ],
   "enemy_pred": [
     {
-      "heroId": 6,
-      "prob": 0.5944,
+      "heroId": 5,
+      "prob": 0.98778,
       "source": "meta",
       "threat": 0,
       "fit": 0,
       "danger": 0
     },
     {
-      "heroId": 5,
-      "prob": 0.4056,
+      "heroId": 6,
+      "prob": 0.01222,
       "source": "meta",
       "threat": 0,
       "fit": 0,
