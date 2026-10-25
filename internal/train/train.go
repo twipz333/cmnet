@@ -659,7 +659,8 @@ func Bundle(matches []cache.Match, heroIDs []int, opts Options) *bundle.Bundle {
 	phaseCalib := fitPhaseCalibration(wp, calibSource)
 
 	// Synergy/counter matrices (M3): pair lift with empirical-Bayes shrinkage.
-	mx := matrices.Compute(matches, hm, matrices.Options{Prior: opts.MatrixPrior, NoShrink: opts.MatrixNoShrink})
+	mxOpts := matrices.Options{Prior: opts.MatrixPrior, NoShrink: opts.MatrixNoShrink}
+	mx := matrices.Compute(matches, hm, mxOpts)
 	progress(mx.SignalNote())
 
 	// Optional factorization machine: the linear head cannot express "these two
@@ -682,7 +683,14 @@ func Bundle(matches []cache.Match, heroIDs []int, opts Options) *bundle.Bundle {
 
 	// Strength stacker: fitted on the validation block so the weights that combine
 	// win-prob with the matrices are estimated out-of-sample (§7).
-	stacker := fitStrengthStacker(wp, hm, mx, calibSource, opts)
+	//
+	// The matrices it is fitted against must not have seen those rows either. The
+	// bundle's matrices are counted over every match, validation block included,
+	// so fitting on them would hand the stacker pair cells built from the very
+	// outcomes it is asked to predict — and it would learn to trust synergy and
+	// counter more than they deserve. It is fitted on matrices counted over the
+	// fit block only (cross-fitting), then applied to the full ones at serve time.
+	stacker := fitStrengthStacker(wp, hm, stackerMatrices(wpFit, len(wpValSamples.WinProb) > 0, hm, mxOpts, mx), calibSource, opts)
 
 	createdAt := opts.CreatedAt
 	if createdAt == "" {
@@ -770,6 +778,16 @@ func fitPhaseCalibration(wp *model.BinaryLogReg, s Samples) []model.Platt {
 		return nil
 	}
 	return out
+}
+
+// stackerMatrices returns the matrices the strength stacker is fitted against:
+// counted over the fit block alone when a validation block exists (the stacker is
+// fitted on it), else the full matrices (no held-out rows to protect).
+func stackerMatrices(fit []cache.Match, haveVal bool, hm *features.HeroMap, o matrices.Options, full *matrices.Matrices) *matrices.Matrices {
+	if !haveVal {
+		return full
+	}
+	return matrices.Compute(fit, hm, o)
 }
 
 // fitStrengthStacker learns how to combine the win-prob logit with the synergy and
