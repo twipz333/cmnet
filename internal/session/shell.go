@@ -3,7 +3,10 @@ package session
 import (
 	"context"
 
+	"cmnet/internal/alerts"
 	"cmnet/internal/cache"
+	"cmnet/internal/config"
+	"cmnet/internal/discordbot"
 	"cmnet/internal/jobs"
 )
 
@@ -46,8 +49,32 @@ type ShellConfig struct {
 	// Needed because layer 3 hangs off a single entry-point enemy that may no longer
 	// be in the layer-2 player list (so it isn't deletable via RemovePlayer).
 	ClearLayer3 func() (string, error)
+	// ClearScout removes every scouted player from the enemy (or ally) layer of
+	// the snapshot. Used by remote-control bulk clear.
+	ClearScout func(ally bool) (string, error)
 	// SetItemRules saves the advice-DSL text and returns a summary (#10).
 	SetItemRules func(text string) (string, error)
+
+	// GetConfig returns the schema-driven config editor view (flags from the live
+	// cobra tree + current file values). Nil disables the Config tab.
+	GetConfig func() (config.View, error)
+	// SaveConfig writes the editor payload back to config.yaml.
+	SaveConfig func(config.SaveRequest) (string, error)
+
+	// GetDiscordConfig / SaveDiscordConfig edit discord.yaml for the separate
+	// advisor-discord process. Nil hides that panel on the Config tab.
+	GetDiscordConfig  func() (discordbot.EditorView, error)
+	SaveDiscordConfig func(discordbot.EditorSaveRequest) (string, error)
+
+	// GetAlerts / SaveAlerts edit alerts.yaml (objective leads, custom timers, TTS).
+	// SaveAlerts returns the loaded file so the web server can hot-apply it.
+	GetAlerts  func() (alerts.View, error)
+	SaveAlerts func(alerts.SaveRequest) (string, *alerts.File, error)
+
+	// TTS cache inspection (files under discord.yaml ntts.cache-dir).
+	ListTTSCache   func() ([]discordbot.CacheEntry, error)
+	DeleteTTSCache func(key string) (string, error)
+	ClearTTSCache  func() (string, error)
 
 	// CorpusMeta reports the per-position and per-lane aggregates baked into the
 	// bundle from our own corpus — what heroes actually do at each position here,
@@ -97,9 +124,18 @@ type StatsView struct {
 	EnemyPlayers []StatsPlayer `json:"enemyPlayers"`
 	AllyPlayers  []StatsPlayer `json:"allyPlayers"`
 	Layer3Drafts int           `json:"layer3Drafts"`
+	WindowDays   int           `json:"windowDays,omitempty"` // scout layer-2 window
 	HeroPool     []StatsHero   `json:"heroPool"`
 	ItemRules    string        `json:"itemRules"` // raw advice-DSL text (#10)
 	SnapshotPath string        `json:"snapshotPath"`
+}
+
+// StatsSmurf is the scout UI badge for smurf-risk (display only).
+type StatsSmurf struct {
+	Score   int      `json:"score"`
+	Level   string   `json:"level"`
+	Label   string   `json:"label"`
+	Reasons []string `json:"reasons,omitempty"`
 }
 
 // StatsPlayer is one scouted player and their comfort heroes.
@@ -108,6 +144,7 @@ type StatsPlayer struct {
 	Nickname  string      `json:"nickname"`
 	Resolved  bool        `json:"resolved"`
 	TopHeroes []StatsHero `json:"topHeroes"`
+	Smurf     *StatsSmurf `json:"smurf,omitempty"`
 }
 
 // CorpusMetaView is the bundle's view of our own corpus, for the Data screen.
@@ -179,4 +216,5 @@ type StatsHero struct {
 	Name    string  `json:"name"`
 	Games   int     `json:"games"`
 	WinRate float64 `json:"winRate"`
+	Aff     float64 `json:"aff,omitempty"` // scout comfort score; 0 when unknown
 }

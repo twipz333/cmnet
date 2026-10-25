@@ -48,6 +48,7 @@ const (
 	KindScoutAllies = "scout-allies"
 	KindAssets      = "assets"
 	KindBackfill    = "backfill"
+	KindRankfill    = "rankfill"
 )
 
 // Job priorities, re-exported so callers need not import the cache package just to

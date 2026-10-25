@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -71,12 +73,37 @@ func (c *Client) explorerRowsOnce(ctx context.Context, sql string, out any) erro
 	if resp.Err != nil && *resp.Err != "" {
 		return fmt.Errorf("%w: %s", errExplorerSQL, *resp.Err)
 	}
-	if out != nil && len(resp.Rows) > 0 {
+	// A 200 with no rows array is a malformed answer, not an empty one. This
+	// endpoint stalls and truncates under load, and a caller that records what it
+	// asked about — the rank fill marks a whole batch as looked up — would read the
+	// silence as "none of these exist" and retire them permanently. An empty ARRAY
+	// is a real answer and passes through: a match_id band with nothing in it is
+	// exactly what the bulk scan expects to see.
+	if !isJSONArray(resp.Rows) {
+		return fmt.Errorf("explorer: response carried no rows array")
+	}
+	if out != nil {
 		if err := json.Unmarshal(resp.Rows, out); err != nil {
 			return fmt.Errorf("explorer decode rows: %w", err)
 		}
 	}
 	return nil
+}
+
+// isJSONArray reports whether raw is present and holds a JSON array, telling an
+// absent or null field apart from an empty list.
+func isJSONArray(raw json.RawMessage) bool {
+	for _, b := range raw {
+		switch b {
+		case ' ', '\t', '\n', '\r':
+			continue
+		case '[':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // MaxPublicMatchID returns the newest match_id in the public_matches sample. It
@@ -116,6 +143,60 @@ type PublicMatch struct {
 	RadiantTeam []int `json:"radiant_team"` // 5 radiant hero ids
 	DireTeam    []int `json:"dire_team"`    // 5 dire hero ids
 	AvgRankTier int   `json:"avg_rank_tier"`
+}
+
+// MaxRankTierBatch is the largest number of match ids worth putting in one
+// RankTiers call.
+//
+// Measured, not guessed: batches of 100-300 answer in a third of a second, while
+// 500 wedges the endpoint — it holds the connection open and then returns a
+// TRUNCATED body under HTTP 200, which is a corrupt-JSON failure rather than an
+// honest error. explorerRows retries around that, but there is no reason to walk
+// into it.
+const MaxRankTierBatch = 150
+
+// RankTiers looks up the average rank tier of specific matches, keyed by match id.
+//
+// Ids the table has no row for are simply absent from the result — tournament
+// lobbies and unranked games never enter public_matches — so a caller must treat
+// "asked" and "answered" as different sets rather than assuming a tier per id.
+//
+// This is the cheap way to fill a rank the cache never stored: one request covers
+// a whole batch, where per-match detail would cost a request each. It is also the
+// only OpenDota route that knows the answer. /matches/{id} carries no match-level
+// tier at all, and averaging its players' rank_tier is not a substitute: that
+// field is each account's rank TODAY, not at the time of the match, and only for
+// public profiles.
+func (c *Client) RankTiers(ctx context.Context, ids []int64) (map[int64]int, error) {
+	if len(ids) == 0 {
+		return map[int64]int{}, nil
+	}
+	var b strings.Builder
+	for i, id := range ids {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatInt(id, 10))
+	}
+	sql := "select match_id, avg_rank_tier from public_matches where match_id in (" +
+		b.String() + ")"
+	var rows []struct {
+		MatchID int64 `json:"match_id"`
+		// Nullable in the table (an unranked row carries no tier), so a pointer:
+		// decoding into an int would turn "no tier" into Herald.
+		AvgRankTier *int `json:"avg_rank_tier"`
+	}
+	if err := c.explorerRows(ctx, sql, &rows); err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int, len(rows))
+	for _, r := range rows {
+		if r.AvgRankTier == nil {
+			continue
+		}
+		out[r.MatchID] = *r.AvgRankTier
+	}
+	return out, nil
 }
 
 // PublicMatches returns public matches whose avg_rank_tier is within

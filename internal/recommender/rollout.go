@@ -4,7 +4,6 @@ import (
 	"sort"
 
 	"cmnet/internal/draft"
-	"cmnet/internal/features"
 )
 
 // RolloutTopK is how many candidate heroes per unfilled slot carry the expected
@@ -54,16 +53,18 @@ func (r *Recommender) expectedPicks(d draft.View, rPicks, dPicks []int, team dra
 	if missing <= 0 {
 		return nil
 	}
-	st := features.PredictorState{
-		RadiantPicks: rPicks,
-		DirePicks:    dPicks,
-		RadiantBans:  d.Bans(draft.Radiant),
-		DireBans:     d.Bans(draft.Dire),
-		IsPick:       true,
-		Actor:        int(team),
-		Ord:          -1, // derived from the board
-		FirstPick:    int(d.FirstPickTeam()),
+	// The team's next pick in the schedule, not the current step: Ord -1 used to
+	// stamp every side's expected picks with the index of whatever step was
+	// current, which on the other side's turn is a step this team never takes.
+	ord, _, ok := r.nextAction(d, team, true)
+	if !ok {
+		ord = -1
 	}
+	st := predictorState(boardState{
+		rPicks: rPicks, dPicks: dPicks,
+		rBans: d.Bans(draft.Radiant), dBans: d.Bans(draft.Dire),
+		firstPick: d.FirstPickTeam(),
+	}, team, draft.Pick, ord)
 	blocked := make([]bool, r.heroMap.Len())
 	for _, id := range append(append([]int(nil), rPicks...), dPicks...) {
 		if i, ok := r.heroMap.Index(id); ok {

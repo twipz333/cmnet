@@ -11,12 +11,29 @@ func TestConfigContent(t *testing.T) {
 	c := ConfigContent("http://127.0.0.1:53000/", "tok")
 	for _, want := range []string{
 		`"uri"       "http://127.0.0.1:53000/"`,
-		`"draft"    "1"`,
+		`"draft"`,
 		`"token" "tok"`,
+		`"heartbeat" "1.0"`,
 	} {
 		if !strings.Contains(c, want) {
 			t.Errorf("config missing %q\n%s", want, c)
 		}
+	}
+}
+
+func TestConfigContentProductionSubscriptions(t *testing.T) {
+	c := ConfigContent("http://127.0.0.1:54001/", "")
+	for _, cat := range []string{
+		"map", "player", "hero", "abilities", "items",
+		"buildings", "minimap", "events", "draft", "provider",
+	} {
+		needle := `"` + cat + `"`
+		if !strings.Contains(c, needle) {
+			t.Errorf("production config missing subscription %s\n%s", cat, c)
+		}
+	}
+	if strings.Contains(c, "gamestate_integration_advisor_probe") {
+		t.Error("production config must not be the probe file")
 	}
 }
 
@@ -38,7 +55,6 @@ func TestInstallWritesAndIsIdempotent(t *testing.T) {
 	}
 	first, _ := os.ReadFile(path)
 
-	// Second install must overwrite with identical content (idempotent).
 	if _, err := Install(dir, "127.0.0.1:53000", ""); err != nil {
 		t.Fatalf("second install: %v", err)
 	}
@@ -49,6 +65,9 @@ func TestInstallWritesAndIsIdempotent(t *testing.T) {
 	if !strings.Contains(string(first), "http://127.0.0.1:53000/") {
 		t.Error("uri not rendered from addr")
 	}
+	if !strings.Contains(string(first), `"minimap"`) {
+		t.Error("reinstall must upgrade subscriptions to include minimap")
+	}
 }
 
 func TestInstallCreatesMissingDir(t *testing.T) {
@@ -58,5 +77,33 @@ func TestInstallCreatesMissingDir(t *testing.T) {
 	}
 	if !dirExists(dir) {
 		t.Error("install should have created the cfg dir")
+	}
+}
+
+func TestInstallOverwritesLegacyNarrowConfig(t *testing.T) {
+	dir := t.TempDir()
+	legacy := []byte(`"Dota 2 Integration Configuration"
+{
+    "uri"       "http://127.0.0.1:54001/"
+    "data"
+    {
+        "provider" "1"
+        "map"      "1"
+        "player"   "1"
+        "hero"     "1"
+        "draft"    "1"
+    }
+}
+`)
+	path := filepath.Join(dir, CfgFileName)
+	if err := os.WriteFile(path, legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir, "127.0.0.1:54001", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), `"minimap"`) || !strings.Contains(string(got), `"events"`) {
+		t.Fatalf("legacy cfg was not upgraded:\n%s", got)
 	}
 }

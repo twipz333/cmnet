@@ -25,12 +25,28 @@ type HeroAffinity struct {
 	Aff     float64 `json:"aff"`
 }
 
+// SmurfRisk is a lightweight heuristic flag for the scout UI. It never enters
+// the recommender blend — display only (§6 / §9).
+type SmurfRisk struct {
+	Score   int      `json:"score"`             // 0..100
+	Level   string   `json:"level"`             // low|medium|high
+	Label   string   `json:"label"`             // short Russian label
+	Reasons []string `json:"reasons,omitempty"` // deterministic order
+}
+
 // PlayerAffinity is layer 2 for a single opponent player.
 type PlayerAffinity struct {
 	AccountID int64          `json:"account_id"`
 	Nickname  string         `json:"nickname"`
 	Resolved  bool           `json:"resolved"`
 	Heroes    []HeroAffinity `json:"heroes"`
+	// Discovered marks a player recovered from a teammate's match record rather
+	// than named by the user. Omitted when false so snapshots written before this
+	// field existed still hash to the same value.
+	Discovered bool `json:"discovered,omitempty"`
+	// Smurf is omitted when assessment has nothing to say (unresolved / no data),
+	// so older snapshots without the field keep their hash.
+	Smurf *SmurfRisk `json:"smurf,omitempty"`
 }
 
 // TeamDraft is one observed opposing-team draft in the current event (layer 3).
@@ -53,6 +69,11 @@ type Layer3 struct {
 	DraftsObserved int         `json:"drafts_observed"`
 	TeamDrafts     []TeamDraft `json:"team_drafts"`
 	EntryAccountID int64       `json:"entry_account_id"` // the resolved id used as entry point
+	// TeamAccountIDs are the entry player's teammates as recovered from the same
+	// match records, most-seen first. They are what turns one resolved opponent
+	// into a scouted squad: layer 3 needs a single id, but per-player affinity and
+	// any role assignment need all five.
+	TeamAccountIDs []int64 `json:"team_account_ids,omitempty"`
 }
 
 // OpponentSnapshot is the frozen, shareable layers 2-3 artifact for one match. It
@@ -135,6 +156,33 @@ func (s *OpponentSnapshot) Aff3Vector(hm HeroIndexer) ([]float64, int) {
 				vec[idx]++
 			}
 		}
+	}
+	n := s.Layer3.DraftsObserved
+	if n == 0 {
+		n = len(s.Layer3.TeamDrafts)
+	}
+	return vec, n
+}
+
+// Aff3BanVector is Aff3Vector for bans: how often the team banned each hero
+// across its event drafts, plus the number of drafts observed. Layer-3 evidence
+// for the enemy's BAN steps (Aff3Vector, built from picks, feeds their picks).
+func (s *OpponentSnapshot) Aff3BanVector(hm HeroIndexer) ([]float64, int) {
+	if s == nil || s.Layer3 == nil || len(s.Layer3.TeamDrafts) == 0 {
+		return nil, 0
+	}
+	vec := make([]float64, hm.Len())
+	any := false
+	for _, d := range s.Layer3.TeamDrafts {
+		for _, hid := range d.Bans {
+			if idx, ok := hm.Index(hid); ok {
+				vec[idx]++
+				any = true
+			}
+		}
+	}
+	if !any {
+		return nil, 0
 	}
 	n := s.Layer3.DraftsObserved
 	if n == 0 {

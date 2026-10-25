@@ -115,6 +115,24 @@ var migrations = []migration{
 	{3, "per-player match performance", migrateMatchStats},
 	{4, "player aggregates", migratePlayerStats},
 	{5, "known players", migrateKnownPlayers},
+	{6, "rank probe bookkeeping", migrateRankProbe},
+}
+
+// migrateRankProbe records that a match's rank tier was looked up, whatever the
+// answer was.
+//
+// The column exists to make the backlog finite. Rank is filled in by asking
+// OpenDota's public_matches table about matches whose tier we never stored, and
+// "still NULL" cannot distinguish never asked from asked and not there — so
+// without a mark, the handful of matches that table has no row for (tournament
+// lobbies, unranked games) would be re-queried on every pass, forever, while the
+// real backlog behind them never shrinks.
+//
+// NULL means never asked, which is what every existing row correctly starts as.
+func migrateRankProbe(tx *sql.Tx) error {
+	return addColumns(tx, "matches", []struct{ name, ddl string }{
+		{"rank_probed_at", "ALTER TABLE matches ADD COLUMN rank_probed_at INTEGER"},
+	})
 }
 
 // migrateMatchStats widens a cached match from a bag of heroes into a record of a

@@ -17,6 +17,7 @@
     "dire_ward_purchase_cooldown": 0
   },
   "player": {
+    "team_name": "dire",
     "steamid": "76561190000000000",
     "accountid": "123456789",
     "name": "someone",

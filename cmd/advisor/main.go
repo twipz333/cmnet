@@ -9,12 +9,16 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"cmnet/internal/alerts"
 	"cmnet/internal/config"
+	"cmnet/internal/declog"
+	"cmnet/internal/discordbot"
 	"cmnet/internal/draft"
 	"cmnet/internal/gsi"
 	"cmnet/internal/session"
@@ -43,7 +47,7 @@ func newRootCmd() *cobra.Command {
 		Short: "Dota 2 draft advisor — deterministic pick/ban recommendations",
 		Long: "Run with no subcommand to open the unified TUI home (train, scan, scout all in " +
 			"one place), e.g.\n\n  advisor --gsi --token <STRATZ_TOKEN>\n\n" +
-			"Subcommands (sync/train/serve/scout/gsi-install) remain available for scripting.\n\n" +
+			"Subcommands (sync/train/serve/scout/gsi-install/gsi-probe) remain available for scripting.\n\n" +
 			"Settings can live in config.yaml instead of flags (see 'advisor config-init'); " +
 			"anything passed on the command line still wins over the file.",
 		Version:       version,
@@ -72,35 +76,58 @@ func newRootCmd() *cobra.Command {
 		newServeCmd(),
 		newScoutCmd(),
 		newGSIInstallCmd(),
+		newGSIProbeCmd(),
+		newStateReplayCmd(),
+		newMacroLabelCmd(),
+		newMacroLabelAuditCmd(),
+		newMacroLabelReviewCmd(),
+		newDotaMapInstallCmd(),
+		newActionSpaceCmd(),
+		newMapRegionCmd(),
+		newRegionPathCmd(),
+		newLaneProjectCmd(),
 		newGridBakeCmd(),
 		newPairStatsCmd(),
 		newEvalCmd(),
+		newHoldoutCmd(),
+		newLogCmd(),
 	)
 	return root
 }
 
 // homeFlags are the root flags for the unified TUI home.
 type homeFlags struct {
-	bundlePath   string
-	dbPath       string
-	snapshotPath string
-	side         string
-	firstPick    string
-	useGSI       bool
-	gsiAddr      string
-	gsiToken     string
-	windowDays   int
-	minRankTier  int
-	maxRankTier  int
-	maxMatches   int
-	cmMatches    int
-	bulkGameMode int
-	token        string
-	useWeb       bool
-	webAddr      string
-	noOpen       bool
-	publicCM     int
-	auto         autoOpts
+	bundlePath         string
+	dbPath             string
+	snapshotPath       string
+	side               string
+	firstPick          string
+	useGSI             bool
+	gsiAddr            string
+	gsiToken           string
+	windowDays         int
+	minRankTier        int
+	maxRankTier        int
+	maxMatches         int
+	cmMatches          int
+	bulkGameMode       int
+	token              string
+	useTUI             bool
+	webAddr            string
+	openBrowser        bool
+	publicCM           int
+	logDecisions       bool
+	logKeepDays        int
+	logKeepDrafts      int
+	auto               autoOpts
+	alertLeads         alertLeadFlags
+	remoteToken        string
+	discordConfig      string
+	startDiscord       bool
+	alertsPath         string
+	debugState         bool
+	debugStateInterval time.Duration
+	debugStateFormat   string
 }
 
 func (h *homeFlags) bind(cmd *cobra.Command) {
@@ -111,8 +138,20 @@ func (h *homeFlags) bind(cmd *cobra.Command) {
 	f.StringVar(&h.side, "side", "radiant", "our side: radiant|dire")
 	f.StringVar(&h.firstPick, "first-pick", "radiant", "team that picks first: radiant|dire")
 	f.BoolVar(&h.useGSI, "gsi", false, "use Dota GSI for live draft state in the scan screen")
-	f.StringVar(&h.gsiAddr, "gsi-addr", "127.0.0.1:53000", "local GSI HTTP listen address")
+	f.StringVar(&h.gsiAddr, "gsi-addr", "127.0.0.1:54001", "local GSI HTTP listen address")
 	f.StringVar(&h.gsiToken, "gsi-token", "", "shared secret Dota echoes back; when set, events without it are rejected (RESTART Dota after changing)")
+	h.alertLeads.bind(f)
+	f.StringVar(&h.remoteToken, "remote-token", "",
+		"shared secret for /api/remote/* (Discord bot); empty disables remote control")
+	f.StringVar(&h.discordConfig, "discord-config", "",
+		"path to discord.yaml for the web editor (default: ./discord.yaml or next to the binary)")
+	f.BoolVar(&h.startDiscord, "discord", true,
+		"start advisor-discord as a separate process with the web UI (needs discord.yaml + advisor-discord.exe nearby)")
+	f.StringVar(&h.alertsPath, "alerts", "",
+		"path to alerts.yaml (default: ./alerts.yaml or next to the binary)")
+	f.BoolVar(&h.debugState, "debug-state", false, "print a live track.State snapshot about once a second (implies --gsi)")
+	f.DurationVar(&h.debugStateInterval, "debug-state-interval", time.Second, "how often --debug-state prints")
+	f.StringVar(&h.debugStateFormat, "debug-state-format", "text", "debug-state format: text|json")
 	f.IntVar(&h.windowDays, "window-days", 31, "recency window in days (T-N)")
 	f.IntVar(&h.minRankTier, "min-rank-tier", 40, "min avg_rank_tier (40=Archon,50=Legend,60=Ancient,70=Divine,80=Immortal)")
 	f.IntVar(&h.maxRankTier, "max-rank-tier", 85, "max avg_rank_tier")
@@ -120,21 +159,41 @@ func (h *homeFlags) bind(cmd *cobra.Command) {
 	f.IntVar(&h.cmMatches, "cm-matches", 500, "cap on real CM drafts (with bans) fetched per sync for the next-pick predictor (0 = skip)")
 	f.IntVar(&h.bulkGameMode, "bulk-game-mode", 22, "Dota game_mode for the bulk pool feeding synergy/counter+win-prob (22=Ranked All Pick, 2=Captains Mode, 0=all)")
 	f.StringVar(&h.token, "token", envDefault("STRATZ_TOKEN", ""), "STRATZ API token; enables real per-position meta (#9) on Train. Falls back to OpenDota roles when empty")
-	f.BoolVar(&h.useWeb, "web", false, "serve the browser UI instead of the terminal one (same features)")
-	f.StringVar(&h.webAddr, "web-addr", "127.0.0.1:53001", "local web UI listen address")
-	f.BoolVar(&h.noOpen, "no-open", false, "with --web, do not open a browser automatically")
+	f.BoolVar(&h.useTUI, "tui", false, "use the terminal UI instead of the browser (default is web)")
+	f.StringVar(&h.webAddr, "web-addr", "127.0.0.1:54000", "local web UI listen address")
+	f.BoolVar(&h.openBrowser, "open", false, "open the web UI in the default browser (off by default — URL is printed)")
 	f.IntVar(&h.publicCM, "public-cm", 0, "cap on PUBLIC Captains Mode drafts per manual Sync (0 = skip); needs --token")
+
+	// §6.1: the only measurement that can say whether the advice helps the person
+	// holding the draft clock, as opposed to whether the model ranks old drafts
+	// well. On by default because it has to accumulate to be worth anything, and
+	// it stays on this machine: local file, bounded retention, erasable per player.
+	f.BoolVar(&h.logDecisions, "decision-log", true,
+		"record what was recommended and what was chosen into decisions.jsonl next to --db (local only, never shared)")
+	f.IntVar(&h.logKeepDays, "decision-log-days", declog.DefaultRetention().MaxAgeDays,
+		"drop logged drafts older than this many days (0 = no age limit)")
+	f.IntVar(&h.logKeepDrafts, "decision-log-drafts", declog.DefaultRetention().MaxDrafts,
+		"keep at most this many logged drafts (0 = no count limit)")
 
 	// Background collection. The corpus takes days to fill and a few hundred drafts
 	// a day to keep current, which is not something to run by hand: this keeps the
 	// cache and the bundle current for as long as the app is open, and picks up
 	// where it left off after a restart (the watermarks live in the database).
+	//
+	// The per-pass caps are deliberately lopsided towards public CM. That is the
+	// only stream matching what the advisor is used for — Captains Mode at pub
+	// rank — and it is the scarce one (~3.5k cached against ~52k bulk). Bulk is
+	// all-pick with no bans and no draft order: it feeds final compositions and the
+	// synergy/counter matrices, and those matrices stop being empty at roughly 45k
+	// matches, which the cache already passed. Collecting more of it mostly grows a
+	// number in the log. Pro CM is real Captains Mode but a different population —
+	// coordinated teams where execution, not the draft, decides games.
 	f.BoolVar(&h.auto.enabled, "auto", true, "keep syncing (and retraining) in the background while the app is open")
-	f.IntVar(&h.auto.publicCM, "auto-public-cm", 250, "public CM drafts per background pass (0 = skip); short passes checkpoint often")
-	f.IntVar(&h.auto.maxMatches, "auto-max-matches", 500, "bulk matches per background pass")
-	f.IntVar(&h.auto.cmMatches, "auto-cm-matches", 100, "pro CM drafts per background pass")
+	f.IntVar(&h.auto.publicCM, "auto-public-cm", 400, "public CM drafts per background pass (0 = skip); short passes checkpoint often")
+	f.IntVar(&h.auto.maxMatches, "auto-max-matches", 100, "bulk matches per background pass (all-pick; keeps the matrices current, no longer the priority)")
+	f.IntVar(&h.auto.cmMatches, "auto-cm-matches", 50, "pro CM drafts per background pass")
 	f.DurationVar(&h.auto.trainEvery, "auto-train-every", 24*time.Hour, "minimum time between automatic retrains")
-	f.IntVar(&h.auto.trainMinNew, "auto-train-min-new", 500, "minimum new matches before an automatic retrain")
+	f.IntVar(&h.auto.trainMinNew, "auto-train-min-new", 500, "minimum new public CM drafts before an automatic retrain")
 	f.DurationVar(&h.auto.idle, "auto-idle", time.Minute, "pause between background passes that collected something")
 	f.DurationVar(&h.auto.maxIdle, "auto-max-idle", 30*time.Minute, "longest pause between background passes (reached when passes come back empty)")
 }
@@ -149,6 +208,15 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 	if err != nil {
 		return fmt.Errorf("--first-pick: %w", err)
 	}
+	// One log per run, shared by every rebuild of the draft config: two handles on
+	// the same file would mean two notions of "the draft in progress".
+	decisionLog, err := openDecisionLog(h.dbPath, h.logDecisions,
+		declog.Retention{MaxAgeDays: h.logKeepDays, MaxDrafts: h.logKeepDrafts})
+	if err != nil {
+		startup.Warnf("%v — continuing without it", err)
+	}
+	defer decisionLog.Close()
+
 	scanOpts := serveOpts{
 		bundlePath:   h.bundlePath,
 		dbPath:       h.dbPath,
@@ -157,6 +225,10 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		useGSI:       h.useGSI,
 		gsiAddr:      h.gsiAddr,
 		snapshotPath: h.snapshotPath,
+		log:          decisionLog,
+		alertLeads:   h.alertLeads.leads(),
+		alertWindows: h.alertLeads.windows(),
+		alertsPath:   h.alertsPath,
 	}
 
 	// Every long operation runs through the job queue, whichever front end asked
@@ -193,8 +265,71 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		ClearLayer3: func() (string, error) {
 			return opClearLayer3(h.snapshotPath)
 		},
+		ClearScout: func(ally bool) (string, error) {
+			return opClearScout(h.snapshotPath, ally)
+		},
 		SetItemRules: func(text string) (string, error) {
 			return opSetItemRules(text, h.snapshotPath, h.dbPath)
+		},
+		GetConfig: func() (config.View, error) {
+			explicit, _ := cmd.Root().PersistentFlags().GetString("config")
+			return config.BuildView(cmd.Root(), config.Find(explicit))
+		},
+		SaveConfig: func(req config.SaveRequest) (string, error) {
+			explicit, _ := cmd.Root().PersistentFlags().GetString("config")
+			path := config.Find(explicit)
+			if err := config.SaveView(cmd.Root(), path, req); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("сохранено в %s — перезапустите advisor, чтобы применить", path), nil
+		},
+		GetDiscordConfig: func() (discordbot.EditorView, error) {
+			return discordbot.BuildEditorView(discordbot.FindConfig(h.discordConfig))
+		},
+		SaveDiscordConfig: func(req discordbot.EditorSaveRequest) (string, error) {
+			path := discordbot.FindConfig(h.discordConfig)
+			if err := discordbot.SaveEditor(path, req); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("сохранено в %s — advisor-discord подхватит сам", path), nil
+		},
+		GetAlerts: func() (alerts.View, error) {
+			path := alerts.Find(h.alertsPath)
+			_, existed := os.Stat(path)
+			f, err := alerts.EnsureFile(path, h.alertLeads.leads(), h.alertLeads.windows())
+			if err != nil {
+				startup.Warnf("alerts.yaml: %v", err)
+			}
+			if os.IsNotExist(existed) {
+				seedTTSFromDiscord(f, h.discordConfig)
+				_ = alerts.Save(path, f)
+			}
+			return alerts.BuildView(path, f), nil
+		},
+		SaveAlerts: func(req alerts.SaveRequest) (string, *alerts.File, error) {
+			path := alerts.Find(h.alertsPath)
+			f := alerts.ApplySave(req)
+			if err := alerts.Save(path, f); err != nil {
+				return "", nil, err
+			}
+			return fmt.Sprintf("сохранено в %s — применяется сразу", path), f, nil
+		},
+		ListTTSCache: func() ([]discordbot.CacheEntry, error) {
+			return discordbot.ListCacheDir(ttsCacheDir(h.discordConfig))
+		},
+		DeleteTTSCache: func(key string) (string, error) {
+			dir := ttsCacheDir(h.discordConfig)
+			if err := discordbot.DeleteCacheKey(dir, key); err != nil {
+				return "", err
+			}
+			return "озвучка удалена", nil
+		},
+		ClearTTSCache: func() (string, error) {
+			dir := ttsCacheDir(h.discordConfig)
+			if err := discordbot.ClearCacheDir(dir); err != nil {
+				return "", err
+			}
+			return "кэш озвучки очищен", nil
 		},
 		CorpusMeta: func() (session.CorpusMetaView, error) {
 			return opCorpusMeta(h.bundlePath, h.dbPath)
@@ -206,7 +341,7 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 			return opAddPlayer(cmd.Context(), h.dbPath, ref, ally)
 		},
 		ForgetPlayer: func(accountID int64) (string, error) {
-			return opForgetPlayer(h.dbPath, accountID)
+			return opForgetPlayer(h.dbPath, accountID, decisionLog)
 		},
 		PinPlayer: func(accountID int64, pinned bool) (string, error) {
 			return opPinPlayer(h.dbPath, accountID, pinned)
@@ -230,7 +365,12 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		}
 	}
 
-	// One GSI server for the whole session; its events feed the scan screen.
+	if h.debugState {
+		h.useGSI = true
+	}
+
+	// One GSI server for the whole session; its events feed the scan screen,
+	// and the same receiver feeds the live state tracker via Pipe.
 	var gsiEvents <-chan *draft.Snapshot
 	if h.useGSI {
 		// Auto-install the GSI config so Dota actually POSTs to us. Without this file
@@ -246,6 +386,14 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		// The token is checked, not merely written: without it the endpoint accepted
 		// a POST from anything on the machine that could reach the port.
 		srv := gsi.NewServerWithToken(h.gsiAddr, h.gsiToken)
+		pipe := startLiveTracker(cmd.Context(), srv, h.dbPath, liveDebug{
+			Enabled:  h.debugState,
+			Interval: h.debugStateInterval,
+			Format:   h.debugStateFormat,
+		})
+		if pipe != nil {
+			defer pipe.Close()
+		}
 		go func() { _ = srv.Start(cmd.Context()) }()
 		gsiEvents = srv.Events()
 	}
@@ -284,12 +432,56 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		}
 	}
 
-	if h.useWeb {
-		// Same shell, different view: the browser UI gets every operation the
-		// terminal home offers.
-		return runWebShell(cmd.Context(), cmd, cfg, h.webAddr, h.noOpen)
+	if h.useTUI {
+		return tui.RunShell(cfg)
 	}
-	return tui.RunShell(cfg)
+	// Default: browser UI over the full shell (sync/train/scout + draft).
+	remote := strings.TrimSpace(h.remoteToken)
+	if remote == "" {
+		remote = discordbot.AdvisorRemoteToken(h.discordConfig)
+		if remote != "" {
+			startup.Infof("remote-control: using advisor-token from discord.yaml")
+		}
+	}
+	if h.startDiscord {
+		maybeStartDiscord(cmd.Context(), h.discordConfig)
+	}
+	return runWebShell(cmd.Context(), cmd, cfg, h.webAddr, h.openBrowser, remote)
+}
+
+func seedTTSFromDiscord(f *alerts.File, discordConfig string) {
+	if f == nil {
+		return
+	}
+	cfg, _, err := discordbot.LoadLoose(discordbot.FindConfig(discordConfig))
+	if err != nil || cfg == nil || cfg.NTTS.Templates == nil {
+		return
+	}
+	if t := cfg.NTTS.Templates["default"]; t != "" {
+		f.DefaultTTS = t
+	}
+	for k, tmpl := range cfg.NTTS.Templates {
+		if k == "default" || tmpl == "" {
+			continue
+		}
+		ks := f.Kinds[k]
+		if ks.TTS == "" {
+			ks.TTS = tmpl
+			f.Kinds[k] = ks
+		}
+	}
+}
+
+func ttsCacheDir(discordConfig string) string {
+	path := discordbot.FindConfig(discordConfig)
+	cfg, _, err := discordbot.LoadLoose(path)
+	if err != nil || cfg == nil {
+		return "tts-cache"
+	}
+	if cfg.NTTS.CacheDir != "" {
+		return cfg.NTTS.CacheDir
+	}
+	return "tts-cache"
 }
 
 func main() {

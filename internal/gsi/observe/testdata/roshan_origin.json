@@ -1,0 +1,5 @@
+{
+  "minimap": {
+    "o1": {"xpos": 0, "ypos": 0, "image": "minimap_creep", "team": 4, "unitname": "npc_dota_roshan", "visionrange": 1400}
+  }
+}

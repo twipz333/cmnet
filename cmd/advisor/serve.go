@@ -10,21 +10,30 @@ import (
 	"github.com/spf13/cobra"
 
 	"cmnet/internal/cache"
+	"cmnet/internal/declog"
 	"cmnet/internal/draft"
 	"cmnet/internal/gsi"
+	"cmnet/internal/objectives"
 	"cmnet/internal/tui"
 	"cmnet/internal/web"
 )
 
 func newServeCmd() *cobra.Command {
 	var (
-		bundlePath   string
-		dbPath       string
-		side         string
-		firstPick    string
-		useGSI       bool
-		gsiAddr      string
-		snapshotPath string
+		bundlePath         string
+		dbPath             string
+		side               string
+		firstPick          string
+		useGSI             bool
+		gsiAddr            string
+		snapshotPath       string
+		logDecisions       bool
+		logKeepDays        int
+		logKeepDrafts      int
+		alerts             alertLeadFlags
+		debugState         bool
+		debugStateInterval time.Duration
+		debugStateFormat   string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -33,9 +42,8 @@ func newServeCmd() *cobra.Command {
 			"recommendations and enemy predictions through a TUI. Draft state comes from " +
 			"manual input by default, or from Dota GSI with --gsi (run `advisor gsi-install` " +
 			"first).\n\n" +
-			"This is the draft screen alone: no sync/train/scout. For the browser UI — and " +
-			"for every operation the terminal home offers — run `advisor --web` with no " +
-			"subcommand.",
+			"This is the draft screen alone: no sync/train/scout. For the full shell " +
+			"(sync/train/scout + draft) run `advisor` for the web UI, or `advisor --tui` for the terminal.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ourTeam, err := parseTeam(side)
 			if err != nil {
@@ -46,13 +54,20 @@ func newServeCmd() *cobra.Command {
 				return fmt.Errorf("--first-pick: %w", err)
 			}
 			return runServe(cmd, serveOpts{
-				bundlePath:   bundlePath,
-				dbPath:       dbPath,
-				ourTeam:      ourTeam,
-				firstPick:    fp,
-				useGSI:       useGSI,
-				gsiAddr:      gsiAddr,
-				snapshotPath: snapshotPath,
+				bundlePath:         bundlePath,
+				dbPath:             dbPath,
+				ourTeam:            ourTeam,
+				firstPick:          fp,
+				useGSI:             useGSI,
+				gsiAddr:            gsiAddr,
+				snapshotPath:       snapshotPath,
+				logDecisions:       logDecisions,
+				logRetention:       declog.Retention{MaxAgeDays: logKeepDays, MaxDrafts: logKeepDrafts},
+				alertLeads:         alerts.leads(),
+				alertWindows:       alerts.windows(),
+				debugState:         debugState,
+				debugStateInterval: debugStateInterval,
+				debugStateFormat:   debugStateFormat,
 			})
 		},
 	}
@@ -61,8 +76,18 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&side, "side", "radiant", "our side: radiant|dire")
 	cmd.Flags().StringVar(&firstPick, "first-pick", "radiant", "team that picks first: radiant|dire")
 	cmd.Flags().BoolVar(&useGSI, "gsi", false, "read draft state from Dota GSI instead of manual input")
-	cmd.Flags().StringVar(&gsiAddr, "gsi-addr", "127.0.0.1:53000", "local GSI HTTP listen address")
+	cmd.Flags().StringVar(&gsiAddr, "gsi-addr", "127.0.0.1:54001", "local GSI HTTP listen address")
+	cmd.Flags().BoolVar(&debugState, "debug-state", false, "print a live track.State snapshot about once a second (implies --gsi)")
+	cmd.Flags().DurationVar(&debugStateInterval, "debug-state-interval", time.Second, "how often --debug-state prints")
+	cmd.Flags().StringVar(&debugStateFormat, "debug-state-format", "text", "debug-state format: text|json")
 	cmd.Flags().StringVar(&snapshotPath, "snapshot", "", "frozen opponent snapshot to blend enemy prediction (§9 layers 2-3)")
+	cmd.Flags().BoolVar(&logDecisions, "decision-log", true,
+		"record what was recommended and what was chosen into decisions.jsonl next to --db (local only, never shared, bounded retention)")
+	cmd.Flags().IntVar(&logKeepDays, "decision-log-days", declog.DefaultRetention().MaxAgeDays,
+		"drop logged drafts older than this many days (0 = no age limit)")
+	cmd.Flags().IntVar(&logKeepDrafts, "decision-log-drafts", declog.DefaultRetention().MaxDrafts,
+		"keep at most this many logged drafts (0 = no count limit)")
+	alerts.bind(cmd.Flags())
 	return cmd
 }
 
@@ -85,9 +110,29 @@ type serveOpts struct {
 	useGSI       bool
 	gsiAddr      string
 	snapshotPath string
+	// logDecisions turns the prospective decision log on (§6.1); logRetention bounds
+	// how much of it is kept.
+	logDecisions bool
+	logRetention declog.Retention
+	// log is that log, opened once per run and shared by every rebuild of this
+	// config. Nil disables logging.
+	log                *declog.Logger
+	alertLeads         objectives.Leads
+	alertWindows       objectives.Windows
+	alertsPath         string
+	debugState         bool
+	debugStateInterval time.Duration
+	debugStateFormat   string
 }
 
 func runServe(cmd *cobra.Command, o serveOpts) error {
+	log, err := openDecisionLog(o.dbPath, o.logDecisions, o.logRetention)
+	if err != nil {
+		cmd.PrintErrf("%v — continuing without it\n", err)
+	}
+	defer log.Close()
+	o.log = log
+
 	cfg, err := buildScanConfig(o)
 	if err != nil {
 		return err
@@ -96,8 +141,25 @@ func runServe(cmd *cobra.Command, o serveOpts) error {
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
+	if o.debugState {
+		o.useGSI = true
+	}
 	if o.useGSI {
+		if path, err := gsi.Install("", o.gsiAddr, ""); err != nil {
+			cmd.PrintErrf("could not auto-install the GSI config: %v\n", err)
+		} else {
+			cmd.PrintErrf("GSI config installed: %s (RESTART Dota if it was already running)\n", path)
+		}
 		srv := gsi.NewServer(o.gsiAddr)
+		pipe := startLiveTracker(ctx, srv, o.dbPath, liveDebug{
+			Enabled:  o.debugState,
+			Interval: o.debugStateInterval,
+			Format:   o.debugStateFormat,
+			Out:      cmd.ErrOrStderr(),
+		})
+		if pipe != nil {
+			defer pipe.Close()
+		}
 		go func() {
 			if err := srv.Start(ctx); err != nil {
 				cmd.PrintErrf("gsi server: %v\n", err)
@@ -113,13 +175,15 @@ func runServe(cmd *cobra.Command, o serveOpts) error {
 // runWebShell serves the browser front end over the full shell: the draft screen
 // plus sync/train/scout and snapshot editing, i.e. everything the terminal home
 // offers.
-func runWebShell(ctx context.Context, cmd *cobra.Command, shell tui.ShellConfig, addr string, noOpen bool) error {
-	return serveWeb(ctx, cmd, web.New(shell, addr), noOpen)
+func runWebShell(ctx context.Context, cmd *cobra.Command, shell tui.ShellConfig, addr string, openBrowser bool, remoteToken string) error {
+	srv := web.New(shell, addr)
+	srv.SetRemoteToken(remoteToken)
+	return serveWeb(ctx, cmd, srv, openBrowser)
 }
 
-// serveWeb runs srv, advertises its URL once it has bound, and optionally opens a
-// browser at it.
-func serveWeb(ctx context.Context, cmd *cobra.Command, srv *web.Server, noOpen bool) error {
+// serveWeb runs srv and prints its URL once bound. A browser is opened only when
+// openBrowser is true (opt-in via --open); restarts otherwise stack tabs.
+func serveWeb(ctx context.Context, cmd *cobra.Command, srv *web.Server, openBrowser bool) error {
 	// Listening happens inside Run; give it a moment to bind before advertising the
 	// URL, and only open a browser once it is actually up.
 	errc := make(chan error, 1)
@@ -132,18 +196,18 @@ func serveWeb(ctx context.Context, cmd *cobra.Command, srv *web.Server, noOpen b
 	}
 
 	url := "http://" + srv.Addr()
-	cmd.PrintErrf("web UI on %s (ctrl-c to stop)\n", url)
-	if !noOpen {
-		if err := openBrowser(url); err != nil {
+	cmd.PrintErrf("web UI: %s  (ctrl-c to stop)\n", url)
+	if openBrowser {
+		if err := openBrowserURL(url); err != nil {
 			cmd.PrintErrf("could not open a browser automatically: %v\n", err)
 		}
 	}
 	return <-errc
 }
 
-// openBrowser opens url in the user's default browser. Failure is not fatal — the
-// URL is printed either way.
-func openBrowser(url string) error {
+// openBrowserURL opens url in the user's default browser. Failure is not fatal —
+// the URL is printed either way.
+func openBrowserURL(url string) error {
 	switch runtime.GOOS {
 	case "windows":
 		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()

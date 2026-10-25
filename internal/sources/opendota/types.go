@@ -2,6 +2,8 @@ package opendota
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
@@ -239,6 +241,29 @@ func (c *Client) PersonaName(ctx context.Context, accountID int64) (string, erro
 	return sanitizeDisplayName(out.Profile.PersonaName), nil
 }
 
+// SearchHit is one row of GET /search?q=.
+type SearchHit struct {
+	AccountID   int64   `json:"account_id"`
+	PersonaName string  `json:"personaname"`
+	Similarity  float64 `json:"similarity"` // present on some payloads
+	SML         float64 `json:"sml"`         // OpenDota's current similarity field
+}
+
+// Search looks up players by persona / vanity name (GET /search?q=).
+// Used to resolve steamcommunity.com/id/<vanity> without scraping Dotabuff.
+func (c *Client) Search(ctx context.Context, query string) ([]SearchHit, error) {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil, fmt.Errorf("empty search query")
+	}
+	var out []SearchHit
+	path := "/search?q=" + url.QueryEscape(q)
+	if err := c.getJSON(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // maxDisplayName bounds a persona name so one absurdly long nickname cannot break
 // the layout of either front end.
 const maxDisplayName = 64
@@ -268,8 +293,20 @@ func sanitizeDisplayName(s string) string {
 
 // PlayerMatch is one row of GET /players/{id}/recentMatches.
 type PlayerMatch struct {
-	MatchID   int64 `json:"match_id"`
-	StartTime int64 `json:"start_time"`
+	MatchID    int64 `json:"match_id"`
+	StartTime  int64 `json:"start_time"`
+	HeroID     int   `json:"hero_id"`
+	PlayerSlot int   `json:"player_slot"` // <128 => radiant
+	Duration   int   `json:"duration"`
+	GameMode   int   `json:"game_mode"`
+	LobbyType  int   `json:"lobby_type"`
+	PartySize  int   `json:"party_size"`
+	Kills      int   `json:"kills"`
+	Deaths     int   `json:"deaths"`
+	Assists    int   `json:"assists"`
+	// RadiantWin is set once the match has an outcome; absent/zero while the
+	// game is still in progress on the API side.
+	RadiantWin bool `json:"radiant_win"`
 }
 
 // RecentMatches fetches a player's recent matches (GET /players/{id}/recentMatches).

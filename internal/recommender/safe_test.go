@@ -12,8 +12,13 @@ import (
 func safeDraft(t *testing.T) *draft.DraftState {
 	t.Helper()
 	d := draft.New(draft.Radiant)
-	// 4 bans (heroes outside the model set), then Radiant and Dire each pick one.
-	for _, id := range []int{901, 902, 903, 904, 1, 2} {
+	// The opening ban phase (heroes outside the model set), then Radiant and Dire
+	// each pick one (7.34+: F pick, S pick).
+	ids := []int{}
+	for i := 0; i < openingBans; i++ {
+		ids = append(ids, 901+i)
+	}
+	for _, id := range append(ids, 1, 2) {
 		if err := d.Apply(id); err != nil {
 			t.Fatalf("apply %d: %v", id, err)
 		}

@@ -1,0 +1,8 @@
+{
+  "map": {"game_time": 215, "clock_time": 0, "game_state": "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS"},
+  "events": [
+    {"game_time": 215, "event_type": "generic_event", "data": "{\"type\":\"CHAT_MESSAGE_SMOKE_ACTIVATED\",\"value\":0,\"playerid1\":9,\"playerid2\":-1,\"time\":-37.7666626}"},
+    {"game_time": 124, "event_type": "generic_event", "data": "{\"type\":\"CHAT_MESSAGE_ITEM_PURCHASE\",\"value\":43,\"playerid1\":9,\"playerid2\":-1,\"time\":-23.2333374}"},
+    {"game_time": 1102, "event_type": "generic_event", "data": "{\"type\":\"CHAT_MESSAGE_TOWER_KILL\",\"value\":2,\"playerid1\":6,\"playerid2\":-1,\"value2\":90,\"value3\":1,\"time\":849.266663}"}
+  ]
+}

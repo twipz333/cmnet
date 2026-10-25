@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"cmnet/internal/cache"
+	"cmnet/internal/config"
+	"cmnet/internal/discordbot"
 	"cmnet/internal/jobs"
 	"cmnet/internal/session"
 	"cmnet/internal/sources/ratelimit"
@@ -178,6 +180,7 @@ var phaseLabels = map[string]string{
 	"opendota":  "OpenDota",
 	"heroes":    "справочник героев",
 	"backfill":  "дозагрузка статы",
+	"rankfill":  "дозагрузка рангов",
 	"assets":    "картинки",
 	"coverage":  "покрытие",
 	"train":     "обучение",
@@ -230,6 +233,13 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 	mux.HandleFunc("/api/stats/item-rules", s.mutate(s.setItemRules))
 	mux.HandleFunc("/api/stats/remove-player", s.mutate(s.removePlayer))
 	mux.HandleFunc("/api/stats/clear-layer3", s.mutate(s.clearLayer3))
+	mux.HandleFunc("/api/stats/clear-scout", s.mutate(s.clearScout))
+
+	mux.HandleFunc("/api/config", s.handleConfig)
+	mux.HandleFunc("/api/config/save", s.mutate(s.saveConfig))
+	mux.HandleFunc("/api/discord-config", s.handleDiscordConfig)
+	mux.HandleFunc("/api/discord-config/save", s.handleDiscordConfigSave)
+	s.routeAlerts(mux)
 }
 
 // --- long operations --------------------------------------------------------
@@ -693,4 +703,72 @@ func (s *Server) clearLayer3(*http.Request) (string, error) {
 	}
 	_ = s.reloadSession()
 	return summary, nil
+}
+
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	if s.shell.GetConfig == nil {
+		http.Error(w, "config editor is not available in this build", http.StatusNotFound)
+		return
+	}
+	view, err := s.shell.GetConfig()
+	if err != nil {
+		writeJSON(w, http.StatusOK, struct {
+			Error string `json:"error"`
+		}{err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Config config.View `json:"config"`
+	}{Config: view})
+}
+
+func (s *Server) saveConfig(r *http.Request) (string, error) {
+	if s.shell.SaveConfig == nil {
+		return "", fmt.Errorf("config editor is not available in this build")
+	}
+	var req config.SaveRequest
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	return s.shell.SaveConfig(req)
+}
+
+func (s *Server) handleDiscordConfig(w http.ResponseWriter, r *http.Request) {
+	if s.shell.GetDiscordConfig == nil {
+		http.Error(w, "discord config editor is not available", http.StatusNotFound)
+		return
+	}
+	view, err := s.shell.GetDiscordConfig()
+	if err != nil {
+		writeJSON(w, http.StatusOK, struct {
+			Error string `json:"error"`
+		}{err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Config discordbot.EditorView `json:"config"`
+	}{Config: view})
+}
+
+func (s *Server) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.shell.SaveDiscordConfig == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "discord config editor is not available"})
+		return
+	}
+	var req discordbot.EditorSaveRequest
+	if err := decode(r, &req); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	msg, err := s.shell.SaveDiscordConfig(req)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	s.setStatus(msg)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": msg})
 }

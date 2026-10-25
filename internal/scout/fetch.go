@@ -13,6 +13,11 @@ type FetchOptions struct {
 	EventWindow      string // human label, e.g. "battlecup-2026-06-02"
 	EventSinceUnix   int64  // layer-3 cutoff ("today/event start"); 0 = unbounded
 	MaxEventMatches  int    // cap layer-3 matches fetched per entry
+	// MaxDiscovered caps how many teammates recovered from layer 3 get their own
+	// affinity fetched. Capped because each one is another API call made while the
+	// user waits between rounds, and because an event roster that shuffled can name
+	// more than four people. Negative disables discovery entirely.
+	MaxDiscovered int
 }
 
 // WithDefaults fills unset fields.
@@ -22,6 +27,9 @@ func (o FetchOptions) withDefaults() FetchOptions {
 	}
 	if o.MaxEventMatches == 0 {
 		o.MaxEventMatches = 5
+	}
+	if o.MaxDiscovered == 0 {
+		o.MaxDiscovered = 4 // one entry player plus four teammates is a full squad
 	}
 	return o
 }
@@ -50,9 +58,62 @@ func Fetch(ctx context.Context, src Source, players []ResolvedPlayer, opts Fetch
 
 	if entry, ok := firstResolved(players); ok {
 		progress(fmt.Sprintf("layer 3: recovering team drafts via account %d…", entry.AccountID))
-		snap.Layer3 = BuildLayer3(ctx, src, entry.AccountID, opts.EventWindow, opts.EventSinceUnix, opts.MaxEventMatches, progress)
+		l3 := BuildLayer3(ctx, src, entry.AccountID, opts.EventWindow, opts.EventSinceUnix, opts.MaxEventMatches, progress)
+
+		// Layer 3 also handed us the rest of the squad. Fetch their affinity too:
+		// without it the snapshot describes one opponent out of five and every
+		// per-player judgement downstream is drawn from a quarter of the team.
+		if discovered := discoveredPlayers(l3, players, opts.MaxDiscovered); len(discovered) > 0 {
+			progress(fmt.Sprintf("layer 2: %d teammate(s) recovered from the team's matches…", len(discovered)))
+			snap.Layer2 = appendPlayers(snap.Layer2, BuildLayer2(ctx, src, discovered, opts.WindowDays, progress))
+		}
+		// Publish layer 3 only when it actually carries event drafts. A drafts-less
+		// shell exists solely so discovery can run; blending code treats any non-nil
+		// Layer3 as "we have event evidence".
+		if l3 != nil && l3.DraftsObserved > 0 {
+			snap.Layer3 = l3
+		}
 	}
 	return snap, nil
+}
+
+// discoveredPlayers picks the teammates recovered by layer 3 that the user did not
+// already name, capped at max (negative disables discovery).
+func discoveredPlayers(l3 *Layer3, known []ResolvedPlayer, max int) []ResolvedPlayer {
+	if l3 == nil || max < 0 {
+		return nil
+	}
+	have := make(map[int64]bool, len(known))
+	for _, p := range known {
+		if p.AccountID > 0 {
+			have[p.AccountID] = true
+		}
+	}
+	var out []ResolvedPlayer
+	for _, id := range l3.TeamAccountIDs {
+		if have[id] || id == l3.EntryAccountID {
+			continue
+		}
+		out = append(out, ResolvedPlayer{AccountID: id, Resolved: true, Discovered: true})
+		if max > 0 && len(out) >= max {
+			break
+		}
+	}
+	return out
+}
+
+// appendPlayers concatenates two layer-2 blocks, keeping the order they were
+// built in (named players first, then discovered) so the snapshot hash is a
+// function of the data and not of when a lookup happened to return.
+func appendPlayers(dst, extra *Layer2) *Layer2 {
+	if extra == nil || len(extra.Players) == 0 {
+		return dst
+	}
+	if dst == nil {
+		return extra
+	}
+	dst.Players = append(dst.Players, extra.Players...)
+	return dst
 }
 
 func firstResolved(players []ResolvedPlayer) (ResolvedPlayer, bool) {
@@ -62,4 +123,37 @@ func firstResolved(players []ResolvedPlayer) (ResolvedPlayer, bool) {
 		}
 	}
 	return ResolvedPlayer{}, false
+}
+
+
+// ExpandWithTeammates fetches affinity for named players, then recovers co-players
+// from the first resolved account's recent matches and fetches those too. Used for
+// ally scout: naming one stack-mate should surface the rest of the five so
+// capability (§6.5) is not computed on a one-row roster.
+//
+// Event drafts are not published here — that is enemy layer 3. Only the teammate
+// account_ids from the same match records are reused.
+func ExpandWithTeammates(ctx context.Context, src Source, players []ResolvedPlayer, windowDays, maxDiscovered int, progress func(string)) *Layer2 {
+	if progress == nil {
+		progress = func(string) {}
+	}
+	if windowDays == 0 {
+		windowDays = 30
+	}
+	if maxDiscovered == 0 {
+		maxDiscovered = 4
+	}
+	out := BuildLayer2(ctx, src, players, windowDays, progress)
+	entry, ok := firstResolved(players)
+	if !ok || maxDiscovered < 0 {
+		return out
+	}
+	// Reuse BuildLayer3's match walk for teammate ids; discard drafts.
+	shell := BuildLayer3(ctx, src, entry.AccountID, "", 0, 5, progress)
+	discovered := discoveredPlayers(shell, players, maxDiscovered)
+	if len(discovered) == 0 {
+		return out
+	}
+	progress(fmt.Sprintf("allies: %d teammate(s) recovered from recent matches…", len(discovered)))
+	return appendPlayers(out, BuildLayer2(ctx, src, discovered, windowDays, progress))
 }

@@ -4,10 +4,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // CfgFileName is the GSI config file Dota loads from its gamestate_integration dir.
 const CfgFileName = "gamestate_integration_advisor.cfg"
+
+// ProductionData is the GSI data block requested by the live advisor. One config
+// covers both the draft UI and ObservationExtractor. Probe uses a separate file
+// (gamestate_integration_advisor_probe.cfg) with a wider discovery set.
+var ProductionData = []string{
+	"provider",
+	"map",
+	"player",
+	"hero",
+	"abilities",
+	"items",
+	"buildings",
+	"minimap",
+	"events",
+	"draft",
+}
 
 // candidateCfgDirs lists common Windows Steam locations for the Dota 2
 // gamestate_integration config directory.
@@ -31,8 +48,6 @@ func candidateCfgDirs() []string {
 // an error listing the locations searched.
 func DetectCfgDir() (string, error) {
 	for _, d := range candidateCfgDirs() {
-		// The gamestate_integration leaf may not exist yet; accept its parent (cfg)
-		// so we can create the leaf.
 		if dirExists(d) {
 			return d, nil
 		}
@@ -56,27 +71,27 @@ func ConfigContent(uri, token string) string {
 	if token != "" {
 		auth = fmt.Sprintf("    \"auth\"\n    {\n        \"token\" \"%s\"\n    }\n", token)
 	}
+	var data strings.Builder
+	for _, cat := range ProductionData {
+		fmt.Fprintf(&data, "        %-12s \"1\"\n", `"`+cat+`"`)
+	}
 	return fmt.Sprintf(`"Dota 2 Integration Configuration"
 {
     "uri"       "%s"
     "timeout"   "5.0"
     "buffer"    "0.1"
     "throttle"  "0.1"
-    "heartbeat" "30.0"
+    "heartbeat" "1.0"
 %s    "data"
     {
-        "provider" "1"
-        "map"      "1"
-        "player"   "1"
-        "hero"     "1"
-        "draft"    "1"
-    }
+%s    }
 }
-`, uri, auth)
+`, uri, auth, data.String())
 }
 
 // Install writes the GSI config into cfgDir (autodetected when empty) so Dota
-// POSTs draft state to the advisor at addr. It is idempotent. Returns the written
+// POSTs draft and in-game state to the advisor at addr. It overwrites an older
+// advisor.cfg in place (same filename) and is idempotent. Returns the written
 // path.
 func Install(cfgDir, addr, token string) (string, error) {
 	if cfgDir == "" {

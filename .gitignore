@@ -23,8 +23,11 @@ pairstats-cache/
 pairstats*.html
 pairstats*.png
 
-# downloaded hero/item/avatar images (re-fetchable, and not ours to redistribute)
-assets/
+# downloaded hero/item/avatar images (re-fetchable, and not ours to redistribute).
+# Anchored to the repo root: the bare "assets/" pattern also matched the Go
+# package internal/assets, which was therefore never committed and left every
+# clean checkout unbuildable (cmd/advisor and internal/web import it).
+/assets/
 
 # graphify knowledge graph output
 graphify-out/
@@ -37,3 +40,29 @@ graphify-out/
 # local config (may contain the STRATZ token)
 config.yaml
 config.yaml.bak
+
+holdout.json
+holdout.json.bak
+
+
+# Discord bot secrets + local TTS cache
+discord.yaml
+tts-cache/
+
+
+# GSI probe capture sessions (raw match dumps; can be large)
+data/gsi-probe/
+
+# Local Dota minimap cache + Valve extract tooling (do not commit assets)
+data/local/
+tools/Source2Viewer/
+tools/cli-windows-x64.zip
+tools/dota-map-extract/
+
+# local runtime state and backups (not source)
+backup/
+bin/
+*.bak
+decisions.jsonl
+alerts.yaml
+tmp-*

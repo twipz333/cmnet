@@ -15,6 +15,8 @@ type keyMap struct {
 	StepTeam   key.Binding
 	Matrices   key.Binding
 	AddEnemy   key.Binding
+	Reason     key.Binding
+	Outcome    key.Binding
 	Help       key.Binding
 	Quit       key.Binding
 }
@@ -65,6 +67,18 @@ func defaultKeys() keyMap {
 			key.WithKeys("a"),
 			key.WithHelp("a", "add enemy profile to scout"),
 		),
+		// §6.1: the reason a recommendation was refused is the one thing no amount of
+		// corpus mining produces, so it gets a first-class key rather than a menu.
+		Reason: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "why the last pick went against the advice"),
+		),
+		// The outcome closes the record out: without it a logged draft says what was
+		// advised and chosen but never how it went, which is half a record.
+		Outcome: key.NewBinding(
+			key.WithKeys("o"),
+			key.WithHelp("o", "record the result of this draft (w/l)"),
+		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "toggle help"),
@@ -88,6 +102,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.StepAction, k.StepTeam},
 		{k.Filter, k.Theme, k.Matrices},
 		{k.Side, k.FirstPick, k.AddEnemy},
+		{k.Reason, k.Outcome},
 		{k.Help, k.Quit},
 	}
 }

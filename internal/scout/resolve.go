@@ -24,8 +24,9 @@ var (
 )
 
 // ParseAccountID extracts a Dota account_id (SteamID32) from a raw id, a SteamID3,
-// a SteamID64, or a profile URL (OpenDota, STRATZ, Dotabuff, or a Steam community
-// profile). Parsing a URL string is not scraping — no request is made.
+// a SteamID64, or a profile URL (OpenDota, STRATZ, Dotabuff, or steamcommunity.com/profiles/…).
+// Vanity URLs (steamcommunity.com/id/<name>) have no numeric id — use ResolveAccountID.
+// Parsing a URL string is not scraping — no request is made.
 func ParseAccountID(input string) (int64, error) {
 	s := strings.TrimSpace(input)
 	if s == "" {

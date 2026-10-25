@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Behavior Audit Reviewer v0.1</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">Behavior Audit <span class="ver">v0.1</span></div>
+    <div class="progress" id="progress">0/0</div>
+    <div class="map-badge" id="map-badge" title="">Map: …</div>
+    <div class="badge">Player-visible GSI only</div>
+  </header>
+
+  <main id="app">
+    <section class="panel left" id="case-panel">
+      <div class="meta" id="meta"></div>
+      <div class="map-wrap">
+        <div id="map-fallback" class="map-fallback hidden">
+          ⚠ Current Dota minimap background unavailable — run: <code>advisor dota-map-install</code>
+        </div>
+        <div class="map-viewport" id="map-viewport">
+          <img id="minimap-bg" alt="Dota minimap" draggable="false" />
+          <div id="map-dim" class="map-dim"></div>
+          <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+        <div class="map-controls">
+          <label>Map opacity
+            <select id="map-opacity">
+              <option value="1">100%</option>
+              <option value="0.75">75%</option>
+              <option value="0.5">50%</option>
+              <option value="0">off</option>
+            </select>
+          </label>
+          <label class="chk"><input type="checkbox" id="map-calibrate" /> Map calibration</label>
+        </div>
+        <div class="timeline" id="timeline"></div>
+      </div>
+      <div class="definition" id="definition"></div>
+      <div class="evidence" id="evidence"></div>
+      <details class="details">
+        <summary>Показать детали</summary>
+        <pre id="details-pre"></pre>
+      </details>
+    </section>
+
+    <section class="panel actions" id="actions-panel">
+      <h2 id="question"></h2>
+      <div id="candidate-help" class="candidate-help"></div>
+      <div class="btns" id="primary-btns"></div>
+      <div class="btns secondary" id="secondary-btns"></div>
+      <div id="picker" class="picker hidden"></div>
+      <p class="hint">Клавиши: 1/2/3 · S=пропуск · ←/→ навигация</p>
+    </section>
+  </main>
+
+  <nav class="nav">
+    <button id="prev">← Пред</button>
+    <button id="next">След →</button>
+  </nav>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

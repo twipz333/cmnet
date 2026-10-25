@@ -16,17 +16,24 @@ let activeTab = 'draft';
 // already renders it, so a core change is never invisible in the browser.
 
 const PANELS = [
-  { key: 'recs', title: 'Рекомендации', render: renderRecs, empty: 'нет ходов' },
-  { key: 'enemyPred', title: 'Предикт врага', render: renderEnemyPred },
-  { key: 'poolAlert', title: 'Наш пул под угрозой', render: renderEnemyPred },
-  { key: 'safeToLet', title: 'Не бойся — пусть берут', render: renderSafeToLet },
-  { key: 'positionMeta', title: 'Мета по позициям', render: renderPositionMeta },
-  { key: 'itemAdvice', title: 'Советы по предметам', render: renderAdvice },
+  // recs rendered in #primary-action — keep skip so we do not duplicate.
+  { key: 'recs', skip: true },
+  { key: 'enemyPred', title: 'Предикт врага', render: renderEnemyPred, secondary: true },
+  // Which enemy action enemyPred is for; shown in that panel's title, not on its own.
+  { key: 'enemyStep', skip: true },
+  { key: 'poolAlert', title: 'Наш пул под угрозой', render: renderEnemyPred, secondary: true },
+  { key: 'safeToLet', title: 'Не бойся — пусть берут', render: renderSafeToLet, secondary: true },
+  { key: 'positionMeta', title: 'Мета по позициям', render: renderPositionMeta, secondary: true },
+  { key: 'itemAdvice', title: 'Советы по предметам', render: renderAdvice, secondary: true },
   // Rendered inside the board panel, not as a standalone panel.
   { key: 'strength', skip: true },
   { key: 'ourTurn', skip: true },
   { key: 'isPick', skip: true },
 ];
+
+const PICK_SLOTS = 5;
+const BAN_SLOTS = 7; // Captains Mode: 7 bans per team
+const STATS_HERO_SHOW = 8;
 
 function heroName(id) {
   return (state && state.names && state.names[String(id)]) || ('Hero ' + id);
@@ -80,20 +87,246 @@ function heroItem(rank, id, value, note, extra) {
   return row;
 }
 
+function canApplyHero() {
+  const m = state && state.meta;
+  return !!(m && m.draftReady && !m.gsiMode && state.step);
+}
+
+const ROLE_NAMES = { 1: 'керри', 2: 'мид', 3: 'офф', 4: 'софт', 5: 'хард' };
+
+function roleName(pos) {
+  return ROLE_NAMES[pos] || (pos ? ('поз. ' + pos) : '');
+}
+
+function recNote(r) {
+  let note = r.why || '';
+  if (r.player) note = (note ? note + ' · ' : '') + 'для ' + r.player;
+  if (r.role) note = (note ? note + ' · ' : '') + roleName(r.role);
+  return note;
+}
+
+let lastLineupKey = null;
+
+function lineupSelectFocused() {
+  const ae = document.activeElement;
+  if (!ae || ae.tagName !== 'SELECT') return false;
+  const host = $('lineup-panel');
+  return !!(host && host.contains(ae));
+}
+
+function renderLineup() {
+  const host = $('lineup-panel');
+  if (!host) return;
+  const lu = state && state.lineup;
+  if (!state || !state.meta || !state.meta.draftReady || !lu) {
+    host.hidden = true;
+    lastLineupKey = null;
+    return;
+  }
+  host.hidden = false;
+  // GSI pushes state ~4×/s for the clock. Rebuilding the selects every tick
+  // closes an open dropdown before the captain can pick — only rebuild when
+  // the lineup payload actually changed, and never while a select is focused.
+  const key = JSON.stringify(lu);
+  if (key === lastLineupKey) return;
+  if (lineupSelectFocused()) return;
+  lastLineupKey = key;
+  fillLineupSide($('lineup-our'), lu.our || [], lu.allies || [], 'our');
+  fillLineupSide($('lineup-enemy'), lu.enemy || [], lu.enemies || [], 'enemy');
+}
+
+function lineupHeroIds(slots) {
+  const seen = new Set();
+  const ids = [];
+  (slots || []).forEach((s) => {
+    if (s.heroId && !seen.has(s.heroId)) {
+      seen.add(s.heroId);
+      ids.push(s.heroId);
+    }
+  });
+  return ids;
+}
+
+function lineupSelectBlurFlush(sel) {
+  sel.addEventListener('blur', () => {
+    if (lastLineupKey !== JSON.stringify(state && state.lineup)) {
+      lastLineupKey = null;
+      renderLineup();
+    }
+  });
+}
+
+function fillLineupSide(box, slots, players, side) {
+  if (!box) return;
+  box.textContent = '';
+  const heroIds = lineupHeroIds(slots);
+  slots.forEach((slot) => {
+    const hasHero = !!slot.heroId;
+    const row = el('div', 'lineup-slot' + (hasHero ? ' has-hero' : '') + (slot.locked ? ' locked' : ''));
+
+    const pos = el('div', 'lineup-slot-pos');
+    pos.append(el('span', 'pos-num', String(slot.position)));
+    pos.append(el('span', 'pos-role', roleName(slot.position) || ''));
+    row.append(pos);
+
+    const heroBox = el('div', 'lineup-slot-hero' + (hasHero ? ' filled' : ''));
+    if (hasHero) {
+      const ic = heroIcon(slot.heroId);
+      if (ic) heroBox.append(ic);
+      else heroBox.textContent = '#' + slot.heroId;
+    } else {
+      heroBox.textContent = '—';
+    }
+    row.append(heroBox);
+
+    const body = el('div', 'lineup-slot-body');
+    const meta = el('div', 'lineup-slot-meta');
+    if (hasHero) {
+      meta.append(el('span', 'hero-label', heroName(slot.heroId)));
+    } else {
+      meta.append(el('span', 'hero-label empty', 'нет пика'));
+    }
+    if (side === 'enemy' && !slot.locked && (slot.accountId || hasHero)) {
+      meta.append(el('span', 'lineup-tag auto', 'авто'));
+    } else if (slot.locked) {
+      meta.append(el('span', 'lineup-tag manual', 'вручную'));
+    }
+    body.append(meta);
+
+    // Hero placement: move any picked hero onto this position (swap if needed).
+    const heroSel = document.createElement('select');
+    heroSel.className = 'lineup-hero-sel';
+    const heroEmpty = document.createElement('option');
+    heroEmpty.value = '';
+    heroEmpty.textContent = heroIds.length ? 'Герой…' : 'нет пиков';
+    heroEmpty.disabled = heroIds.length === 0;
+    heroSel.append(heroEmpty);
+    heroIds.forEach((hid) => {
+      const o = document.createElement('option');
+      o.value = String(hid);
+      o.textContent = heroName(hid);
+      if (slot.heroId && Number(slot.heroId) === Number(hid)) o.selected = true;
+      heroSel.append(o);
+    });
+    heroSel.disabled = heroIds.length === 0;
+    heroSel.onchange = () => {
+      const heroId = heroSel.value ? Number(heroSel.value) : 0;
+      if (!heroId || heroId === Number(slot.heroId || 0)) return;
+      post('/api/lineup', {
+        side,
+        position: slot.position,
+        heroId,
+        accountId: slot.accountId || 0,
+      });
+    };
+    lineupSelectBlurFlush(heroSel);
+    body.append(heroSel);
+
+    const sel = document.createElement('select');
+    sel.className = 'lineup-player-sel';
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = side === 'our' ? 'Игрок…' : 'Авто / игрок…';
+    sel.append(empty);
+    players.forEach((p) => {
+      const o = document.createElement('option');
+      o.value = String(p.accountId);
+      o.textContent = p.name || ('игрок ' + p.accountId);
+      if (slot.accountId && Number(slot.accountId) === Number(p.accountId)) o.selected = true;
+      sel.append(o);
+    });
+    sel.onchange = () => {
+      const accountId = sel.value ? Number(sel.value) : 0;
+      if (!accountId) {
+        post('/api/lineup', { side, position: slot.position, clear: true });
+        return;
+      }
+      post('/api/lineup', {
+        side,
+        position: slot.position,
+        accountId,
+        heroId: slot.heroId || 0,
+      });
+    };
+    lineupSelectBlurFlush(sel);
+    body.append(sel);
+    row.append(body);
+    box.append(row);
+  });
+}
+
+
 function renderRecs(recs) {
   const box = el('div', 'items');
-  recs.forEach((r, i) => box.append(heroItem(i + 1, r.heroId, r.score.toFixed(4), r.why)));
+  recs.forEach((r, i) => {
+    box.append(heroItem(i + 1, r.heroId, r.score.toFixed(4), recNote(r)));
+  });
   return box;
 }
 
-// dangerNote describes what a hero would cost us, and only when it is big enough to
-// matter — a tag on every row is noise, not information. Both values come from the
-// core; this only decides whether to show them.
+// Primary action strip: top recommendations as large clickable cards.
+function renderPrimaryAction() {
+  const host = $('primary-action');
+  if (!host) return;
+  host.textContent = '';
+  if (!state || !state.meta.draftReady) {
+    host.hidden = true;
+    return;
+  }
+  const recs = (state.result && state.result.recs) || [];
+  if (!recs.length) {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  const step = state.step;
+  const actionLabel = step
+    ? ((step.isOurs ? 'Сейчас: ' : 'Пока ход врага — на будущее: ')
+      + (step.action === 'Pick' || step.action === 'pick' ? 'ПИК' : 'БАН'))
+    : 'Рекомендации';
+  host.append(el('h2', null, actionLabel));
+  if (canApplyHero()) {
+    host.append(el('p', 'why', 'Клик по карточке — сделать этот ход. Клик по портрету в списках ниже — матчапы.'));
+  } else if (state.meta.gsiMode) {
+    host.append(el('p', 'why', 'GSI: доска только для чтения. Клик открывает матчапы.'));
+  }
+
+  const grid = el('div', 'rec-grid');
+  recs.slice(0, 5).forEach((r, i) => {
+    const card = el('button', 'rec-card' + (i === 0 ? ' rec-top' : ''));
+    card.type = 'button';
+    const head = el('div', 'rec-card-head');
+    head.append(el('span', 'rank', String(i + 1)));
+    head.append(heroIcon(r.heroId));
+    head.append(el('b', null, heroName(r.heroId)));
+    card.append(head);
+    const note = recNote(r);
+    if (note) card.append(el('div', 'why', note));
+    card.append(el('div', 'val', r.score.toFixed(4)));
+    card.onclick = () => {
+      if (canApplyHero()) apply(r.heroId);
+      else openMatchups(r.heroId);
+    };
+    grid.append(card);
+  });
+  host.append(grid);
+}
+
 function dangerNote(e) {
   if (typeof e.danger !== 'number') return null;
   if (e.danger >= 0.005) return 'опасен ' + e.danger.toFixed(2);
   if (e.danger <= -0.005) return 'нам на руку ' + e.danger.toFixed(2);
   return null;
+}
+
+// panelTitle names the enemy panel after the action it predicts: on our turn it
+// is the enemy's NEXT step, which may be a ban or a pick.
+function panelTitle(panel) {
+  const st = state.result && state.result.enemyStep;
+  if (panel.key === 'enemyPred' && st) {
+    return panel.title + ' · следующий ' + (st.isPick ? 'пик' : 'бан');
+  }
+  return panel.title;
 }
 
 function renderEnemyPred(list) {
@@ -104,11 +337,6 @@ function renderEnemyPred(list) {
   return box;
 }
 
-// renderSafeToLet shows the "don't fear" list with the full decomposition on every
-// row, unlike the prediction panel: this list exists to justify conceding a hero,
-// and the numbers ARE the justification. vs-us = counter lift against our picks,
-// with-them = synergy with the enemy draft, cost = the two combined (the same
-// quantity the ban ranking sorts by).
 function renderSafeToLet(list) {
   const box = el('div', 'items');
   list.forEach((e, i) => {
@@ -142,8 +370,6 @@ function renderAdvice(lines) {
   return ul;
 }
 
-// renderUnknown is the fallback for a Result field with no registered renderer:
-// core work shows up in the browser immediately, just unstyled.
 function renderUnknown(value) {
   return el('pre', 'raw', JSON.stringify(value, null, 2));
 }
@@ -159,18 +385,36 @@ function renderPanels() {
   const registered = new Set(PANELS.map((p) => p.key));
 
   const entries = PANELS.filter((p) => !p.skip).map((p) => [p, state.result[p.key]]);
-  // Anything the core added that this file has not learned about yet.
   Object.keys(state.result).forEach((k) => {
     if (!registered.has(k)) entries.push([{ key: k, title: k, render: renderUnknown }, state.result[k]]);
   });
 
+  const primary = [];
+  const secondary = [];
   entries.forEach(([panel, value]) => {
     if (isEmpty(value) && !panel.empty) return;
+    (panel.secondary ? secondary : primary).push([panel, value]);
+  });
+
+  primary.forEach(([panel, value]) => {
     const box = el('section', 'panel');
-    box.append(el('h2', null, panel.title));
+    box.append(el('h2', null, panelTitle(panel)));
     box.append(isEmpty(value) ? el('div', 'why', panel.empty) : panel.render(value));
     host.append(box);
   });
+
+  if (secondary.length) {
+    const wrap = el('details', 'secondary-panels');
+    wrap.open = false;
+    wrap.append(el('summary', null, 'Дополнительно (' + secondary.length + ')'));
+    secondary.forEach(([panel, value]) => {
+      const box = el('section', 'panel');
+      box.append(el('h2', null, panelTitle(panel)));
+      box.append(isEmpty(value) ? el('div', 'why', panel.empty) : panel.render(value));
+      wrap.append(box);
+    });
+    host.append(wrap);
+  }
 
   if (state.alerts && state.alerts.length) {
     const box = el('section', 'panel');
@@ -201,34 +445,93 @@ function clockMMSS(sec) {
 
 // --- board ------------------------------------------------------------------
 
-function sideRow(side, cls, picks, bans) {
+function slotChip(id, isBan, active) {
+  const chip = el('span', 'slot' + (isBan ? ' ban' : ' pick') + (id ? ' filled' : ' empty') + (active ? ' next' : ''));
+  if (id) {
+    chip.append(heroIcon(id));
+    chip.append(el('span', 'slot-name', heroName(id)));
+    chip.onclick = () => openMatchups(id);
+    chip.title = heroName(id);
+  } else {
+    chip.append(el('span', 'slot-ph', isBan ? 'бан' : 'пик'));
+  }
+  return chip;
+}
+
+function sideSlots(side, cls, picks, bans, nextKind, nextOursSide) {
   const wrap = el('div', 'board-side ' + cls);
-  const line = (label, ids, isBan) => {
-    const row = el('div');
-    row.append(el('span', 'label', label));
-    const box = el('span', 'board-heroes');
-    ids.forEach((id) => {
-      const chip = el('span', 'chip' + (isBan ? ' ban' : '') + ' name');
-      chip.append(heroIcon(id));
-      chip.append(document.createTextNode(heroName(id)));
-      chip.onclick = () => openMatchups(id);
-      box.append(chip);
-    });
-    if (!ids.length) box.append(el('span', 'why', '—'));
-    row.append(box);
-    return row;
-  };
-  wrap.append(line(side + ' picks', picks, false));
-  wrap.append(line('bans', bans, true));
+  const ours = state.meta && state.meta.ourTeam === side;
+  const title = el('div', 'board-side-title');
+  title.append(el('span', 'side-name', side + (ours ? ' (мы)' : '')));
+  wrap.append(title);
+
+  const pickRow = el('div', 'slot-row');
+  pickRow.append(el('span', 'label', 'Пики'));
+  const pickBox = el('span', 'board-heroes');
+  for (let i = 0; i < PICK_SLOTS; i++) {
+    const id = picks[i] || 0;
+    const active = nextOursSide === side && nextKind === 'pick' && !id && i === picks.length;
+    pickBox.append(slotChip(id, false, active));
+  }
+  pickRow.append(pickBox);
+  wrap.append(pickRow);
+
+  const banRow = el('div', 'slot-row');
+  banRow.append(el('span', 'label', 'Баны'));
+  const banBox = el('span', 'board-heroes');
+  for (let i = 0; i < BAN_SLOTS; i++) {
+    const id = bans[i] || 0;
+    const active = nextOursSide === side && nextKind === 'ban' && !id && i === bans.length;
+    banBox.append(slotChip(id, true, active));
+  }
+  banRow.append(banBox);
+  wrap.append(banRow);
   return wrap;
+}
+
+function nextSlotHint() {
+  if (!state.step || !state.step.isOurs) return { kind: '', side: '' };
+  const act = String(state.step.action || '').toLowerCase();
+  const kind = act.indexOf('pick') >= 0 ? 'pick' : 'ban';
+  // Only highlight the next empty slot on OUR turn.
+  return { kind: kind, side: state.step.team || '' };
+}
+
+function renderPhaseBanner() {
+  const host = $('phase-banner');
+  if (!host) return;
+  host.textContent = '';
+  if (!state || !state.meta.draftReady) {
+    host.hidden = true;
+    return;
+  }
+  if (!state.step) {
+    host.hidden = false;
+    host.className = 'phase-banner done';
+    host.append(el('div', 'phase-main', 'Драфт завершён'));
+    return;
+  }
+  host.hidden = false;
+  const ours = state.step.isOurs;
+  const act = String(state.step.action || '');
+  const isPick = act.toLowerCase().indexOf('pick') >= 0;
+  host.className = 'phase-banner'
+    + (ours ? ' ours' : ' theirs')
+    + (isPick ? ' is-pick' : ' is-ban');
+  const verb = isPick ? 'ПИК' : 'БАН';
+  const main = ours ? ('НАШ ' + verb) : ('ХОД ВРАГА · ' + verb);
+  host.append(el('div', 'phase-main', main));
+  host.append(el('div', 'phase-sub',
+    (state.step.team || '') + (ours ? ' — ваш ход' : ' — ждём соперника')));
 }
 
 function renderBoard() {
   const host = $('board');
   host.textContent = '';
   const b = state.board;
-  host.append(sideRow('Radiant', 'radiant', b.radiantPicks, b.radiantBans));
-  host.append(sideRow('Dire', 'dire', b.direPicks, b.direBans));
+  const hint = nextSlotHint();
+  host.append(sideSlots('Radiant', 'radiant', b.radiantPicks || [], b.radiantBans || [], hint.kind, hint.side));
+  host.append(sideSlots('Dire', 'dire', b.direPicks || [], b.direBans || [], hint.kind, hint.side));
 
   const s = state.result.strength;
   if (s) {
@@ -314,6 +617,8 @@ function renderHeader() {
     data: m.canSync || m.canTrain,
     scout: m.canScout || m.canScoutAllies,
     stats: m.canStats,
+    config: m.canConfig,
+    alerts: m.canAlerts !== false,
   };
   document.querySelectorAll('#tabs .tab').forEach((t) => {
     t.disabled = !tabAvailable[t.dataset.tab];
@@ -404,6 +709,9 @@ const STATE_LABEL = {
 // selectedJob is the job whose log is shown. null follows whatever is running,
 // which is what a user watching a sync expects; clicking a row pins it instead.
 let selectedJob = null;
+// Banner starts collapsed; expands while something runs (user can toggle).
+let opsCollapsed = true;
+let opsUserToggled = false;
 let logSeq = 0;
 let logLines = [];
 let logPending = false;
@@ -460,26 +768,39 @@ function jobRow(j) {
   li.dataset.jobId = String(j.id);
 
   li.append(el('span', 'job-state', STATE_LABEL[j.state] || j.state));
-  li.append(el('span', 'job-kind', KIND_LABEL[j.kind] || j.kind));
+
+  const kindRow = el('span', 'job-kind-row');
+  kindRow.append(el('span', 'job-kind', KIND_LABEL[j.kind] || j.kind));
+  if (j.phase) kindRow.append(el('span', 'job-phase', j.phase));
+  li.append(kindRow);
+
   if (j.state === 'running') {
-    // Same clock as the headline, so the two cannot disagree.
-    const t = el('span', 'job-time', fmtElapsed(runningFor(j)));
-    t.dataset.jobTime = String(j.id);
-    li.append(t);
+    const tm = el('span', 'job-time', fmtElapsed(runningFor(j)));
+    tm.dataset.jobTime = String(j.id);
+    li.append(tm);
+  } else {
+    li.append(el('span', 'job-time', ''));
   }
-  // The phase says WHAT the job is doing right now — "which of the five things a
-  // sync does am I looking at" was not answerable from a kind alone.
-  if (j.phase) li.append(el('span', 'job-phase', j.phase));
+
   const tail = j.error || j.result || j.lastLine || '';
-  if (tail) li.append(el('span', j.error ? 'job-tail off' : 'job-tail', tail));
-  if (j.attempts > 1) li.append(el('span', 'job-tail', 'попытка ' + j.attempts));
+  let tailText = tail;
+  if (j.attempts > 1) {
+    tailText = (tailText ? tailText + ' · ' : '') + 'попытка ' + j.attempts;
+  }
+  if (tailText) li.append(el('span', j.error ? 'job-tail off' : 'job-tail', tailText));
 
   li.addEventListener('click', () => {
-    // Clicking the pinned row unpins it, so the panel goes back to following the
-    // running job instead of being stuck on a finished one.
     selectedJob = selectedJob === j.id ? null : j.id;
+    // Opening a job expands the panel so the log is visible.
+    if (selectedJob !== null) {
+      opsCollapsed = false;
+      opsUserToggled = true;
+      applyOpsCollapsed();
+    }
     logSeq = 0;
     logLines = [];
+    logPending = false; // allow a fresh fetch after a previous in-flight request
+    renderJobLog();
     loadJobLog();
     renderOps();
   });
@@ -494,6 +815,7 @@ const KIND_LABEL = {
   'scout': 'разведка врагов',
   'scout-allies': 'разведка союзников',
   'backfill': 'дозагрузка статы',
+  'rankfill': 'дозагрузка рангов',
   'assets': 'картинки',
 };
 
@@ -524,27 +846,44 @@ function followedJob() {
 // would be the heaviest thing the page does.
 function loadJobLog() {
   const job = followedJob();
-  if (!job || logPending) return;
+  if (!job) {
+    logLines = [];
+    logSeq = 0;
+    renderJobLog();
+    return;
+  }
+  if (logPending) return;
+  const jobId = job.id;
+  const after = logSeq;
   logPending = true;
-  fetch('/api/jobs/log?id=' + job.id + '&after=' + logSeq)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((data) => {
+  fetch('/api/jobs/log?id=' + jobId + '&after=' + after)
+    .then((r) => r.json().then((data) => ({ ok: r.ok, data })).catch(() => ({ ok: false, data: null })))
+    .then(({ ok, data }) => {
       logPending = false;
-      if (!data || !data.lines) return;
-      for (const l of data.lines) {
-        logLines.push(l);
-        logSeq = l.seq;
+      // Ignore stale responses after the user pinned another job.
+      const current = followedJob();
+      if (!current || current.id !== jobId) return;
+      if (!ok || !data) {
+        renderJobLog();
+        return;
       }
-      // Bounded in the page, unbounded in the database: scrolling back further is a
-      // request away, but the DOM stays small.
+      const lines = Array.isArray(data.lines) ? data.lines : [];
+      for (const l of lines) {
+        logLines.push(l);
+        if (l.seq > logSeq) logSeq = l.seq;
+      }
       if (logLines.length > 600) logLines = logLines.slice(-600);
       renderJobLog();
     })
-    .catch(() => { logPending = false; });
+    .catch(() => {
+      logPending = false;
+      renderJobLog();
+    });
 }
 
 function renderJobLog() {
   const box = $('op-log');
+  if (!box) return;
   const level = $('job-level') ? $('job-level').value : '';
   const keep = (l) => {
     if (level === 'warn') return l.level === 'warn' || l.level === 'error';
@@ -554,15 +893,73 @@ function renderJobLog() {
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   box.textContent = '';
   let lastPhase = null;
+  let shown = 0;
   for (const l of logLines) {
     if (!keep(l)) continue;
+    const text = (l && l.text != null) ? String(l.text) : '';
+    if (!text && !(l && l.phase)) continue;
+    shown++;
     if (l.phase && l.phase !== lastPhase) {
       box.append(el('div', 'log-phase', '── ' + l.phase));
       lastPhase = l.phase;
     }
-    box.append(el('div', 'log-line log-' + (l.level || 'info'), l.text));
+    if (text) box.append(el('div', 'log-line log-' + (l.level || 'info'), text));
+  }
+  const followed = followedJob();
+  if (!shown) {
+    box.textContent = followed
+      ? ('Нет строк лога для «' + (KIND_LABEL[followed.kind] || followed.kind) + '».')
+      : 'Выберите задачу слева — здесь появится её лог.';
   }
   if (atBottom) box.scrollTop = box.scrollHeight;
+
+  const peek = $('op-peek');
+  if (peek) {
+    const tail = logLines.filter(keep).map((l) => l && l.text).filter(Boolean).slice(-3);
+    peek.textContent = tail.length
+      ? tail.join(' · ')
+      : (followed ? 'Лог пуст' : 'Лог задачи появится здесь.');
+  }
+}
+
+function applyOpsCollapsed() {
+  const banner = $('op-banner');
+  if (!banner) return;
+  banner.classList.toggle('collapsed', opsCollapsed);
+  const btn = $('op-toggle');
+  if (btn) {
+    btn.textContent = opsCollapsed ? '▸' : '▾';
+    btn.title = opsCollapsed ? 'Развернуть задачи и лог' : 'Свернуть';
+  }
+}
+
+function renderOpsPills(active) {
+  const host = $('op-pills');
+  if (!host) return;
+  host.textContent = '';
+  const running = active.filter((j) => j.state === 'running');
+  const pending = active.filter((j) => j.state === 'pending');
+  const failed = active.filter((j) => j.state === 'failed');
+  const add = (j, cls) => {
+    const pill = el('span', 'op-pill ' + cls);
+    pill.append(el('span', 'pill-kind', KIND_LABEL[j.kind] || j.kind));
+    let meta = '';
+    if (j.state === 'running') {
+      meta = (j.phase ? j.phase + ' · ' : '') + fmtElapsed(runningFor(j));
+    } else if (j.state === 'pending') {
+      meta = 'ждёт';
+    } else if (j.error) {
+      meta = j.error;
+    }
+    if (meta) pill.append(el('span', 'pill-meta', meta));
+    host.append(pill);
+  };
+  running.forEach((j) => add(j, 'running'));
+  pending.slice(0, 3).forEach((j) => add(j, 'pending'));
+  failed.forEach((j) => add(j, 'failed'));
+  if (pending.length > 3) {
+    host.append(el('span', 'op-pill pending', '+' + (pending.length - 3) + ' в очереди'));
+  }
 }
 
 function renderOps() {
@@ -572,30 +969,71 @@ function renderOps() {
   const banner = $('op-banner');
   banner.hidden = !active.length && !recent.length;
 
-  // The ticker is the only thing started here. The clocks themselves are set in
-  // render(), so repainting after a click cannot disturb them.
-  const running = active.find((j) => j.state === 'running');
-  if (running) {
+  const running = active.filter((j) => j.state === 'running');
+  const hasFailed = active.some((j) => j.state === 'failed') || recent.some((j) => j.state === 'failed');
+  banner.classList.toggle('has-running', running.length > 0);
+  banner.classList.toggle('has-failed', hasFailed && !running.length);
+
+  // When nothing is queued, forget the manual toggle so the next run auto-expands.
+  if (!active.length) opsUserToggled = false;
+
+  // Auto-expand while work runs, unless the user explicitly collapsed it.
+  if (!opsUserToggled) {
+    opsCollapsed = running.length === 0;
+  }
+  applyOpsCollapsed();
+
+  if (running.length) {
     if (opTicker === null) opTicker = setInterval(tickBanner, 1000);
   } else if (opTicker !== null) {
     clearInterval(opTicker);
     opTicker = null;
   }
   renderOpHeading();
+  renderOpsPills(active);
 
-  const list = $('job-list');
-  list.textContent = '';
-  for (const j of active) list.append(jobRow(j));
-  for (const j of recent.slice(0, 6)) list.append(jobRow(j));
+  const listActive = $('job-list-active');
+  const listRecent = $('job-list-recent');
+  const labActive = $('op-active-label');
+  const labRecent = $('op-recent-label');
+  if (listActive) {
+    listActive.textContent = '';
+    active.forEach((j) => listActive.append(jobRow(j)));
+  }
+  if (labActive) labActive.hidden = !active.length;
 
-  // A pinned job that has been trimmed away would leave the panel following
-  // nothing at all.
+  // Deduplicate consecutive identical "готово" noise (e.g. assets ×3).
+  const shownRecent = [];
+  for (const j of recent) {
+    const prev = shownRecent[shownRecent.length - 1];
+    if (prev && prev.kind === j.kind && prev.state === j.state && j.state === 'done'
+        && (prev.result || '') === (j.result || '')) {
+      continue;
+    }
+    shownRecent.push(j);
+    if (shownRecent.length >= 4) break;
+  }
+  if (listRecent) {
+    listRecent.textContent = '';
+    shownRecent.forEach((j) => listRecent.append(jobRow(j)));
+  }
+  if (labRecent) labRecent.hidden = !shownRecent.length;
+
   if (selectedJob && !active.concat(recent).some((j) => j.id === selectedJob)) {
     selectedJob = null;
     logSeq = 0;
     logLines = [];
   }
-  loadJobLog();
+
+  const target = $('op-log-target');
+  const followed = followedJob();
+  if (target) {
+    target.textContent = followed
+      ? ('— ' + (KIND_LABEL[followed.kind] || followed.kind))
+      : '';
+  }
+
+  if (followed) loadJobLog();
 
   const res = $('op-result');
   const last = recent[0];
@@ -603,15 +1041,21 @@ function renderOps() {
     res.textContent = last ? (last.error || last.result || '—') : '—';
     res.className = last && last.error ? 'off' : 'why';
   }
-  banner.querySelector('[data-action="ops/cancel"]').disabled = !active.length;
+  const cancel = banner.querySelector('[data-action="ops/cancel"]');
+  if (cancel) cancel.disabled = !active.length;
 }
 
 function renderStatus() {
+  syncTabVisibility();
   const bar = $('statusbar');
   bar.textContent = '';
   const m = state.meta;
   bar.append(el('span', null, 'bundle ' + (m.bundleVersion || '—').slice(0, 12)));
-  bar.append(el('span', null, 'patch ' + (m.patchTag || '—')));
+  if (m.patchTag) {
+    bar.append(el('span', null, 'patch ' + m.patchTag));
+  } else {
+    bar.append(el('span', 'off', 'patch — (обучи модель — тег ставится при train)'));
+  }
   if (m.draftReady) {
     if (m.gsiMode) {
       bar.append(el('span', m.gsiSeen ? 'ok' : 'off', m.gsiSeen ? 'GSI: подключено' : 'GSI: ждём событие'));
@@ -677,58 +1121,360 @@ async function loadStats() {
   renderStats();
 }
 
+function sortHeroesByGames(heroes) {
+  return (heroes || []).slice().sort((a, b) => {
+    const ga = a.games || 0, gb = b.games || 0;
+    if (gb !== ga) return gb - ga;
+    return (a.id || 0) - (b.id || 0);
+  });
+}
+
+function playerCard(p, ally) {
+  const card = el('div', 'player-card' + (p.resolved ? '' : ' unresolved'));
+  const head = el('div', 'player-card-head');
+  head.append(el('b', 'player-name', p.nickname || ('account ' + p.accountId)));
+  if (!p.resolved) {
+    head.append(el('span', 'off', 'не резолвится'));
+  }
+  if (p.smurf && p.smurf.label) {
+    const badge = el('span', 'smurf-badge smurf-' + (p.smurf.level || 'low'), p.smurf.label);
+    if (p.smurf.reasons && p.smurf.reasons.length) {
+      badge.title = p.smurf.reasons.join('\n');
+    }
+    head.append(badge);
+  }
+  const del = el('button', 'danger small', 'удалить');
+  del.onclick = (ev) => {
+    ev.stopPropagation();
+    post('/api/stats/remove-player', { accountId: p.accountId, ally }).then(loadStats);
+  };
+  head.append(del);
+  card.append(head);
+
+  if (!p.resolved) {
+    card.append(el('div', 'why', 'Нет публичных данных по этому аккаунту.'));
+    return card;
+  }
+
+  const heroes = sortHeroesByGames(p.topHeroes);
+  if (!heroes.length) {
+    card.append(el('div', 'why', '(нет данных за окно скаута)'));
+    return card;
+  }
+
+  const grid = el('div', 'hero-stat-grid');
+  const shown = heroes.slice(0, STATS_HERO_SHOW);
+  shown.forEach((h) => {
+    const cell = el('div', 'hero-stat');
+    cell.append(heroIcon(h.id));
+    const meta = el('div', 'hero-stat-meta');
+    meta.append(el('div', 'hero-stat-name', h.name || heroName(h.id)));
+    const wr = ((h.winRate || 0) * 100).toFixed(0) + '%';
+    let line = (h.games || 0) + ' игр · ' + wr + ' WR';
+    if (typeof h.aff === 'number' && h.aff > 0) {
+      line += ' · aff ' + h.aff.toFixed(2);
+    }
+    meta.append(el('div', 'why', line));
+    cell.append(meta);
+    cell.onclick = () => openMatchups(h.id);
+    grid.append(cell);
+  });
+  card.append(grid);
+  if (heroes.length > STATS_HERO_SHOW) {
+    card.append(el('div', 'why', '+' + (heroes.length - STATS_HERO_SHOW) + ' героев в пуле'));
+  }
+  return card;
+}
+
 function playerRows(players, ally) {
-  const box = el('div', 'items');
+  const box = el('div', 'player-cards');
   if (!players || !players.length) {
     box.append(el('div', 'why', '(нет)'));
     return box;
   }
-  players.forEach((p) => {
-    const row = el('div', 'item player');
-    const name = p.nickname || ('account ' + p.accountId);
-    const mid = el('span');
-    mid.append(el('b', null, name));
-    if (!p.resolved) {
-      mid.append(document.createTextNode(' '));
-      mid.append(el('span', 'off', 'не резолвится'));
-    } else {
-      // Comfort heroes, ordered by the server; shown as-is.
-      const top = (p.topHeroes || []).slice(0, 5)
-        .map((h) => `${h.name} (${h.games}g ${(h.winRate * 100).toFixed(0)}%)`).join(', ');
-      mid.append(document.createTextNode(' '));
-      mid.append(el('span', 'why', top || '(нет данных)'));
-    }
-    row.append(mid);
-    const del = el('button', 'danger small', 'удалить');
-    del.onclick = () => post('/api/stats/remove-player', { accountId: p.accountId, ally }).then(loadStats);
-    row.append(del);
-    box.append(row);
-  });
+  players.forEach((p) => box.append(playerCard(p, ally)));
   return box;
 }
 
 function renderStats() {
   if (!stats || !stats.stats) return;
   const s = stats.stats;
-  $('stats-path').textContent = s.snapshotPath || '—';
+  let path = s.snapshotPath || '—';
+  if (s.windowDays) path += ' · окно ' + s.windowDays + 'д';
+  $('stats-path').textContent = path;
 
   const enemies = $('stats-enemies');
   enemies.textContent = '';
   enemies.append(playerRows(s.enemyPlayers, false));
   if (s.layer3Drafts > 0) {
-    enemies.append(el('div', 'why', `+ ${s.layer3Drafts} драфтов команды в этом ивенте (слой 3)`));
+    enemies.append(el('div', 'why', '+ ' + s.layer3Drafts + ' драфтов команды в этом ивенте (слой 3)'));
   }
 
   $('stats-allies').textContent = '';
   $('stats-allies').append(playerRows(s.allyPlayers, true));
 
-  // Only overwrite the editors when the user is not typing in them.
   const pool = $('pool-input');
   if (document.activeElement !== pool) {
     pool.value = (s.heroPool || []).map((h) => h.name).join(', ');
   }
   const rules = $('rules-input');
   if (document.activeElement !== rules) rules.value = s.itemRules || '';
+}
+
+
+// --- post-draft survey (§6.1) -----------------------------------------------
+//
+// During the draft the captain should not fill forms. When the board is full
+// (no current step) we open a one-shot questionnaire: why off-rec picks, then
+// win/loss. Answers go to the same local decision log as before.
+//
+// "Тест: После драфта" opens the same UI with sample steps and never POSTs
+// to /api/reason|/api/outcome — so you can poke the panel without polluting
+// decisions.jsonl.
+
+const SURVEY_CHIPS = [
+  'не играет / не в пуле',
+  'роль / позиция',
+  'свой контр / синергия',
+  'бан под следующий ход',
+  'тиммейт захотел',
+  'другое',
+];
+
+const SURVEY_TEST_CHOICES = [
+  {
+    seq: 0, action: 'ban', chosen: 74, chosenName: 'Invoker', chosenRank: 3,
+    topHero: 11, topName: 'Shadow Fiend', topWhy: 'сильный мид в текущей мете',
+  },
+  {
+    seq: 2, action: 'pick', chosen: 8, chosenName: 'Juggernaut', chosenRank: 0,
+    topHero: 1, topName: 'Anti-Mage', topWhy: 'сейфлейн фарм + сплэш',
+  },
+  {
+    seq: 5, action: 'pick', chosen: 26, chosenName: 'Lion', chosenRank: 2,
+    topHero: 5, topName: 'Crystal Maiden', topWhy: 'аура и сейв на лайн',
+  },
+];
+
+let surveyDoneKey = null;
+let surveyOpenKey = null;
+let surveyBusy = false;
+let surveyMode = 'live'; // 'live' | 'test'
+
+function boardFingerprint(board) {
+  if (!board) return '';
+  return JSON.stringify([
+    board.radiantPicks || [], board.direPicks || [],
+    board.radiantBans || [], board.direBans || [],
+  ]);
+}
+
+function boardHasHeroes(board) {
+  if (!board) return false;
+  return (board.radiantPicks || []).length + (board.direPicks || []).length +
+    (board.radiantBans || []).length + (board.direBans || []).length > 0;
+}
+
+async function maybeShowSurvey() {
+  if (!state || !state.meta || !state.meta.logging || !state.meta.draftReady) return;
+  if (state.step) return; // draft still in progress
+  if (!boardHasHeroes(state.board)) return;
+  const key = boardFingerprint(state.board);
+  if (!key || key === surveyDoneKey || key === surveyOpenKey) return;
+  if ($('survey') && !$('survey').hidden) return;
+
+  let data;
+  try {
+    const res = await fetch('/api/declog/review');
+    data = await res.json();
+  } catch (_) {
+    return;
+  }
+  if (!data || !data.ready || !data.logging) return;
+  const draftKey = data.draftKey || key;
+  if (draftKey === surveyDoneKey) return;
+  // No off-rec steps → nothing to ask; win/loss comes from GSI later.
+  if (!(data.choices || []).length) {
+    surveyDoneKey = draftKey;
+    return;
+  }
+  surveyMode = 'live';
+  openSurvey(data, draftKey);
+}
+
+function openSurveyTest() {
+  surveyMode = 'test';
+  const key = 'test|' + Date.now();
+  openSurvey({ choices: SURVEY_TEST_CHOICES, draftKey: key }, key);
+}
+
+function setSurveyModeUI() {
+  const dock = $('survey');
+  const badge = $('survey-mode-badge');
+  const saveBtn = $('survey-save');
+  const test = surveyMode === 'test';
+  if (dock) dock.classList.toggle('test-mode', test);
+  if (badge) badge.hidden = !test;
+  if (saveBtn) {
+    saveBtn.textContent = test ? 'Закрыть тест' : 'Сохранить причины';
+  }
+}
+
+function openSurvey(data, draftKey) {
+  surveyOpenKey = draftKey;
+  setSurveyModeUI();
+  const box = $('survey-steps');
+  box.textContent = '';
+  const choices = data.choices || [];
+  if (surveyMode === 'test') {
+    $('survey-intro').textContent =
+      'ТЕСТ: три примера шагов, где отошли от #1. Чипы/текст можно понажимать — в decisions.jsonl ничего не пишется.';
+  } else {
+    $('survey-intro').textContent = choices.length
+      ? ('Отошли от #1 на ' + choices.length + ' шаг(ах). По каждому — почему. Панель не блокирует доску; итог матча потом из GSI.')
+      : 'Все ваши шаги совпали с #1 — причин нет. Итог матча запишется из GSI (win_team), когда игра закончится.';
+  }
+
+  choices.forEach((c, i) => {
+    const step = el('div', 'survey-step');
+    step.dataset.seq = String(c.seq);
+    const act = c.action === 'ban' ? 'бан' : 'пик';
+    const rank = c.chosenRank > 0 ? ('#' + c.chosenRank) : 'вне топа';
+    const head = el('div', 'survey-head');
+    head.append(document.createTextNode((i + 1) + '. Ход ' + (c.seq + 1) + ' · ' + act + ' · взяли '));
+    const strong = el('strong', null, c.chosenName || ('Hero ' + c.chosen));
+    head.append(strong);
+    head.append(document.createTextNode(' (' + rank + ')'));
+    step.append(head);
+    if (c.topName) {
+      const top = el('div', 'survey-top',
+        'Совет #1 был: ' + c.topName + (c.topWhy ? (' — ' + c.topWhy) : ''));
+      step.append(top);
+    }
+    const chips = el('div', 'survey-chips');
+    SURVEY_CHIPS.forEach((label) => {
+      const btn = el('button', 'survey-chip', label);
+      btn.type = 'button';
+      btn.onclick = () => {
+        chips.querySelectorAll('.survey-chip').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        step.dataset.chip = label;
+        if (label === 'другое') {
+          const inp = step.querySelector('input');
+          if (inp) inp.focus();
+        }
+      };
+      chips.append(btn);
+    });
+    step.append(chips);
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = 'своя формулировка (необязательно)';
+    step.append(inp);
+    box.append(step);
+  });
+
+  const saveBtn = $('survey-save');
+  if (saveBtn) saveBtn.hidden = choices.length === 0 && surveyMode !== 'test';
+  $('survey').hidden = false;
+}
+
+function closeSurvey(markDone) {
+  $('survey').hidden = true;
+  if (markDone && surveyMode === 'live' && surveyOpenKey) {
+    surveyDoneKey = surveyOpenKey;
+  }
+  surveyOpenKey = null;
+  surveyMode = 'live';
+  setSurveyModeUI();
+}
+
+function reasonTextFromStep(stepEl) {
+  const chip = stepEl.dataset.chip || '';
+  const extra = (stepEl.querySelector('input')?.value || '').trim();
+  if (chip && chip !== 'другое' && extra) return chip + '; ' + extra;
+  if (chip && chip !== 'другое') return chip;
+  return extra;
+}
+
+async function submitSurvey(win) {
+  if (surveyBusy) return;
+  if (surveyMode === 'test') {
+    closeSurvey(false);
+    return;
+  }
+  surveyBusy = true;
+  try {
+    const steps = Array.from(document.querySelectorAll('#survey-steps .survey-step'));
+    for (const step of steps) {
+      const text = reasonTextFromStep(step);
+      if (!text) continue;
+      const seq = Number(step.dataset.seq);
+      if (!(await post('/api/reason', { seq, text }))) return;
+    }
+    if (!(await post('/api/outcome', { win }))) return;
+    closeSurvey(true);
+  } finally {
+    surveyBusy = false;
+  }
+}
+
+async function saveSurveyReasons() {
+  if (surveyBusy) return;
+  if (surveyMode === 'test') {
+    closeSurvey(false);
+    return;
+  }
+  surveyBusy = true;
+  try {
+    const steps = Array.from(document.querySelectorAll('#survey-steps .survey-step'));
+    for (const step of steps) {
+      const text = reasonTextFromStep(step);
+      if (!text) continue;
+      const seq = Number(step.dataset.seq);
+      if (!(await post('/api/reason', { seq, text }))) return;
+    }
+    closeSurvey(true);
+  } finally {
+    surveyBusy = false;
+  }
+}
+
+async function dismissSurvey() {
+  if (surveyBusy) return;
+  if (surveyMode === 'test') {
+    closeSurvey(false);
+    return;
+  }
+  // Save whatever was filled, then close. Outcome comes from GSI win_team later.
+  surveyBusy = true;
+  try {
+    const steps = Array.from(document.querySelectorAll('#survey-steps .survey-step'));
+    for (const step of steps) {
+      const text = reasonTextFromStep(step);
+      if (!text) continue;
+      const seq = Number(step.dataset.seq);
+      await post('/api/reason', { seq, text });
+    }
+    closeSurvey(true);
+  } finally {
+    surveyBusy = false;
+  }
+}
+
+function wireSurvey() {
+  const sw = $('survey-skip');
+  const sb = $('survey-skip-btn');
+  const save = $('survey-save');
+  const win = $('survey-win');
+  const loss = $('survey-loss');
+  const test = $('survey-test');
+  if (sw) sw.onclick = () => dismissSurvey();
+  if (sb) sb.onclick = () => dismissSurvey();
+  if (save) save.onclick = () => saveSurveyReasons();
+  if (win) win.onclick = () => submitSurvey(true);
+  if (loss) loss.onclick = () => submitSurvey(false);
+  if (test) test.onclick = () => openSurveyTest();
 }
 
 // --- matchups modal ---------------------------------------------------------
@@ -794,15 +1540,22 @@ function render(next) {
   if (state.meta.draftReady) {
     const boardKey = JSON.stringify(state.board) + '|' + JSON.stringify(state.step) +
       '|' + state.meta.gsiMode + '|' + state.heroes.length;
-    if (boardKey !== lastBoardKey) {
+    const boardChanged = boardKey !== lastBoardKey;
+    if (boardChanged) {
       lastBoardKey = boardKey;
+      renderPhaseBanner();
       renderBoard();
+      renderPrimaryAction();
       renderHeroes(); // keeps whatever the user typed in the filter
     } else if (resultChanged) {
+      renderPhaseBanner();
       renderBoard(); // draft strength is drawn inside the board panel
+      renderPrimaryAction();
     }
   } else {
     lastBoardKey = null;
+    renderPhaseBanner();
+    renderPrimaryAction();
   }
 
   if (resultChanged) {
@@ -811,7 +1564,9 @@ function render(next) {
   }
 
   renderStatus();
+  renderLineup();
   if (next.ring) beep();
+  maybeShowSurvey();
 }
 
 // beep sounds an objective alert. Browsers block audio until the user has
@@ -1027,24 +1782,19 @@ function renderKnownPlayers(players, error) {
       else rosterSelection.delete(p.accountId);
       updateRosterTools();
     };
-    li.append(tick);
 
-    li.append(el('span', 'known-name', p.persona || String(p.accountId)));
-    li.append(el('span', 'known-role', p.role === 'ally' ? 'союзник' : 'враг'));
+    const main = el('div', 'known-main');
+    main.append(el('span', 'known-name', p.persona || String(p.accountId)));
+    const meta = el('div', 'known-meta');
+    meta.append(el('span', 'known-role', p.role === 'ally' ? 'союзник' : 'враг'));
     if (p.inSnapshot) {
-      li.append(el('span', 'known-in', p.inSnapshot === 'ally' ? 'в составе' : 'в разведке'));
+      meta.append(el('span', 'known-in', p.inSnapshot === 'ally' ? 'в составе' : 'в разведке'));
     }
-    if (p.heroes) li.append(el('span', 'known-cached', 'в кэше: ' + p.heroes + ' героев'));
-    if (p.lastSeen) li.append(el('span', 'known-seen', ago(p.lastSeen)));
+    if (p.heroes) meta.append(el('span', 'known-cached', 'в кэше: ' + p.heroes + ' героев'));
+    if (p.lastSeen) meta.append(el('span', 'known-seen', ago(p.lastSeen)));
+    main.append(meta);
 
-    // Clicking the row toggles the tick — the whole row is a bigger target than
-    // the box, and picking five people is the common action here.
-    li.addEventListener('click', (e) => {
-      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
-      tick.checked = !tick.checked;
-      tick.onchange();
-    });
-
+    const actions = el('div', 'known-actions');
     if (p.inSnapshot) {
       const out = el('button', 'small', 'убрать из состава');
       out.title = 'Вынуть из снапшота. В списке игрок останется.';
@@ -1055,7 +1805,7 @@ function renderKnownPlayers(players, error) {
         loadKnownPlayers();
         loadStats();
       };
-      li.append(out);
+      actions.append(out);
     } else {
       const into = el('button', 'small', 'в состав');
       into.title = 'Разведать этого игрока и добавить в снапшот';
@@ -1063,7 +1813,7 @@ function renderKnownPlayers(players, error) {
         e.stopPropagation();
         await scoutPlayers([p.accountId], p.role === 'ally');
       };
-      li.append(into);
+      actions.append(into);
     }
 
     const pin = el('button', 'small', p.pinned ? 'открепить' : 'закрепить');
@@ -1073,7 +1823,7 @@ function renderKnownPlayers(players, error) {
       await post('/api/players/pin', { accountId: p.accountId, pinned: !p.pinned });
       loadKnownPlayers();
     };
-    li.append(pin);
+    actions.append(pin);
 
     const forget = el('button', 'small danger', 'удалить');
     forget.title = 'Убрать из списка вместе с накопленной по нему статистикой';
@@ -1086,8 +1836,19 @@ function renderKnownPlayers(players, error) {
       rosterSelection.delete(p.accountId);
       loadKnownPlayers();
     };
-    li.append(forget);
+    actions.append(forget);
 
+    // Clicking the row toggles the tick — the whole row is a bigger target than
+    // the box, and picking five people is the common action here.
+    li.addEventListener('click', (e) => {
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+      tick.checked = !tick.checked;
+      tick.onchange();
+    });
+
+    li.append(tick);
+    li.append(main);
+    li.append(actions);
     host.append(li);
   }
   updateRosterTools();
@@ -1125,11 +1886,273 @@ function ago(unix) {
   return months + ' мес. назад';
 }
 
+
+// --- config editor ----------------------------------------------------------
+
+let configView = null;
+let discordConfigView = null;
+
+async function loadConfig() {
+  if (!state || !state.meta.canConfig) return;
+  const res = await fetch('/api/config');
+  if (!res.ok) return;
+  const data = await res.json();
+  if (data.error) {
+    $('config-status').textContent = data.error;
+    return;
+  }
+  configView = data.config;
+  renderConfig();
+}
+
+function renderConfig() {
+  const v = configView;
+  if (!v) return;
+  let path = v.path || '—';
+  if (!v.exists) path += ' (файла ещё нет — сохранится при записи)';
+  $('config-path').textContent = path;
+  $('config-note').textContent = v.note || '';
+  $('config-status').textContent = '';
+  const form = $('config-form');
+  form.textContent = '';
+  (v.sections || []).forEach((sec, si) => {
+    const fields = (sec.fields || []).filter((f) => !String(f.key || '').startsWith('alert-'));
+    if (!fields.length) return;
+    const box = el('div', 'config-section panel');
+    box.append(el('h3', null, sec.title || sec.name || 'Общие'));
+    fields.forEach((f, fi) => {
+      box.append(configFieldRow(f, si, fi));
+    });
+    form.append(box);
+  });
+}
+
+
+function formatLeadHint(sec) {
+  const n = Number(sec);
+  if (!Number.isFinite(n)) return '';
+  if (n < 0) return '= выкл';
+  if (n === 0) return '= как alert-lead';
+  return '= за ' + n + 'с';
+}
+
+function formatClockHint(sec) {
+  const n = Number(sec);
+  if (!Number.isFinite(n)) return '';
+  if (n < 0) return '= без нижней границы';
+  const abs = Math.abs(Math.trunc(n));
+  const clock = Math.floor(abs / 60) + ':' + String(abs % 60).padStart(2, '0');
+  if (n === 0) return '= 0:00 (рог; для until 0 = без верхней границы)';
+  return '= ' + clock;
+}
+
+function configFieldRow(f, si, fi) {
+  const row = el('div', 'config-field' + (f.set ? '' : ' unset'));
+  row.dataset.si = String(si);
+  row.dataset.fi = String(fi);
+
+  const setLab = el('label');
+  const setCb = document.createElement('input');
+  setCb.type = 'checkbox';
+  setCb.checked = !!f.set;
+  setCb.title = 'Переопределить в файле (выкл = дефолт флага)';
+  setCb.onchange = () => {
+    f.set = setCb.checked;
+    row.classList.toggle('unset', !f.set);
+  };
+  setLab.append(setCb);
+  row.append(setLab);
+
+  const key = el('label', 'key', f.key);
+  key.title = f.key;
+  row.append(key);
+
+  const wrap = el('div', 'value-wrap');
+  let input;
+  if (f.type === 'bool') {
+    input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!f.value;
+    input.onchange = () => { f.value = input.checked; f.set = true; setCb.checked = true; row.classList.remove('unset'); };
+  } else {
+    input = document.createElement('input');
+    input.type = f.secret ? 'password' : (f.type === 'int' || f.type === 'float' ? 'number' : 'text');
+    if (f.type === 'float') input.step = 'any';
+    if (f.type === 'int') input.step = '1';
+    input.value = f.value == null ? '' : String(f.value);
+    input.placeholder = f.default != null ? String(f.default) : '';
+    input.autocomplete = 'off';
+    input.oninput = () => {
+      f.value = input.value;
+      if (!f.set) { f.set = true; setCb.checked = true; row.classList.remove('unset'); }
+      if (clockHint) {
+        clockHint.textContent = /^alert-lead/.test(f.key)
+          ? formatLeadHint(input.value)
+          : formatClockHint(input.value);
+      }
+    };
+  }
+  wrap.append(input);
+  let clockHint = null;
+  if (/^alert-(from|until)-/.test(f.key)) {
+    clockHint = el('div', 'def', formatClockHint(f.value != null ? f.value : f.default));
+    wrap.append(clockHint);
+  } else if (/^alert-lead/.test(f.key)) {
+    clockHint = el('div', 'def', formatLeadHint(f.value != null ? f.value : f.default));
+    wrap.append(clockHint);
+  }
+  if (f.default != null && f.default !== '') {
+    wrap.append(el('div', 'def', 'дефолт: ' + f.default));
+  }
+  row.append(wrap);
+
+  if (f.help) {
+    row.append(el('p', 'help', f.help));
+  }
+  return row;
+}
+
+async function saveConfig() {
+  if (!configView) return;
+  const sections = (configView.sections || []).map((sec) => ({
+    name: sec.name || '',
+    fields: (sec.fields || []).map((f) => {
+      let value = f.value;
+      if (f.type === 'int' && typeof value === 'string') value = value === '' ? 0 : parseInt(value, 10);
+      if (f.type === 'float' && typeof value === 'string') value = value === '' ? 0 : parseFloat(value);
+      if (f.type === 'bool') value = !!value;
+      return { key: f.key, set: !!f.set, value };
+    }),
+  }));
+  $('config-status').textContent = 'сохраняю…';
+  const ok = await post('/api/config/save', { sections });
+  $('config-status').textContent = ok
+    ? ((state && state.status) || 'сохранено')
+    : 'не удалось сохранить';
+  await loadConfig();
+}
+
+
+// --- discord.yaml editor ----------------------------------------------------
+
+async function loadDiscordConfig() {
+  const panel = $('discord-config-panel');
+  const form = $('discord-config-form');
+  if (!panel || !form) return;
+  if (!state || !state.meta.canDiscordConfig) {
+    panel.hidden = true;
+    form.textContent = '';
+    discordConfigView = null;
+    return;
+  }
+  panel.hidden = false;
+  const res = await fetch('/api/discord-config');
+  if (!res.ok) return;
+  const data = await res.json();
+  if (data.error) {
+    $('discord-config-status').textContent = data.error;
+    return;
+  }
+  discordConfigView = data.config;
+  renderDiscordConfig();
+}
+
+function renderDiscordConfig() {
+  const v = discordConfigView;
+  if (!v) return;
+  let path = v.path || '—';
+  if (!v.exists) path += ' (файла ещё нет — создастся при сохранении)';
+  $('discord-config-path').textContent = path;
+  $('discord-config-note').textContent = v.note || '';
+  $('discord-config-status').textContent = '';
+  const form = $('discord-config-form');
+  form.textContent = '';
+  (v.sections || []).forEach((sec, si) => {
+    const box = el('div', 'config-section panel');
+    box.append(el('h3', null, sec.title || sec.name || 'Discord'));
+    (sec.fields || []).forEach((f, fi) => {
+      // Always-on fields: no "override" checkbox (unlike advisor flags).
+      box.append(discordFieldRow(f, si, fi));
+    });
+    form.append(box);
+  });
+}
+
+function discordFieldRow(f, si, fi) {
+  f.set = true;
+  const row = el('div', 'config-field config-field-fixed');
+  row.dataset.si = String(si);
+  row.dataset.fi = String(fi);
+  row.append(el('span', 'key', f.key));
+  const wrap = el('div', 'value-wrap');
+  const input = document.createElement('input');
+  input.type = f.secret ? 'password' : 'text';
+  input.spellcheck = false;
+  input.value = f.value == null ? '' : String(f.value);
+  input.placeholder = f.default != null ? String(f.default) : '';
+  input.autocomplete = 'off';
+  const sync = () => { f.value = input.value; f.set = true; };
+  input.oninput = sync;
+  input.onchange = sync;
+  input.onblur = sync;
+  wrap.append(input);
+  if (f.default != null && f.default !== '') {
+    wrap.append(el('div', 'def', 'дефолт: ' + f.default));
+  }
+  row.append(wrap);
+  if (f.help) row.append(el('p', 'help', f.help));
+  return row;
+}
+
+async function saveDiscordConfig() {
+  if (!discordConfigView) return;
+  // Read from DOM — paste/autofill often skips input events, so f.value can be stale.
+  const form = $('discord-config-form');
+  if (form) {
+    form.querySelectorAll('.config-field').forEach((row) => {
+      const si = Number(row.dataset.si);
+      const fi = Number(row.dataset.fi);
+      const input = row.querySelector('input');
+      if (!input || !discordConfigView.sections[si] || !discordConfigView.sections[si].fields[fi]) return;
+      discordConfigView.sections[si].fields[fi].value = input.value;
+      discordConfigView.sections[si].fields[fi].set = true;
+    });
+  }
+  const sections = (discordConfigView.sections || []).map((sec) => ({
+    name: sec.name || '',
+    fields: (sec.fields || []).map((f) => ({
+      key: f.key,
+      set: true,
+      value: f.value == null ? '' : String(f.value),
+    })),
+  }));
+  $('discord-config-status').textContent = 'сохраняю…';
+  const res = await fetch('/api/discord-config/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sections }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) {
+    $('discord-config-status').textContent = data.error || ('ошибка HTTP ' + res.status);
+    return;
+  }
+  $('discord-config-status').textContent = data.status || 'сохранено';
+  await loadDiscordConfig();
+}
+
 // --- tabs -------------------------------------------------------------------
+
+function syncTabVisibility() {
+  const alertsTab = document.getElementById('tab-alerts');
+  if (alertsTab && state && state.meta) {
+    alertsTab.hidden = state.meta.canAlerts === false;
+  }
+}
 
 function showTab(name) {
   activeTab = name;
-  ['draft', 'data', 'scout', 'stats'].forEach((t) => {
+  ['draft', 'data', 'scout', 'stats', 'alerts', 'config'].forEach((t) => {
     $('screen-' + t).hidden = t !== name;
   });
   document.querySelectorAll('#tabs .tab').forEach((t) => {
@@ -1137,6 +2160,9 @@ function showTab(name) {
   });
   if (name === 'stats') loadStats();
   if (name === 'scout') loadKnownPlayers();
+  if (name === 'config') { loadConfig(); loadDiscordConfig(); }
+  syncTabVisibility();
+  if (name === 'alerts' && window.AlertsUI) AlertsUI.load();
   // The corpus aggregates are half a dozen table scans, so they are fetched when
   // the screen is actually looked at rather than on every state poll.
   if (name === 'data') { loadCorpus(); loadCorpusMeta(); startSourcesPolling(); }
@@ -1163,9 +2189,18 @@ function takeValue(id) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  wireSurvey();
   document.querySelectorAll('#tabs .tab').forEach((t) => {
     t.onclick = () => showTab(t.dataset.tab);
   });
+  const cfgRefresh = $('config-refresh');
+  if (cfgRefresh) cfgRefresh.onclick = () => loadConfig();
+  const cfgSave = $('config-save');
+  if (cfgSave) cfgSave.onclick = () => saveConfig();
+  const dRefresh = $('discord-config-refresh');
+  if (dRefresh) dRefresh.onclick = () => loadDiscordConfig();
+  const dSave = $('discord-config-save');
+  if (dSave) dSave.onclick = () => saveDiscordConfig();
 
   document.querySelectorAll('[data-action]').forEach((btn) => {
     btn.onclick = async () => {
@@ -1214,6 +2249,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // lines are in memory, and the server has no idea what the user is filtering to.
   const level = $('job-level');
   if (level) level.onchange = () => renderJobLog();
+
+  const toggle = $('op-toggle');
+  if (toggle) {
+    toggle.onclick = () => {
+      opsCollapsed = !opsCollapsed;
+      opsUserToggled = true;
+      applyOpsCollapsed();
+      if (!opsCollapsed) loadJobLog();
+    };
+  }
+  const opName = $('op-name');
+  if (opName) {
+    opName.style.cursor = 'pointer';
+    opName.title = 'Клик — развернуть / свернуть';
+    opName.onclick = () => { if (toggle) toggle.click(); };
+  }
 
   const playersRole = $('players-role');
   if (playersRole) playersRole.onchange = () => loadKnownPlayers();

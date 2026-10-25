@@ -531,7 +531,7 @@ func (s shell) updateScan(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// esc belongs to the sub-model when it has its own modal open: the help
 		// overlay, the enemy-add input, or an active hero filter. Only when none of
 		// those are open does esc mean "leave the draft".
-		if s.scan.showHelp || s.scan.addingEnemy ||
+		if s.scan.showHelp || s.scan.addingEnemy || s.scan.addingReason ||
 			(!s.scan.gsiMode && s.scan.list.FilterState() != list.Unfiltered) {
 			s.scanExitArmed = false
 			sm, cmd := s.scan.Update(msg)

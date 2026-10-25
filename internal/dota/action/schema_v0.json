@@ -1,0 +1,209 @@
+{
+  "schema_version": "macro-action-v0.1",
+  "actions": [
+    {
+      "id": 0,
+      "kind": "HOLD",
+      "target": "NONE",
+      "meaning": "Keep the current team macro posture; do not force a new macro objective"
+    },
+    {
+      "id": 1,
+      "kind": "FARM",
+      "target": "OUR_JUNGLE",
+      "meaning": "Prioritize converting our jungle area into resources"
+    },
+    {
+      "id": 2,
+      "kind": "FARM",
+      "target": "OUR_TRIANGLE",
+      "meaning": "Prioritize converting our triangle area into resources"
+    },
+    {
+      "id": 3,
+      "kind": "FARM",
+      "target": "ENEMY_JUNGLE",
+      "meaning": "Convert enemy jungle space into resources (farm enemy side without direct contest commitment)"
+    },
+    {
+      "id": 4,
+      "kind": "FARM",
+      "target": "ENEMY_TRIANGLE",
+      "meaning": "Convert enemy triangle space into resources (farm enemy side without direct contest commitment)"
+    },
+    {
+      "id": 5,
+      "kind": "PUSH",
+      "target": "TOP",
+      "meaning": "Advance the top lane as the team's next macro intent"
+    },
+    {
+      "id": 6,
+      "kind": "PUSH",
+      "target": "MID",
+      "meaning": "Advance the mid lane as the team's next macro intent"
+    },
+    {
+      "id": 7,
+      "kind": "PUSH",
+      "target": "BOT",
+      "meaning": "Advance the bottom lane as the team's next macro intent"
+    },
+    {
+      "id": 8,
+      "kind": "DEFEND",
+      "target": "TOP",
+      "meaning": "Shift macro resources to defend the top lane / area"
+    },
+    {
+      "id": 9,
+      "kind": "DEFEND",
+      "target": "MID",
+      "meaning": "Shift macro resources to defend the mid lane / area"
+    },
+    {
+      "id": 10,
+      "kind": "DEFEND",
+      "target": "BOT",
+      "meaning": "Shift macro resources to defend the bottom lane / area"
+    },
+    {
+      "id": 11,
+      "kind": "DEFEND",
+      "target": "OUR_BASE",
+      "meaning": "Shift macro resources to defend our base area"
+    },
+    {
+      "id": 12,
+      "kind": "CONTROL_OBJECTIVE",
+      "target": "ROSHAN",
+      "meaning": "Secure and hold space around Roshan (may delay starting objective)"
+    },
+    {
+      "id": 13,
+      "kind": "CONTROL_OBJECTIVE",
+      "target": "TORMENTOR",
+      "meaning": "Secure and hold space around Tormentor (may delay starting objective)"
+    },
+    {
+      "id": 14,
+      "kind": "TAKE_OBJECTIVE",
+      "target": "ROSHAN",
+      "meaning": "Directly start/finish killing Roshan"
+    },
+    {
+      "id": 15,
+      "kind": "TAKE_OBJECTIVE",
+      "target": "TORMENTOR",
+      "meaning": "Directly start/finish killing Tormentor"
+    },
+    {
+      "id": 16,
+      "kind": "SMOKE",
+      "target": "TOP",
+      "meaning": "Use smoke to search for contact in top macro area"
+    },
+    {
+      "id": 17,
+      "kind": "SMOKE",
+      "target": "MID",
+      "meaning": "Use smoke to search for contact in mid macro area"
+    },
+    {
+      "id": 18,
+      "kind": "SMOKE",
+      "target": "BOT",
+      "meaning": "Use smoke to search for contact in bot macro area"
+    },
+    {
+      "id": 19,
+      "kind": "SMOKE",
+      "target": "ENEMY_JUNGLE",
+      "meaning": "Use smoke to enter enemy jungle and create contact"
+    },
+    {
+      "id": 20,
+      "kind": "SMOKE",
+      "target": "ENEMY_TRIANGLE",
+      "meaning": "Use smoke to enter enemy triangle and create contact"
+    },
+    {
+      "id": 21,
+      "kind": "INVADE",
+      "target": "ENEMY_JUNGLE",
+      "meaning": "Actively enter and contest enemy jungle space"
+    },
+    {
+      "id": 22,
+      "kind": "INVADE",
+      "target": "ENEMY_TRIANGLE",
+      "meaning": "Actively enter and contest enemy triangle space"
+    },
+    {
+      "id": 23,
+      "kind": "GROUP",
+      "target": "NONE",
+      "meaning": "Form a tighter main group without a specific objective target"
+    },
+    {
+      "id": 24,
+      "kind": "SPLIT_MAP",
+      "target": "NONE",
+      "meaning": "Intentionally distribute resources across the map instead of one main group"
+    },
+    {
+      "id": 25,
+      "kind": "SET_VISION",
+      "target": "TOP",
+      "meaning": "Prioritize setting/updating vision in the top macro area"
+    },
+    {
+      "id": 26,
+      "kind": "SET_VISION",
+      "target": "MID",
+      "meaning": "Prioritize setting/updating vision in the mid macro area"
+    },
+    {
+      "id": 27,
+      "kind": "SET_VISION",
+      "target": "BOT",
+      "meaning": "Prioritize setting/updating vision in the bottom macro area"
+    },
+    {
+      "id": 28,
+      "kind": "SET_VISION",
+      "target": "ROSHAN",
+      "meaning": "Prioritize setting/updating vision around the Roshan pit"
+    },
+    {
+      "id": 29,
+      "kind": "SET_VISION",
+      "target": "ENEMY_JUNGLE",
+      "meaning": "Prioritize setting/updating vision in enemy jungle"
+    },
+    {
+      "id": 30,
+      "kind": "SET_VISION",
+      "target": "ENEMY_TRIANGLE",
+      "meaning": "Prioritize setting/updating vision in enemy triangle"
+    },
+    {
+      "id": 31,
+      "kind": "SIEGE",
+      "target": "ENEMY_BASE",
+      "meaning": "Organize a coordinated highground siege on the enemy base"
+    },
+    {
+      "id": 32,
+      "kind": "RESET",
+      "target": "NONE",
+      "meaning": "Stop current macro activity and re-organize (controlled disengage/recommit readiness)"
+    },
+    {
+      "id": 33,
+      "kind": "RETREAT",
+      "target": "NONE",
+      "meaning": "Urgently increase distance from threat; stop the current unsafe macro commitment"
+    }
+  ]
+}

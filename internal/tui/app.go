@@ -28,8 +28,9 @@ type model struct {
 	keys       keyMap
 	th         theme
 	help       help.Model
-	list       list.Model
-	enemyInput textinput.Model
+	list        list.Model
+	enemyInput  textinput.Model
+	reasonInput textinput.Model
 
 	// Everything below the line is a read-only mirror of the session, refreshed by
 	// sync() after each transition. The view code renders from these, so it can
@@ -44,6 +45,8 @@ type model struct {
 	nameByID     map[int]string
 	gsiMode      bool
 	addingEnemy  bool // bottom enemy-add input is open (#3)
+	addingReason bool // bottom "why not the recommendation" input is open (§6.1)
+	askingResult bool // waiting for w/l after the outcome key (§6.1)
 	busy         string
 	themeIdx     int
 	showHelp     bool
@@ -86,15 +89,20 @@ func newModel(sess *session.Session) model {
 	ei.Placeholder = "enemy id or profile URL"
 	ei.CharLimit = 256
 
+	ri := textinput.New()
+	ri.Placeholder = "why not the recommendation? (e.g. he cannot play it)"
+	ri.CharLimit = 256
+
 	m := model{
-		sess:       sess,
-		keys:       defaultKeys(),
-		th:         defaultTheme(),
-		help:       help.New(),
-		list:       l,
-		enemyInput: ei,
-		nameByID:   nameByID,
-		gsiMode:    cfg.GSIEvents != nil,
+		sess:        sess,
+		keys:        defaultKeys(),
+		th:          defaultTheme(),
+		help:        help.New(),
+		list:        l,
+		enemyInput:  ei,
+		reasonInput: ri,
+		nameByID:    nameByID,
+		gsiMode:     cfg.GSIEvents != nil,
 	}
 	m.sync()
 	if !m.gsiMode {
@@ -140,7 +148,7 @@ func (m *model) relayout() {
 	if len(m.result.ItemAdvice) > 0 {
 		reserve += len(m.result.ItemAdvice) + 3
 	}
-	if m.addingEnemy || m.busy != "" {
+	if m.addingEnemy || m.addingReason || m.busy != "" {
 		reserve += 3
 	}
 	h := listHeight(m.height) - reserve
@@ -148,6 +156,17 @@ func (m *model) relayout() {
 		h = 4
 	}
 	m.list.SetSize(listWidth(m.width), h)
+}
+
+// recordOutcome closes the logged draft out and returns the status line to show.
+func (m *model) recordOutcome(win bool) string {
+	if err := m.sess.LogOutcome(win, "", ""); err != nil {
+		return "log: " + err.Error()
+	}
+	if win {
+		return "recorded: win"
+	}
+	return "recorded: loss"
 }
 
 // rebuildList refreshes the hero picker to exclude already picked/banned heroes.
@@ -218,6 +237,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		}
+		// The reason box (§6.1) captures keys the same way while open.
+		if m.addingReason {
+			switch msg.String() {
+			case "esc":
+				m.addingReason = false
+				m.reasonInput.Blur()
+				m.relayout()
+				return m, nil
+			case "enter":
+				text := strings.TrimSpace(m.reasonInput.Value())
+				m.addingReason = false
+				m.reasonInput.Blur()
+				if text != "" {
+					if err := m.sess.LogReason(-1, text); err != nil {
+						m.status = "log: " + err.Error()
+					} else {
+						m.status = "reason recorded"
+					}
+				}
+				m.relayout()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.reasonInput, cmd = m.reasonInput.Update(msg)
+				return m, cmd
+			}
+		}
+		// One keystroke, not a form: the result is one bit, and it is recorded with
+		// the game just finished rather than remembered until later.
+		if m.askingResult {
+			m.askingResult = false
+			switch msg.String() {
+			case "w", "в":
+				m.status = m.recordOutcome(true)
+			case "l", "д":
+				m.status = m.recordOutcome(false)
+			default:
+				m.status = "outcome not recorded"
+			}
+			return m, nil
+		}
 		// Help overlay: esc (or ? again) closes it (#7).
 		if m.showHelp {
 			if msg.String() == "esc" || key.Matches(msg, m.keys.Help) || key.Matches(msg, m.keys.Quit) {
@@ -285,6 +345,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		// Scouting an enemy does not touch the board, so it stays available while
 		// GSI drives the draft — that is exactly when it is most useful.
+		// Recording why the advice was refused works in GSI mode too — that is the
+		// mode a real draft runs in, and it is the only mode where the refusal is a
+		// real one rather than a test click.
+		case !filtering && key.Matches(msg, m.keys.Outcome):
+			if !m.sess.Logging() {
+				m.status = "decision logging is off (--decision-log=false)"
+				return m, nil
+			}
+			m.askingResult = true
+			m.status = "result of this draft? w = win, l = loss, any other key cancels"
+			return m, nil
+		case !filtering && key.Matches(msg, m.keys.Reason):
+			if !m.sess.Logging() {
+				m.status = "decision logging is off (--decision-log=false)"
+				return m, nil
+			}
+			if _, ok := m.sess.LastLoggedDecision(); !ok {
+				m.status = "nothing of ours has been drafted yet in this draft"
+				return m, nil
+			}
+			m.addingReason = true
+			m.reasonInput.SetValue("")
+			m.reasonInput.Focus()
+			m.relayout()
+			return m, textinput.Blink
 		case !filtering && m.cfg.AddEnemy != nil && key.Matches(msg, m.keys.AddEnemy):
 			m.addingEnemy = true
 			m.enemyInput.SetValue("")

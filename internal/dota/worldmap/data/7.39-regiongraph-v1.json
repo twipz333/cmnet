@@ -1,0 +1,82 @@
+{
+  "version": "7.39-regiongraph-v1",
+  "map_geometry_version": "7.39-macro-v1",
+  "nodes": [
+    "RADIANT_BASE",
+    "DIRE_BASE",
+    "RADIANT_HIGHGROUND",
+    "DIRE_HIGHGROUND",
+    "RADIANT_TRIANGLE",
+    "DIRE_TRIANGLE",
+    "TOP_LANE_RADIANT",
+    "TOP_LANE_CENTER",
+    "TOP_LANE_DIRE",
+    "MID_LANE_RADIANT",
+    "MID_LANE_CENTER",
+    "MID_LANE_DIRE",
+    "BOT_LANE_RADIANT",
+    "BOT_LANE_CENTER",
+    "BOT_LANE_DIRE",
+    "RADIANT_MAIN_JUNGLE",
+    "DIRE_MAIN_JUNGLE",
+    "RADIANT_OFFLANE_JUNGLE",
+    "DIRE_OFFLANE_JUNGLE",
+    "TOP_RIVER",
+    "BOT_RIVER"
+  ],
+  "edges": [
+    {"from":"RADIANT_BASE","to":"RADIANT_HIGHGROUND","walk_distance":1800,"bidirectional":true},
+    {"from":"DIRE_BASE","to":"DIRE_HIGHGROUND","walk_distance":1800,"bidirectional":true},
+
+    {"from":"RADIANT_HIGHGROUND","to":"TOP_LANE_RADIANT","walk_distance":2600,"bidirectional":true},
+    {"from":"RADIANT_HIGHGROUND","to":"MID_LANE_RADIANT","walk_distance":2500,"bidirectional":true},
+    {"from":"RADIANT_HIGHGROUND","to":"BOT_LANE_RADIANT","walk_distance":2600,"bidirectional":true},
+    {"from":"RADIANT_HIGHGROUND","to":"RADIANT_MAIN_JUNGLE","walk_distance":2200,"bidirectional":true},
+    {"from":"RADIANT_HIGHGROUND","to":"RADIANT_OFFLANE_JUNGLE","walk_distance":2200,"bidirectional":true},
+
+    {"from":"DIRE_HIGHGROUND","to":"TOP_LANE_DIRE","walk_distance":2600,"bidirectional":true},
+    {"from":"DIRE_HIGHGROUND","to":"MID_LANE_DIRE","walk_distance":2500,"bidirectional":true},
+    {"from":"DIRE_HIGHGROUND","to":"BOT_LANE_DIRE","walk_distance":2600,"bidirectional":true},
+    {"from":"DIRE_HIGHGROUND","to":"DIRE_MAIN_JUNGLE","walk_distance":2200,"bidirectional":true},
+    {"from":"DIRE_HIGHGROUND","to":"DIRE_OFFLANE_JUNGLE","walk_distance":2200,"bidirectional":true},
+
+    {"from":"RADIANT_MAIN_JUNGLE","to":"RADIANT_TRIANGLE","walk_distance":2000,"bidirectional":true},
+    {"from":"RADIANT_MAIN_JUNGLE","to":"BOT_LANE_RADIANT","walk_distance":2100,"bidirectional":true},
+    {"from":"RADIANT_MAIN_JUNGLE","to":"MID_LANE_RADIANT","walk_distance":2000,"bidirectional":true},
+    {"from":"RADIANT_MAIN_JUNGLE","to":"BOT_RIVER","walk_distance":2500,"bidirectional":true},
+
+    {"from":"RADIANT_OFFLANE_JUNGLE","to":"TOP_LANE_RADIANT","walk_distance":1800,"bidirectional":true},
+    {"from":"RADIANT_OFFLANE_JUNGLE","to":"TOP_LANE_CENTER","walk_distance":2400,"bidirectional":true},
+    {"from":"RADIANT_OFFLANE_JUNGLE","to":"TOP_RIVER","walk_distance":2200,"bidirectional":true},
+
+    {"from":"RADIANT_TRIANGLE","to":"MID_LANE_RADIANT","walk_distance":1800,"bidirectional":true},
+    {"from":"RADIANT_TRIANGLE","to":"BOT_RIVER","walk_distance":2200,"bidirectional":true},
+
+    {"from":"TOP_LANE_RADIANT","to":"TOP_LANE_CENTER","walk_distance":2400,"bidirectional":true},
+    {"from":"MID_LANE_RADIANT","to":"MID_LANE_CENTER","walk_distance":2200,"bidirectional":true},
+    {"from":"BOT_LANE_RADIANT","to":"BOT_LANE_CENTER","walk_distance":2400,"bidirectional":true},
+
+    {"from":"TOP_LANE_CENTER","to":"TOP_RIVER","walk_distance":2200,"bidirectional":true},
+    {"from":"TOP_RIVER","to":"MID_LANE_CENTER","walk_distance":1800,"bidirectional":true},
+    {"from":"MID_LANE_CENTER","to":"BOT_RIVER","walk_distance":1800,"bidirectional":true},
+    {"from":"BOT_RIVER","to":"BOT_LANE_CENTER","walk_distance":2200,"bidirectional":true},
+
+    {"from":"TOP_RIVER","to":"MID_LANE_DIRE","walk_distance":2100,"bidirectional":true},
+    {"from":"TOP_RIVER","to":"DIRE_TRIANGLE","walk_distance":2200,"bidirectional":true},
+    {"from":"TOP_RIVER","to":"DIRE_MAIN_JUNGLE","walk_distance":2600,"bidirectional":true},
+
+    {"from":"BOT_RIVER","to":"DIRE_OFFLANE_JUNGLE","walk_distance":2200,"bidirectional":true},
+    {"from":"BOT_RIVER","to":"MID_LANE_DIRE","walk_distance":2100,"bidirectional":true},
+    {"from":"BOT_RIVER","to":"DIRE_MAIN_JUNGLE","walk_distance":2600,"bidirectional":true},
+
+    {"from":"DIRE_TRIANGLE","to":"MID_LANE_DIRE","walk_distance":1800,"bidirectional":true},
+    {"from":"DIRE_TRIANGLE","to":"DIRE_MAIN_JUNGLE","walk_distance":2000,"bidirectional":true},
+
+    {"from":"DIRE_OFFLANE_JUNGLE","to":"BOT_LANE_CENTER","walk_distance":1800,"bidirectional":true},
+    {"from":"DIRE_OFFLANE_JUNGLE","to":"BOT_LANE_DIRE","walk_distance":1800,"bidirectional":true},
+
+    {"from":"DIRE_MAIN_JUNGLE","to":"TOP_LANE_DIRE","walk_distance":1800,"bidirectional":true},
+    {"from":"TOP_LANE_CENTER","to":"TOP_LANE_DIRE","walk_distance":4200,"bidirectional":true},
+    {"from":"BOT_LANE_CENTER","to":"BOT_LANE_DIRE","walk_distance":2200,"bidirectional":true}
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "ally_side": "dire",
+  "allies": ["npc_dota_hero_mirana", "npc_dota_hero_sven"],
+  "enemies": ["npc_dota_hero_luna", "npc_dota_hero_tidehunter"]
+}

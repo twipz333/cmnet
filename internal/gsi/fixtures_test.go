@@ -88,6 +88,20 @@ func TestParseInGameFixture(t *testing.T) {
 	if self.BuybackCost != 1420 {
 		t.Errorf("buyback cost = %d, want 1420", self.BuybackCost)
 	}
+	if !snap.LocalTeamOK || snap.LocalTeam != draft.Dire {
+		t.Errorf("LocalTeam = %v ok=%v, want Dire from team_name", snap.LocalTeam, snap.LocalTeamOK)
+	}
+}
+
+func TestParseLocalTeamName(t *testing.T) {
+	body := []byte(`{"draft":{"activeteam":2,"pick":true,"radiant":{},"dire":{}},"player":{"team_name":"radiant"}}`)
+	snap, err := ParseDraft(body)
+	if err != nil || snap == nil {
+		t.Fatalf("parse: %v snap=%v", err, snap)
+	}
+	if !snap.LocalTeamOK || snap.LocalTeam != draft.Radiant {
+		t.Fatalf("LocalTeam = %v ok=%v", snap.LocalTeam, snap.LocalTeamOK)
+	}
 }
 
 // Older clients name the containers radiant/dire instead of team2/team3. The
@@ -166,5 +180,16 @@ func TestServerCountsParseFailures(t *testing.T) {
 	n, msg, _ := s.Health()
 	if n != 1 || msg == "" {
 		t.Fatalf("parse failure was not recorded (errors=%d, last=%q)", n, msg)
+	}
+}
+
+func TestParseWinTeam(t *testing.T) {
+	body := []byte(`{"map":{"clock_time":100,"game_state":"DOTA_GAMERULES_STATE_POST_GAME","win_team":"dire","matchid":"1"}}`)
+	snap, err := ParseDraft(body)
+	if err != nil || snap == nil || snap.Live == nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if snap.Live.WinTeam != "dire" {
+		t.Fatalf("WinTeam = %q", snap.Live.WinTeam)
 	}
 }

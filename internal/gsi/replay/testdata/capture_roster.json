@@ -1,0 +1,17 @@
+{
+  "ally_side": "dire",
+  "allies": [
+    "npc_dota_hero_mirana",
+    "npc_dota_hero_ember_spirit",
+    "npc_dota_hero_night_stalker",
+    "npc_dota_hero_sven",
+    "npc_dota_hero_rattletrap"
+  ],
+  "enemies": [
+    "npc_dota_hero_luna",
+    "npc_dota_hero_tidehunter",
+    "npc_dota_hero_lion",
+    "npc_dota_hero_dark_willow",
+    "npc_dota_hero_wisp"
+  ]
+}

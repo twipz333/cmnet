@@ -30,9 +30,11 @@ type Server struct {
 	parseErrors int
 	lastErr     string
 	lastEventAt time.Time
+
+	pipe *Pipe
 }
 
-// NewServer creates a Server listening on addr (e.g. "127.0.0.1:53000").
+// NewServer creates a Server listening on addr (e.g. "127.0.0.1:54001").
 func NewServer(addr string) *Server {
 	return NewServerWithToken(addr, "")
 }
@@ -67,7 +69,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -83,21 +85,31 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.Lock()
+	receivedAt := time.Now()
+	s.lastEventAt = receivedAt
+	pipe := s.pipe
+	s.mu.Unlock()
+
+	// Merge the draft snapshot before queuing the tracker. RosterProvider reads
+	// LastSnapshot, so a new match_id must wipe picks before Apply runs.
 	snap, err := ParseDraft(body)
 	if err != nil {
 		// Counted rather than ignored: a decode failure is how a schema change
 		// announces itself, and silence here is why one would go unnoticed until
 		// the draft screen simply stopped updating.
 		s.noteError(err.Error())
+		if pipe != nil {
+			pipe.Submit(receivedAt, body)
+		}
 		return
 	}
-	if snap == nil {
-		return // an event with neither a draft nor a map block: nothing to do
+	if snap != nil {
+		s.push(s.merge(snap))
 	}
-	s.mu.Lock()
-	s.lastEventAt = time.Now()
-	s.mu.Unlock()
-	s.push(s.merge(snap))
+	if pipe != nil {
+		pipe.Submit(receivedAt, body)
+	}
 }
 
 // merge folds a freshly parsed event into the running state. A map-only event
@@ -109,13 +121,20 @@ func (s *Server) merge(in *draft.Snapshot) *draft.Snapshot {
 	defer s.mu.Unlock()
 
 	out := *in // copy; never mutate the caller's snapshot
-	if !in.HasDraft && s.last != nil {
+	newMatch := false
+	if in.Live != nil && s.last != nil && s.last.Live != nil {
+		a, b := in.Live.MatchID, s.last.Live.MatchID
+		if a != "" && b != "" && a != b {
+			newMatch = true
+		}
+	}
+	if !in.HasDraft && s.last != nil && !newMatch {
 		out.RadiantPicks = s.last.RadiantPicks
 		out.RadiantBans = s.last.RadiantBans
 		out.DirePicks = s.last.DirePicks
 		out.DireBans = s.last.DireBans
 	}
-	if out.Live == nil && s.last != nil {
+	if out.Live == nil && s.last != nil && !newMatch {
 		out.Live = s.last.Live
 	}
 	s.last = &out
@@ -176,4 +195,23 @@ func (s *Server) Health() (parseErrors int, lastErr string, lastEvent time.Time)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.parseErrors, s.lastErr, s.lastEventAt
+}
+
+// SetPipe attaches a serial observation pipeline. Payloads are submitted after
+// the HTTP handler has acknowledged the POST. nil disables it.
+func (s *Server) SetPipe(p *Pipe) {
+	s.mu.Lock()
+	s.pipe = p
+	s.mu.Unlock()
+}
+
+// LastSnapshot returns a copy of the merged running draft snapshot, or nil.
+func (s *Server) LastSnapshot() *draft.Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.last == nil {
+		return nil
+	}
+	out := *s.last
+	return &out
 }

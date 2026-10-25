@@ -33,8 +33,8 @@ func TestCMSequenceBalanced(t *testing.T) {
 
 func TestApplyAndQueries(t *testing.T) {
 	d := New(Radiant)
-	// First four steps are bans: R, D, R, D.
-	want := []Step{{Radiant, Ban}, {Dire, Ban}, {Radiant, Ban}, {Dire, Ban}}
+	// 7.34+ schedule opens F F S S: R, R, D, D.
+	want := []Step{{Radiant, Ban}, {Radiant, Ban}, {Dire, Ban}, {Dire, Ban}}
 	for i, w := range want {
 		s, ok := d.Current()
 		if !ok || s != w {
@@ -44,11 +44,11 @@ func TestApplyAndQueries(t *testing.T) {
 			t.Fatalf("apply step %d: %v", i, err)
 		}
 	}
-	if got := d.Bans(Radiant); len(got) != 2 || got[0] != 1 || got[1] != 3 {
-		t.Errorf("Radiant bans = %v, want [1 3]", got)
+	if got := d.Bans(Radiant); len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Errorf("Radiant bans = %v, want [1 2]", got)
 	}
-	if got := d.Bans(Dire); len(got) != 2 || got[0] != 2 || got[1] != 4 {
-		t.Errorf("Dire bans = %v, want [2 4]", got)
+	if got := d.Bans(Dire); len(got) != 2 || got[0] != 3 || got[1] != 4 {
+		t.Errorf("Dire bans = %v, want [3 4]", got)
 	}
 }
 

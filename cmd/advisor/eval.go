@@ -12,19 +12,24 @@ import (
 
 func newEvalCmd() *cobra.Command {
 	var (
-		dbPath        string
-		testFrac      float64
-		halfLife      float64
-		windowDays    int
-		trainDomain   string
-		bootstrap     int
-		folds         int
-		sweepHalfLife []float64
-		fmRank        int
-		noPrefix      bool
-		l2            float64
-		epochs        int
-		proWeight     float64
+		dbPath         string
+		testFrac       float64
+		halfLife       float64
+		windowDays     int
+		trainDomain    string
+		bootstrap      int
+		folds          int
+		sweepHalfLife  []float64
+		fmRank         int
+		noPrefix       bool
+		l2             float64
+		epochs         int
+		proWeight      float64
+		stratifySplit  string
+		onlyFold       int
+		ladder         bool
+		excludeHoldout string
+		finalHoldout   string
 	)
 	cmd := &cobra.Command{
 		Use:   "eval",
@@ -32,7 +37,7 @@ func newEvalCmd() *cobra.Command {
 		Long: "Trains layer-1 models on the older fraction of cached matches and scores them on " +
 			"the held-out newer fraction: win-prob log-loss / Brier / ROC AUC / ECE (segmented into " +
 			"CM vs AP), partial-draft strength vs final outcome by draft phase, and next-pick " +
-			"predictor top-k. Trains into memory only — bundle.json is never touched.",
+			"predictor top-k. With --ladder, also prints the §6.6 personalization ladder. Pass --exclude-holdout holdout.json on every tuning run and --final-holdout only for the sealed one-shot (§6.8). Trains into memory only — bundle.json is never touched.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, err := cache.Open(dbPath)
 			if err != nil {
@@ -62,18 +67,31 @@ func newEvalCmd() *cobra.Command {
 			}
 			cmd.Printf("loaded %d matches (window-days=%d, 0=all)\n", len(matches), windowDays)
 
+			excl, err := loadHoldoutFlag(excludeHoldout)
+			if err != nil {
+				return err
+			}
+			fin, err := loadHoldoutFlag(finalHoldout)
+			if err != nil {
+				return err
+			}
 			rep, err := eval.Run(matches, heroIDs, eval.Options{
-				TestFrac:      testFrac,
-				HalfLifeDays:  halfLife,
-				TrainDomain:   trainDomain,
-				Bootstrap:     bootstrap,
-				Folds:         folds,
-				SweepHalfLife: sweepHalfLife,
-				FMRank:        fmRank,
-				NoPrefix:      noPrefix,
-				L2:            l2,
-				Epochs:        epochs,
-				ProWeight:     proWeight,
+				TestFrac:       testFrac,
+				HalfLifeDays:   halfLife,
+				TrainDomain:    trainDomain,
+				Bootstrap:      bootstrap,
+				Folds:          folds,
+				SweepHalfLife:  sweepHalfLife,
+				FMRank:         fmRank,
+				NoPrefix:       noPrefix,
+				L2:             l2,
+				Epochs:         epochs,
+				ProWeight:      proWeight,
+				StratifySplit:  stratifySplit,
+				OnlyFold:       onlyFold,
+				Ladder:         ladder,
+				ExcludeHoldout: excl,
+				FinalHoldout:   fin,
 			})
 			if err != nil {
 				return err
@@ -96,5 +114,10 @@ func newEvalCmd() *cobra.Command {
 	f.Float64Var(&l2, "l2", 0, "override the L2 penalty for both heads (0 = model default)")
 	f.IntVar(&epochs, "epochs", 0, "override the max training epochs (0 = model default)")
 	f.Float64Var(&proWeight, "pro-weight", 0, "training weight of pro CM drafts vs public games (0 = default, 1 = no down-weighting)")
+	f.StringVar(&stratifySplit, "stratify-split", "cm", "size the test block by target domain: cm|public-cm|none (none = old corpus-tail behaviour)")
+	f.BoolVar(&ladder, "ladder", false, "run §6.6 personalization ladder (paired Δ per rung; needs match_players for rungs 3–5)")
+	f.IntVar(&onlyFold, "only-fold", 0, "evaluate just this fold (1-based) of --folds; lets one process per fold run in parallel (0 = all)")
+	f.StringVar(&excludeHoldout, "exclude-holdout", "", "sealed holdout.json to exclude from tuning folds (§6.8)")
+	f.StringVar(&finalHoldout, "final-holdout", "", "score only the sealed holdout (one-shot final report; not for tuning)")
 	return cmd
 }

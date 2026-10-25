@@ -1,0 +1,794 @@
+[
+  {
+    "name": "meta.match_id",
+    "type": "string",
+    "meaning": "Match id from tracker clock",
+    "source": "HISTORY",
+    "availability": "when match id present",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "identifier"
+  },
+  {
+    "name": "meta.game_time",
+    "type": "int",
+    "meaning": "Game-time seconds",
+    "source": "OBSERVED",
+    "availability": "when map clock present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "meta.clock_time",
+    "type": "int",
+    "meaning": "Clock-time seconds",
+    "source": "OBSERVED",
+    "availability": "when clock present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "meta.our_side",
+    "type": "enum",
+    "meaning": "Our team side",
+    "source": "HISTORY",
+    "availability": "when roster ready",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "categorical"
+  },
+  {
+    "name": "match.phase",
+    "type": "enum",
+    "meaning": "Coarse time bucket",
+    "source": "DERIVED",
+    "availability": "when game_time present",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "categorical"
+  },
+  {
+    "name": "self.hero",
+    "type": "string",
+    "meaning": "Local hero identity",
+    "source": "OBSERVED",
+    "availability": "when self hero present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "identifier"
+  },
+  {
+    "name": "self.region",
+    "type": "region",
+    "meaning": "Local hero macro region",
+    "source": "DERIVED",
+    "availability": "when self primary region present",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "categorical"
+  },
+  {
+    "name": "self.alive",
+    "type": "bool",
+    "meaning": "Local hero alive flag",
+    "source": "OBSERVED",
+    "availability": "when hero block present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "self.respawn_seconds",
+    "type": "int",
+    "meaning": "Respawn timer",
+    "source": "OBSERVED",
+    "availability": "when dead timer present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "self.level",
+    "type": "int",
+    "meaning": "Local hero level",
+    "source": "OBSERVED",
+    "availability": "when hero block present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "self.hp_pct",
+    "type": "int",
+    "meaning": "Local hero HP percent",
+    "source": "OBSERVED",
+    "availability": "when hero block present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "self.mana_pct",
+    "type": "int",
+    "meaning": "Local hero mana percent",
+    "source": "OBSERVED",
+    "availability": "when hero block present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "self.gold",
+    "type": "int",
+    "meaning": "Current gold",
+    "source": "OBSERVED",
+    "availability": "when player block present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "self.gpm",
+    "type": "int",
+    "meaning": "Current GPM",
+    "source": "OBSERVED",
+    "availability": "when player block present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "self.xpm",
+    "type": "int",
+    "meaning": "Current XPM",
+    "source": "OBSERVED",
+    "availability": "when player block present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "self.buyback_available",
+    "type": "bool",
+    "meaning": "Whether buyback cooldown is zero",
+    "source": "OBSERVED",
+    "availability": "when buyback cooldown present",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "self.buyback_cooldown",
+    "type": "int",
+    "meaning": "Buyback cooldown seconds",
+    "source": "OBSERVED",
+    "availability": "when hero block present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "self.smoked",
+    "type": "bool",
+    "meaning": "Local smoke status",
+    "source": "OBSERVED",
+    "availability": "when hero block present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "team.grouped_ratio",
+    "type": "float",
+    "meaning": "Observed ally grouping ratio",
+    "source": "DERIVED",
+    "availability": "when map state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "team.grouped_count",
+    "type": "int",
+    "meaning": "Observed ally cluster count",
+    "source": "DERIVED",
+    "availability": "when map state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "team.main_group_region",
+    "type": "region",
+    "meaning": "Main ally cluster macro region",
+    "source": "DERIVED",
+    "availability": "when centroid region known",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "categorical"
+  },
+  {
+    "name": "team.spread",
+    "type": "float",
+    "meaning": "Main ally cluster spread",
+    "source": "DERIVED",
+    "availability": "when map state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "team.visible_enemy_count",
+    "type": "int",
+    "meaning": "Visible enemy count",
+    "source": "DERIVED",
+    "availability": "when map state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "team.missing_enemy_count",
+    "type": "int",
+    "meaning": "Missing enemy count",
+    "source": "DERIVED",
+    "availability": "when map state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "team.unlocalized_enemy_count",
+    "type": "int",
+    "meaning": "Unlocalized enemy count",
+    "source": "BELIEF",
+    "availability": "when belief state available",
+    "confidence_semantics": "belief status",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "team.mean_missing_age",
+    "type": "float",
+    "meaning": "Mean missing age over missing enemies",
+    "source": "BELIEF",
+    "availability": "when any enemy missing",
+    "confidence_semantics": "belief aggregate",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "team.max_missing_age",
+    "type": "float",
+    "meaning": "Max missing age over missing enemies",
+    "source": "BELIEF",
+    "availability": "when any enemy missing",
+    "confidence_semantics": "belief aggregate",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "team.mean_unmodeled_mass",
+    "type": "float",
+    "meaning": "Mean belief unmodeled mass",
+    "source": "BELIEF",
+    "availability": "when any enemy missing",
+    "confidence_semantics": "belief aggregate",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "team.max_unmodeled_mass",
+    "type": "float",
+    "meaning": "Max belief unmodeled mass",
+    "source": "BELIEF",
+    "availability": "when any enemy missing",
+    "confidence_semantics": "belief aggregate",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "ally[*].currently_observed",
+    "type": "bool",
+    "meaning": "Whether ally is currently observed",
+    "source": "OBSERVED",
+    "availability": "per ally roster slot",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "ally[*].primary_region",
+    "type": "region",
+    "meaning": "Primary ally region when unambiguous",
+    "source": "OBSERVED",
+    "availability": "when ally has one macro region",
+    "confidence_semantics": "OBSERVED/DERIVED",
+    "encoding_hint": "categorical"
+  },
+  {
+    "name": "enemy[*].visible",
+    "type": "bool",
+    "meaning": "Whether enemy is currently visible",
+    "source": "OBSERVED",
+    "availability": "per enemy roster slot",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "enemy[*].current_regions",
+    "type": "region[]",
+    "meaning": "Visible enemy current candidate regions",
+    "source": "OBSERVED",
+    "availability": "when enemy visible",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "multi-hot"
+  },
+  {
+    "name": "enemy[*].last_seen_regions",
+    "type": "region[]",
+    "meaning": "Historical last seen regions",
+    "source": "HISTORY",
+    "availability": "when enemy has last seen history",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "multi-hot"
+  },
+  {
+    "name": "enemy[*].last_seen_age",
+    "type": "float",
+    "meaning": "Seconds since enemy last seen",
+    "source": "HISTORY",
+    "availability": "when enemy has previously been seen",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "enemy[*].belief_status",
+    "type": "enum",
+    "meaning": "Observed/missing/unlocalized state",
+    "source": "BELIEF",
+    "availability": "when belief state available",
+    "confidence_semantics": "belief status",
+    "encoding_hint": "categorical"
+  },
+  {
+    "name": "enemy[*].belief_region_mass",
+    "type": "region-\u003efloat",
+    "meaning": "Heuristic belief mass by region",
+    "source": "BELIEF",
+    "availability": "when localized or observed",
+    "confidence_semantics": "belief mass",
+    "encoding_hint": "region-vocabulary"
+  },
+  {
+    "name": "enemy[*].belief_unmodeled_mass",
+    "type": "float",
+    "meaning": "Belief mass outside walking-only model",
+    "source": "BELIEF",
+    "availability": "when belief state available",
+    "confidence_semantics": "belief mass",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "enemy[*].belief_entropy",
+    "type": "float",
+    "meaning": "Normalized belief uncertainty",
+    "source": "BELIEF",
+    "availability": "when belief state available",
+    "confidence_semantics": "belief uncertainty",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "enemy[*].walking_reachable_regions",
+    "type": "region[]",
+    "meaning": "Regions reachable by walking v0",
+    "source": "BELIEF",
+    "availability": "when belief state available",
+    "confidence_semantics": "walking diagnostic",
+    "encoding_hint": "multi-hot"
+  },
+  {
+    "name": "lane.top.our_front_team_progress",
+    "type": "float",
+    "meaning": "Our top lane front progress",
+    "source": "OBSERVED",
+    "availability": "when our top front visible",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.top.visible_enemy_front_team_progress",
+    "type": "float",
+    "meaning": "Visible enemy top front progress",
+    "source": "OBSERVED",
+    "availability": "when enemy top front visible",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.top.enemy_last_seen_front_team_progress",
+    "type": "float",
+    "meaning": "Last seen enemy top front progress",
+    "source": "HISTORY",
+    "availability": "when enemy lane front has history",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.top.enemy_last_seen_front_age",
+    "type": "float",
+    "meaning": "Age of last seen enemy top front",
+    "source": "HISTORY",
+    "availability": "when enemy lane front has history",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.mid.our_front_team_progress",
+    "type": "float",
+    "meaning": "Our mid lane front progress",
+    "source": "OBSERVED",
+    "availability": "when our mid front visible",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.mid.visible_enemy_front_team_progress",
+    "type": "float",
+    "meaning": "Visible enemy mid front progress",
+    "source": "OBSERVED",
+    "availability": "when enemy mid front visible",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.mid.enemy_last_seen_front_team_progress",
+    "type": "float",
+    "meaning": "Last seen enemy mid front progress",
+    "source": "HISTORY",
+    "availability": "when enemy lane front has history",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.mid.enemy_last_seen_front_age",
+    "type": "float",
+    "meaning": "Age of last seen enemy mid front",
+    "source": "HISTORY",
+    "availability": "when enemy lane front has history",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.bot.our_front_team_progress",
+    "type": "float",
+    "meaning": "Our bot lane front progress",
+    "source": "OBSERVED",
+    "availability": "when our bot front visible",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.bot.visible_enemy_front_team_progress",
+    "type": "float",
+    "meaning": "Visible enemy bot front progress",
+    "source": "OBSERVED",
+    "availability": "when enemy bot front visible",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.bot.enemy_last_seen_front_team_progress",
+    "type": "float",
+    "meaning": "Last seen enemy bot front progress",
+    "source": "HISTORY",
+    "availability": "when enemy lane front has history",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.bot.enemy_last_seen_front_age",
+    "type": "float",
+    "meaning": "Age of last seen enemy bot front",
+    "source": "HISTORY",
+    "availability": "when enemy lane front has history",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "lane.*.observed_contact",
+    "type": "bool",
+    "meaning": "Whether fronts currently contact",
+    "source": "DERIVED",
+    "availability": "when lane state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "objectives.roshan_visible",
+    "type": "bool",
+    "meaning": "Roshan currently visible",
+    "source": "OBSERVED",
+    "availability": "when roshan track present",
+    "confidence_semantics": "OBSERVED=1",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "objectives.roshan_last_seen_age",
+    "type": "float",
+    "meaning": "Age since Roshan last seen",
+    "source": "HISTORY",
+    "availability": "when roshan seen before",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "objectives.pit_a.allies_near",
+    "type": "int",
+    "meaning": "Observed allies near Roshan pit A",
+    "source": "DERIVED",
+    "availability": "when map state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "objectives.pit_a.visible_enemies_near",
+    "type": "int",
+    "meaning": "Visible enemies near Roshan pit A",
+    "source": "DERIVED",
+    "availability": "when map state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "objectives.pit_b.allies_near",
+    "type": "int",
+    "meaning": "Observed allies near Roshan pit B",
+    "source": "DERIVED",
+    "availability": "when map state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "objectives.pit_b.visible_enemies_near",
+    "type": "int",
+    "meaning": "Visible enemies near Roshan pit B",
+    "source": "DERIVED",
+    "availability": "when map state available",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "recent_events.recent_hero_kill_age",
+    "type": "float",
+    "meaning": "Seconds since latest hero kill event",
+    "source": "HISTORY",
+    "availability": "when hero kill event observed",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "recent_events.recent_smoke_age",
+    "type": "float",
+    "meaning": "Seconds since latest smoke activation event",
+    "source": "HISTORY",
+    "availability": "when smoke event observed",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "recent_events.recent_glyph_age",
+    "type": "float",
+    "meaning": "Seconds since latest glyph event",
+    "source": "HISTORY",
+    "availability": "when glyph event observed",
+    "confidence_semantics": "HISTORY fact",
+    "encoding_hint": "continuous"
+  },
+  {
+    "name": "quality.roster_ready",
+    "type": "bool",
+    "meaning": "Whether roster is ready for hero-indexed encoding",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "quality.map_state_available",
+    "type": "bool",
+    "meaning": "Whether map state was available to builder",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "quality.lane_state_available",
+    "type": "bool",
+    "meaning": "Whether lane state was available to builder",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "quality.belief_state_available",
+    "type": "bool",
+    "meaning": "Whether belief state was available to builder",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "quality.gsi_payload_fresh",
+    "type": "bool",
+    "meaning": "Whether this state comes from a tracker tick with seq",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "deterministic",
+    "encoding_hint": "binary"
+  },
+  {
+    "name": "vocabulary.region.RADIANT_BASE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.DIRE_BASE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.RADIANT_HIGHGROUND",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.DIRE_HIGHGROUND",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.RADIANT_TRIANGLE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.DIRE_TRIANGLE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.TOP_LANE_RADIANT",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.TOP_LANE_CENTER",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.TOP_LANE_DIRE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.MID_LANE_RADIANT",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.MID_LANE_CENTER",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.MID_LANE_DIRE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.BOT_LANE_RADIANT",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.BOT_LANE_CENTER",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.BOT_LANE_DIRE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.RADIANT_MAIN_JUNGLE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.DIRE_MAIN_JUNGLE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.RADIANT_OFFLANE_JUNGLE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.DIRE_OFFLANE_JUNGLE",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.TOP_RIVER",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  },
+  {
+    "name": "vocabulary.region.BOT_RIVER",
+    "type": "region",
+    "meaning": "Region vocabulary member",
+    "source": "DERIVED",
+    "availability": "always",
+    "confidence_semantics": "schema vocabulary",
+    "encoding_hint": "vocabulary"
+  }
+]

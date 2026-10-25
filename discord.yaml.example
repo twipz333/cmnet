@@ -1,0 +1,38 @@
+# Заполни и запускай: advisor-discord.exe --config discord.yaml
+# Clash: PROXY discord.com / gateway.discord.gg / ntts.fdev.team ; DIRECT 127.0.0.1
+#
+# advisor должен быть с тем же remote-token:
+#   advisor.exe --gsi --remote-token <то-же-что-advisor-token-ниже>
+
+# Discord Bot Token (Developer Portal → Bot → Reset Token). Префикс "Bot " не нужен.
+token: "PASTE_DISCORD_BOT_TOKEN"
+
+# ID сервера (ПКМ по серверу → Copy Server ID; включи Developer Mode в Discord)
+guild-id: "PASTE_GUILD_ID"
+
+# ID роли, которой разрешены команды (ПКМ по роли → Copy Role ID)
+role-id: "PASTE_ROLE_ID"
+
+advisor-url: "http://127.0.0.1:54000"
+# Общий секрет с advisor --remote-token / config.yaml → remote-token
+advisor-token: "PASTE_SHARED_REMOTE_TOKEN"
+
+ntts:
+  base-url: "https://ntts.fdev.team"
+  # Bearer из кабинета NTTS (без слова Bearer)
+  token: "PASTE_NTTS_TOKEN"
+  # id голоса из GET /api/v1/tts/speakers → speakers[] (например father_grigori)
+  speaker: "father_grigori"
+  ext: "ogg"
+  effect: ""
+  cache-dir: "tts-cache"
+  # Плейсхолдеры: {{kind}} {{label}} {{nextIn}} {{nextAt}}
+  # Смена текста/голоса подхватывается на лету, кэш сбрасывается.
+  templates:
+    default: "{{label}} через {{nextIn}} секунд"
+    power: "Силовые руны через {{nextIn}}"
+    bounty: "Баунти через {{nextIn}}"
+    wisdom: "Wisdom через {{nextIn}}"
+    lotus: "Лотусы через {{nextIn}}"
+    tormentor: "Торментор через {{nextIn}}"
+    daynight: "Смена дня и ночи через {{nextIn}}"

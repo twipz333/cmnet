@@ -11,6 +11,11 @@ import (
 
 func testRecommender(wpWeights []float64, wpBias float64) *Recommender {
 	hm := features.NewHeroMap([]int{1, 2, 3})
+	if len(wpWeights) != hm.WinProbLen() {
+		padded := make([]float64, hm.WinProbLen())
+		copy(padded, wpWeights)
+		wpWeights = padded
+	}
 	wp := &model.WinProb{
 		Model:   &model.BinaryLogReg{Weights: wpWeights, Bias: wpBias},
 		HeroMap: hm,
@@ -34,8 +39,8 @@ func testRecommender(wpWeights []float64, wpBias float64) *Recommender {
 func TestRecommendTieBreakByHeroID(t *testing.T) {
 	r := testRecommender(make([]float64, 6), 0)
 	d := draft.New(draft.Radiant)
-	// Advance to the first PICK step (steps 0-3 are bans).
-	for i := 0; i < 4; i++ {
+	// Advance to the first PICK step (the opening ban phase).
+	for i := 0; i < openingBans; i++ {
 		_ = d.Apply(100 + i) // dummy heroes outside the {1,2,3} map
 	}
 	res := r.Recommend(d, draft.Radiant, 8)
@@ -57,7 +62,7 @@ func TestRecommendDeterministic(t *testing.T) {
 	r := testRecommender([]float64{0.7, -0.3, 0.1, -0.2, 0.4, 0.0}, 0.05)
 	mk := func() Result {
 		d := draft.New(draft.Radiant)
-		for i := 0; i < 4; i++ {
+		for i := 0; i < openingBans; i++ {
 			_ = d.Apply(100 + i)
 		}
 		return r.Recommend(d, draft.Radiant, 8)
@@ -133,7 +138,7 @@ func TestDraftStrengthMatrixBlend(t *testing.T) {
 func TestRecommendScoresDescending(t *testing.T) {
 	r := testRecommender([]float64{0.7, -0.3, 0.1, -0.2, 0.4, 0.0}, 0.05)
 	d := draft.New(draft.Radiant)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < openingBans; i++ {
 		_ = d.Apply(100 + i)
 	}
 	res := r.Recommend(d, draft.Radiant, 8)

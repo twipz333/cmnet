@@ -109,6 +109,23 @@ func TestParseMapOnlyEventCarriesLive(t *testing.T) {
 	}
 }
 
+func TestParseEmptyDraftObjectIsNotHasDraft(t *testing.T) {
+	body := []byte(`{"draft":{},"map":{"matchid":"1","clock_time":50}}`)
+	snap, err := ParseDraft(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap == nil {
+		t.Fatal("nil snapshot")
+	}
+	if snap.HasDraft {
+		t.Fatal("empty draft object must not wipe picks via HasDraft")
+	}
+	if !snap.Done {
+		t.Fatal("empty in-game draft must be Done")
+	}
+}
+
 func TestParseDraftEventCarriesLiveWhenMapPresent(t *testing.T) {
 	// During the CM draft Dota sends draft and map together; both must parse.
 	body := []byte(`{"draft":{"activeteam":2,"pick":true,"radiant":{"pick0_id":8},"dire":{}},
@@ -139,5 +156,20 @@ func TestParseDraftDoneWhenNoActiveTeam(t *testing.T) {
 func TestParseDraftMalformed(t *testing.T) {
 	if _, err := ParseDraft([]byte(`{not json`)); err == nil {
 		t.Error("expected error on malformed JSON")
+	}
+}
+
+// Under the 7.34+ schedule (F F S S F S S) the second-pick side has MORE actions
+// than the first after the opening bans; the seating must still come out right.
+func TestParseDraftFirstPickAfterOpeningBans(t *testing.T) {
+	body := []byte(`{"draft":{"activeteam":2,"pick":true,
+		"team2":{"ban0_id":1,"ban1_id":2,"ban2_id":5},
+		"team3":{"ban0_id":3,"ban1_id":4,"ban2_id":6,"ban3_id":7}}}`)
+	snap, err := ParseDraft(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.FirstPick != draft.Radiant {
+		t.Fatalf("first pick = %v, want Radiant (3 bans to Dire's 4, Radiant to pick)", snap.FirstPick)
 	}
 }
