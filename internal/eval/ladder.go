@@ -80,14 +80,15 @@ func evalLadder(corpus, train, test []cache.Match, pred *model.Predictor, hm *fe
 		}, ""},
 		{"3.model+player", func(st features.PredictorState, taken []bool, m cache.Match, team int) []float64 {
 			p1 := pred.DistributionMaskedIdx(st, taken)
-			aff2, fam := idx.teamAff2(m, team, m.StartTime, hm)
-			_ = fam
+			aff2, _ := idx.layer2For(m, team, st.IsPick, hm)
 			return blend.Blend(p1, aff2, nil, 0, blend.DefaultWeights())
 		}, ""},
 		{"4.+roles", func(st features.PredictorState, taken []bool, m cache.Match, team int) []float64 {
 			p1 := pred.DistributionMaskedIdx(st, taken)
-			aff2, _ := idx.teamAff2(m, team, m.StartTime, hm)
-			if roleAff != nil {
+			aff2, _ := idx.layer2For(m, team, st.IsPick, hm)
+			// The role prior describes what a side still needs to PLAY; it says
+			// nothing about what it bans, so ban steps get no role term.
+			if roleAff != nil && st.IsPick {
 				if aff2 == nil {
 					aff2 = append([]float64(nil), roleAff...)
 				} else {
@@ -104,8 +105,8 @@ func evalLadder(corpus, train, test []cache.Match, pred *model.Predictor, hm *fe
 		}, ""},
 		{"5.+stack", func(st features.PredictorState, taken []bool, m cache.Match, team int) []float64 {
 			p1 := pred.DistributionMaskedIdx(st, taken)
-			aff2, _ := idx.teamAff2(m, team, m.StartTime, hm)
-			aff3, n := idx.stackAff3(m, team, m.StartTime, hm)
+			aff2, _ := idx.layer2For(m, team, st.IsPick, hm)
+			aff3, n := idx.stackAff3(m, team, m.StartTime, hm, !st.IsPick)
 			return blend.Blend(p1, aff2, aff3, n, blend.DefaultWeights())
 		}, ""},
 	}
@@ -234,7 +235,24 @@ func (idx *asOfIndex) teamAff2(m cache.Match, team int, before int64, hm *featur
 	return aff, familiar
 }
 
-func (idx *asOfIndex) stackAff3(m cache.Match, team int, before int64, hm *features.HeroMap) (aff []float64, n int) {
+// layer2For is the layer-2 evidence for one action by team, as serve blends it
+// (recommender.blendEnemy): a pick is evidence about what the acting side plays,
+// so it uses the acting side's own comfort; a ban is aimed at the OTHER side's
+// heroes, so it uses theirs. familiar always reports on the acting side.
+func (idx *asOfIndex) layer2For(m cache.Match, team int, isPick bool, hm *features.HeroMap) (aff []float64, familiar bool) {
+	if isPick {
+		return idx.teamAff2(m, team, m.StartTime, hm)
+	}
+	_, familiar = idx.teamAff2(m, team, m.StartTime, hm)
+	aff, _ = idx.teamAff2(m, 1-team, m.StartTime, hm)
+	return aff, familiar
+}
+
+// stackAff3 is layer 3 for team's stack: what that stack picked (or, with bans,
+// banned) in its earlier matches, capped like a Battle Cup's depth. Only the
+// stack's own side counts — the opponents' picks in those matches say nothing
+// about this team.
+func (idx *asOfIndex) stackAff3(m cache.Match, team int, before int64, hm *features.HeroMap, bans bool) (aff []float64, n int) {
 	accs := idx.teamAccounts(m, team == 0)
 	if len(accs) < 2 {
 		return nil, 0
@@ -248,18 +266,25 @@ func (idx *asOfIndex) stackAff3(m cache.Match, team int, before int64, hm *featu
 		if prev.StartTime >= before || prev.ID == m.ID {
 			continue
 		}
-		overlap := 0
+		overlap, onRadiant := 0, 0
 		for _, p := range prev.Players {
 			if p.AccountID != nil && want[*p.AccountID] {
 				overlap++
+				if p.IsRadiant {
+					onRadiant++
+				}
 			}
 		}
 		if overlap < 2 {
 			continue
 		}
+		side := 1 // the side most of the stack played on in that match
+		if 2*onRadiant >= overlap {
+			side = 0
+		}
 		n++
 		for _, pb := range prev.PickBans {
-			if !pb.IsPick {
+			if pb.IsPick == bans || pb.Team != side {
 				continue
 			}
 			if i, ok := hm.Index(pb.HeroID); ok {

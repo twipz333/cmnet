@@ -164,6 +164,33 @@ func (s *OpponentSnapshot) Aff3Vector(hm HeroIndexer) ([]float64, int) {
 	return vec, n
 }
 
+// Aff3BanVector is Aff3Vector for bans: how often the team banned each hero
+// across its event drafts, plus the number of drafts observed. Layer-3 evidence
+// for the enemy's BAN steps (Aff3Vector, built from picks, feeds their picks).
+func (s *OpponentSnapshot) Aff3BanVector(hm HeroIndexer) ([]float64, int) {
+	if s == nil || s.Layer3 == nil || len(s.Layer3.TeamDrafts) == 0 {
+		return nil, 0
+	}
+	vec := make([]float64, hm.Len())
+	any := false
+	for _, d := range s.Layer3.TeamDrafts {
+		for _, hid := range d.Bans {
+			if idx, ok := hm.Index(hid); ok {
+				vec[idx]++
+				any = true
+			}
+		}
+	}
+	if !any {
+		return nil, 0
+	}
+	n := s.Layer3.DraftsObserved
+	if n == 0 {
+		n = len(s.Layer3.TeamDrafts)
+	}
+	return vec, n
+}
+
 // computeVersion hashes the snapshot content with the version field blanked.
 func computeVersion(s *OpponentSnapshot) (string, error) {
 	clone := *s

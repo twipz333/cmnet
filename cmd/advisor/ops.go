@@ -2097,6 +2097,8 @@ func buildScanConfig(o serveOpts) (tui.Config, error) {
 			aff2 := snap.Aff2Vector(hm)
 			aff3, n := snap.Aff3Vector(hm)
 			rec.WithScout(aff2, aff3, n, blend.DefaultWeights())
+			aff3Bans, _ := snap.Aff3BanVector(hm)
+			rec.WithScoutBans(aff3Bans)            // what they banned this event feeds their ban steps
 			rec.WithAllies(snap.AllyAffVector(hm)) // #3 personalize our picks
 			rec.WithHeroPool(snap.HeroPool)        // #4 pool contention alert
 			// Resolve display names before capability/lineup so recommendations

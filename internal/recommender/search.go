@@ -74,13 +74,18 @@ type Recommender struct {
 	scoutEnabled bool
 	enemyAff2    []float64
 	enemyAff3    []float64
-	eventN       int
-	blendW       blend.Weights
+	// enemyAff3Bans is layer-3 BAN evidence (what the team banned this event).
+	enemyAff3Bans []float64
+	eventN        int
+	blendW        blend.Weights
 
 	// Ally comfort bias (#3): a gentle additive nudge toward heroes our own team
 	// is comfortable on, applied to OUR pick scores. Normalized to [0,1] per hero.
 	allyAff []float64
 	allyW   float64
+	// allyRaw is the un-normalized ally comfort vector, used as layer-2 evidence
+	// for the ENEMY's bans (they ban what we play).
+	allyRaw []float64
 
 	// Capability roster (§6.5): soft player→hero feasibility on our picks.
 	capRoster *capability.Roster
@@ -242,6 +247,7 @@ func (r *Recommender) WithAllies(allyAff []float64) *Recommender {
 		norm[i] = v / max
 	}
 	r.allyAff = norm
+	r.allyRaw = append([]float64(nil), allyAff...)
 	if r.allyW == 0 {
 		r.allyW = DefaultAllyWeight
 	}
@@ -573,11 +579,11 @@ func (r *Recommender) Recommend(d draft.View, ourTeam draft.Team, topN int) Resu
 	pickProbs := r.orZeros(enemyPick)
 
 	// Enemy prediction: their next move over untaken heroes.
-	res.EnemyPred = r.topEnemy(d, ourTeam, nextProbs, topN)
+	res.EnemyPred = r.topEnemy(d, ourTeam, nextProbs, enemyNext.step.Action, topN)
 
 	// Pool contention (#4): our preferred heroes the enemy is most likely to take
 	// with their next move, pick or ban.
-	res.PoolAlert = r.poolAlert(d, ourTeam, nextProbs, topN)
+	res.PoolAlert = r.poolAlert(d, ourTeam, nextProbs, enemyNext.step.Action, topN)
 
 	// The other half of the ban decision: what they are likely to PICK and we can
 	// afford to let them have.
@@ -658,8 +664,8 @@ func topHeroScores(s []HeroScore, topN int) []HeroScore {
 
 // topEnemy ranks the predicted next move over untaken heroes from precomputed
 // (possibly scout-blended) probabilities.
-func (r *Recommender) topEnemy(d draft.View, ourTeam draft.Team, probs []float64, topN int) []EnemyPick {
-	picks := r.enemyPicks(d, ourTeam, probs, nil)
+func (r *Recommender) topEnemy(d draft.View, ourTeam draft.Team, probs []float64, action draft.Action, topN int) []EnemyPick {
+	picks := r.enemyPicks(d, ourTeam, probs, action, nil)
 	rankEnemyPicks(picks)
 	if len(picks) > topN {
 		picks = picks[:topN]
@@ -671,7 +677,7 @@ func (r *Recommender) topEnemy(d draft.View, ourTeam draft.Team, probs []float64
 // threat decomposition. keep, when non-nil, restricts the list to hero ids it
 // accepts (used by the pool panel). The list is in dense index order; callers rank
 // it themselves.
-func (r *Recommender) enemyPicks(d draft.View, ourTeam draft.Team, probs []float64, keep func(id int) bool) []EnemyPick {
+func (r *Recommender) enemyPicks(d draft.View, ourTeam draft.Team, probs []float64, action draft.Action, keep func(id int) bool) []EnemyPick {
 	ourPicks := d.Picks(ourTeam)
 	enemyPicks := d.Picks(ourTeam.Opponent())
 
@@ -681,7 +687,7 @@ func (r *Recommender) enemyPicks(d draft.View, ourTeam draft.Team, probs []float
 		if d.IsTaken(id) || (keep != nil && !keep(id)) {
 			continue
 		}
-		e := EnemyPick{HeroID: id, Prob: p, Source: r.provenance(idx)}
+		e := EnemyPick{HeroID: id, Prob: p, Source: r.provenanceFor(idx, action)}
 		e.Threat, e.Fit, e.Danger = r.threatOf(id, ourPicks, enemyPicks)
 		out = append(out, e)
 	}
@@ -731,7 +737,7 @@ func (r *Recommender) safeToLet(d draft.View, ourTeam draft.Team, eprobs []float
 	if !r.HasMatrices() {
 		return nil
 	}
-	pool := r.enemyPicks(d, ourTeam, eprobs, nil)
+	pool := r.enemyPicks(d, ourTeam, eprobs, draft.Pick, nil)
 	rankEnemyPicks(pool)
 	if n := safePoolMult * topN; len(pool) > n {
 		pool = pool[:n]
@@ -764,30 +770,16 @@ func (r *Recommender) safeToLet(d draft.View, ourTeam draft.Team, eprobs []float
 // to take them next (pick or ban) — the ones worth securing. Empty when no pool
 // is configured. Uses the same enemy probabilities and stable ordering as the
 // enemy panel so it stays deterministic (§6).
-func (r *Recommender) poolAlert(d draft.View, ourTeam draft.Team, eprobs []float64, topN int) []EnemyPick {
+func (r *Recommender) poolAlert(d draft.View, ourTeam draft.Team, eprobs []float64, action draft.Action, topN int) []EnemyPick {
 	if len(r.heroPool) == 0 {
 		return nil
 	}
-	picks := r.enemyPicks(d, ourTeam, eprobs, func(id int) bool { return r.heroPool[id] })
+	picks := r.enemyPicks(d, ourTeam, eprobs, action, func(id int) bool { return r.heroPool[id] })
 	rankEnemyPicks(picks)
 	if len(picks) > topN {
 		picks = picks[:topN]
 	}
 	return picks
-}
-
-// provenance tags which layer contributed signal for a hero index (display-only).
-func (r *Recommender) provenance(idx int) string {
-	if !r.scoutEnabled {
-		return "meta"
-	}
-	if r.enemyAff3 != nil && r.eventN > 0 && r.enemyAff3[idx] > 0 {
-		return "event"
-	}
-	if r.enemyAff2 != nil && r.enemyAff2[idx] > 0 {
-		return "player"
-	}
-	return "meta"
 }
 
 // rankCandidates scores every untaken hero for the current step. For a pick we
