@@ -298,6 +298,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/outcome/resolve", s.mutate(s.doOutcomeResolve))
 	mux.HandleFunc("/api/declog/review", s.handleDeclogReview)
 	mux.HandleFunc("/api/reload", s.mutate(s.doReload))
+	mux.HandleFunc("/api/new-draft", s.mutate(s.doNewDraft))
+	mux.HandleFunc("/api/catalog", s.handleCatalog)
 	// Cached images, served from disk. The page must never reference a CDN: it is
 	// opened from a local server and has to work with no network at all, which is
 	// also how a laptop behaves on a Battle Cup night more often than one would
@@ -352,6 +354,9 @@ type stateDTO struct {
 	Auto *session.AutoStatus `json:"auto"`
 	// Lineup is the pos1-5 roster panel (our seats + enemy guesses).
 	Lineup *session.LineupView `json:"lineup,omitempty"`
+	// Sequence is the whole draft in order (24 steps) with the heroes placed so
+	// far and the current step marked.
+	Sequence []seqStepDTO `json:"sequence"`
 }
 
 type metaDTO struct {
@@ -496,6 +501,9 @@ func (s *Server) snapshot(ring bool) stateDTO {
 	st.Alerts = sess.Alerts()
 	lu := sess.Lineup()
 	st.Lineup = &lu
+	if rec := sess.Recommender(); rec != nil {
+		st.Sequence = sequenceOf(view, rec.CMOrder(), cfg.OurTeam)
+	}
 	if msg := s.outcome.Status(); msg != "" {
 		st.Status = msg
 	}

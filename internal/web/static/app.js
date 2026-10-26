@@ -2193,6 +2193,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('#tabs .tab').forEach((t) => {
     t.onclick = () => showTab(t.dataset.tab);
   });
+  // The new draft screen links here for the sections it does not cover yet:
+  // /classic.html#data opens straight on that tab.
+  const wanted = location.hash.slice(1);
+  if (wanted && document.querySelector('#tabs .tab[data-tab="' + wanted + '"]')) showTab(wanted);
   const cfgRefresh = $('config-refresh');
   if (cfgRefresh) cfgRefresh.onclick = () => loadConfig();
   const cfgSave = $('config-save');

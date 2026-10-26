@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
+<title>cmnet</title>
+<style>
+  :root { --night:#131a24; --slate:#1c2633; --seam:#2b3747; --bone:#ebe5d8; --ash:#8e98a8; --gold:#e6b450; }
+  html, body { margin: 0; height: 100%; background: var(--night); color: var(--bone);
+    font: 15px/1.45 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 64px 24px; }
+  h1 { font: 600 30px/1.15 "Segoe UI", system-ui, sans-serif; margin: 0 0 8px; }
+  p.lead { color: var(--ash); margin: 0 0 28px; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .pick { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; text-align: left; width: 100%;
+    background: var(--slate); border: 1px solid var(--seam); border-radius: 8px; padding: 14px 16px;
+    color: inherit; font: inherit; cursor: pointer; }
+  .pick:hover, .pick:focus-visible { border-color: var(--gold); outline: none; }
+  .pick .dir { font-weight: 600; word-break: break-all; }
+  .pick .meta { grid-column: 1; color: var(--ash); font-size: 13px; }
+  .pick .go { grid-row: 1 / 3; grid-column: 2; align-self: center; color: var(--gold); font-weight: 600; }
+  .searching { color: var(--ash); }
+  .other { margin-top: 28px; display: flex; gap: 10px; flex-wrap: wrap; }
+  button.btn { border: 1px solid var(--seam); background: none; color: var(--bone); border-radius: 6px;
+    padding: 8px 16px; font: inherit; cursor: pointer; }
+  button.btn:hover { border-color: var(--ash); }
+  .err { color: #d2634b; margin-top: 14px; min-height: 1.4em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Где лежат ваши данные?</h1>
+  <p class="lead">Если cmnet уже работал на этом компьютере, у вас есть папка с cmnet.db: собранные матчи и обученная модель. Выберите её, и всё продолжится с того же места.</p>
+  <div class="list" id="list"><div class="searching">Ищу папки с cmnet.db…</div></div>
+  <div class="other">
+    <button class="btn" id="browse" type="button">Указать cmnet.db вручную</button>
+    <button class="btn" id="fresh" type="button">Начать с нуля</button>
+  </div>
+  <div class="err" id="err"></div>
+</main>
+<script src="welcome.js"></script>
+</body>
+</html>

@@ -117,6 +117,11 @@ type Recommender struct {
 	// cmOrder is the draft schedule (bundle-inferred, else draft.DefaultOrder).
 	cmOrder draft.Order
 
+	// ourTeam is the side being advised, set for the duration of Recommend so
+	// role pins (stored as ours/enemy) can be resolved by side.
+	ourTeam  draft.Team
+	ourKnown bool
+
 	// Item/advice rules (#10), evaluated against the enemy draft.
 	rules []rules.Rule
 }
@@ -545,6 +550,8 @@ func (r *Recommender) Recommend(d draft.View, ourTeam draft.Team, topN int) Resu
 		topN = DefaultTopN
 	}
 	step, ok := d.Current()
+	r.ourTeam, r.ourKnown = ourTeam, true
+	defer func() { r.ourKnown = false }()
 
 	res := Result{}
 
@@ -794,70 +801,195 @@ func (r *Recommender) poolAlert(d draft.View, ourTeam draft.Team, eprobs []float
 func (r *Recommender) rankCandidates(d draft.View, ourTeam draft.Team, step draft.Step, dist, eprobs []float64, topN int) []Recommendation {
 	rPicks := d.Picks(draft.Radiant)
 	dPicks := d.Picks(draft.Dire)
+	ourPicks := rPicks
+	if ourTeam == draft.Dire {
+		ourPicks = dPicks
+	}
+	isPick := step.Action == draft.Pick
 
-	// For pick steps with beam search enabled, restrict scoring to a pruned meta
-	// pool and evaluate each candidate with a bounded rollout.
-	var pool []int
-	beamPick := step.Action == draft.Pick && r.beamEnabled()
-	if beamPick {
-		pool = r.prunePool(d, dist)
+	// Which positions we still have to fill. A pick candidate must fill one of
+	// them (MinRoleFit); see rolefit.go for why this is a constraint and not a
+	// feature.
+	var need *roleNeed
+	if isPick && r.hasRoles() {
+		n := r.needOf(ourPicks, r.heroPosOurs)
+		need = &n
 	}
 
-	recs := make([]Recommendation, 0, r.heroMap.Len())
+	// For pick steps with beam search enabled, restrict scoring to a pruned pool
+	// and evaluate each candidate with a bounded rollout.
+	var pool []int
+	beamPick := isPick && r.beamEnabled()
+	if beamPick {
+		pool = r.rolePool(d, dist, eprobs, need)
+	}
+
+	var recs, misfits []Recommendation
 	for idx, id := range r.heroMap.IDs() {
 		if d.IsTaken(id) {
 			continue
+		}
+		if beamPick && !containsInt(pool, id) {
+			continue // pruned: outside the pool
+		}
+		misfit := need != nil && need.fit(id) < MinRoleFit
+		if misfit && len(misfits) >= topN && beamPick {
+			continue // only the fallback needs misfits, and only a few
 		}
 		var score float64
 		var why string
 		var factors *Factors
 		switch {
 		case beamPick:
-			if !containsInt(pool, id) {
-				continue // pruned: outside the meta pool
-			}
 			score = r.beamPickScore(d, ourTeam, id, pool)
 			why = fmt.Sprintf("вин ~%.0f%%", score*100)
 			// The planner's value is an expectation of boardStrength — a probability
 			// on the strength bar's own scale, not a bespoke rollout score.
 			score, why, factors = r.applyAllyBias(idx, score, why, true)
-			ourPicks := rPicks
-			if ourTeam == draft.Dire {
-				ourPicks = dPicks
-			}
 			score, why, factors = r.applyCapability(ourPicks, id, score, why, factors)
-		case step.Action == draft.Pick:
+		case isPick:
 			score = r.pickScore(ourTeam, rPicks, dPicks, id)
 			why = fmt.Sprintf("вин ~%.0f%%", score*100)
 			score, why, factors = r.applyAllyBias(idx, score, why, true)
-			ourPicks := rPicks
-			if ourTeam == draft.Dire {
-				ourPicks = dPicks
-			}
 			score, why, factors = r.applyCapability(ourPicks, id, score, why, factors)
 		default: // ban step
 			score, why, factors = r.banScore(d, ourTeam, rPicks, dPicks, id, idx, eprobs)
 		}
 		role := 0
 		player := ""
-		if step.Action == draft.Pick {
-			ourPicks := rPicks
-			if ourTeam == draft.Dire {
-				ourPicks = dPicks
+		if isPick {
+			if need != nil {
+				role = need.bestRole(id)
+			} else {
+				role = r.mapRole(ourPicks, id)
 			}
-			role = r.mapRole(ourPicks, id)
+			if role > 0 {
+				why = roleLabel(role) + " · " + why
+			}
 			if r.capRoster != nil {
 				lineup := append(append([]int(nil), ourPicks...), id)
 				player = capability.PlayerForFixed(id, lineup, r.capRoster, r.heroPlayerOurs)
 			}
 		}
-		recs = append(recs, Recommendation{HeroID: id, Score: score, Why: why, Factors: factors, Role: role, Player: player})
+		rec := Recommendation{HeroID: id, Score: score, Why: why, Factors: factors, Role: role, Player: player}
+		if misfit {
+			misfits = append(misfits, rec)
+		} else {
+			recs = append(recs, rec)
+		}
+	}
+	// No hero fits an open position (role data says this lineup is already
+	// unusual): fall back to the best heroes regardless, rather than show nothing.
+	if len(recs) == 0 {
+		recs = misfits
 	}
 	rankRecommendations(recs)
+	if need != nil && need.openCount() >= 2 {
+		recs = diversifyByRole(recs, topN, maxPerRole)
+	}
 	if len(recs) > topN {
 		recs = recs[:topN]
 	}
 	return recs
+}
+
+// maxPerRole caps how many of the shown pick recommendations may target the same
+// position while at least two are open, so the list answers "what do we take for
+// each slot we still need" instead of listing five variants of one slot.
+const maxPerRole = 2
+
+// diversifyByRole reorders score-ranked recs so that within the first topN no
+// role appears more than cap times; overflow keeps its relative order after them.
+func diversifyByRole(recs []Recommendation, topN, cap int) []Recommendation {
+	out := make([]Recommendation, 0, len(recs))
+	var rest []Recommendation
+	count := map[int]int{}
+	for _, rc := range recs {
+		if len(out) < topN && (rc.Role == 0 || count[rc.Role] < cap) {
+			out = append(out, rc)
+			count[rc.Role]++
+			continue
+		}
+		rest = append(rest, rc)
+	}
+	return append(out, rest...)
+}
+
+// roleLabel names a position the way players say it.
+func roleLabel(pos int) string {
+	switch pos {
+	case 1:
+		return "керри"
+	case 2:
+		return "мид"
+	case 3:
+		return "оффлейн"
+	case 4:
+		return "четвёрка"
+	case 5:
+		return "пятёрка"
+	}
+	return ""
+}
+
+// rolePool is the candidate pool for the planner: our plausible picks for the
+// positions we still need (the predictor's distribution for our seat, weighted by
+// role fit), plus the enemy's most likely picks so their replies inside the search
+// are not limited to heroes WE would play.
+func (r *Recommender) rolePool(d draft.View, ours, enemyPick []float64, need *roleNeed) []int {
+	n := r.beam.PruneN
+	if n <= 0 {
+		n = r.heroMap.Len()
+	}
+	ourScore := make([]float64, len(ours))
+	for idx, p := range ours {
+		f := 1.0
+		if need != nil {
+			f = need.fit(r.heroMap.ID(idx))
+			if f < MinRoleFit {
+				f = 0
+			}
+		}
+		ourScore[idx] = p * f
+	}
+	pool := topIDs(r, d, ourScore, n)
+	for _, id := range topIDs(r, d, enemyPick, n/2) {
+		if !containsInt(pool, id) {
+			pool = append(pool, id)
+		}
+	}
+	return pool
+}
+
+// topIDs returns the k untaken heroes with the highest positive score, hero_id
+// breaking ties (deterministic).
+func topIDs(r *Recommender, d draft.View, score []float64, k int) []int {
+	type cand struct {
+		id int
+		v  float64
+	}
+	cands := make([]cand, 0, len(score))
+	for idx, v := range score {
+		id := r.heroMap.ID(idx)
+		if v <= 0 || d.IsTaken(id) {
+			continue
+		}
+		cands = append(cands, cand{id, v})
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].v != cands[j].v {
+			return cands[i].v > cands[j].v
+		}
+		return cands[i].id < cands[j].id
+	})
+	if k > len(cands) {
+		k = len(cands)
+	}
+	out := make([]int, k)
+	for i := 0; i < k; i++ {
+		out[i] = cands[i].id
+	}
+	return out
 }
 
 func containsInt(s []int, v int) bool {

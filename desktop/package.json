@@ -1,0 +1,39 @@
+{
+  "name": "cmnet-desktop",
+  "productName": "cmnet",
+  "version": "0.1.0",
+  "description": "Dota 2 draft advisor",
+  "main": "main.js",
+  "private": true,
+  "author": "twipz333",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.twipz333.cmnet",
+    "productName": "cmnet",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "datadirs.js", "splash.html", "welcome.html", "welcome.js", "package.json"],
+    "extraResources": [
+      { "from": "resources/advisor.exe", "to": "advisor.exe" }
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "cmnet",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

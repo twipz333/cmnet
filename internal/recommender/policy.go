@@ -103,7 +103,21 @@ func (r *Recommender) teamPolicy(d draft.View, team draft.Team, pickOnly bool) p
 	if !ok || r.Predictor == nil {
 		return policy{}
 	}
-	return policy{dist: r.Predictor.Distribution(predictorState(boardOf(d), team, step.Action, ord)), step: step, ord: ord}
+	b := boardOf(d)
+	dist := r.Predictor.Distribution(predictorState(b, team, step.Action, ord))
+	// A side does not pick a hero for a position it has already filled.
+	dist = r.roleAdjust(dist, b.picksOf(team), r.pinsForTeam(team), step.Action)
+	return policy{dist: dist, step: step, ord: ord}
+}
+
+// pinsForTeam returns captain-pinned positions for team. Pins are stored as ours
+// and the enemy's; which is which depends on the side we advise, recorded by
+// Recommend for the duration of the call.
+func (r *Recommender) pinsForTeam(team draft.Team) map[int]int {
+	if !r.ourKnown {
+		return nil
+	}
+	return r.pinsFor(team, r.ourTeam)
 }
 
 // enemyPolicy is teamPolicy for the opponent, with the scout layers blended in
