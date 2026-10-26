@@ -6,7 +6,7 @@
   <title>cmnet</title>
   <link rel="stylesheet" href="/ui/style.css">
 </head>
-<body>
+<body class="connecting">
   <header class="bar">
     <div class="brand">cmnet</div>
 
@@ -21,8 +21,8 @@
 
     <div class="source" id="source"></div>
 
-    <div class="strength" id="strength" hidden>
-      <div class="strength-num" id="strength-num"></div>
+    <div class="strength" id="strength" role="group" hidden>
+      <div class="strength-num"><span id="strength-num"></span><span class="strength-delta" id="strength-delta"></span></div>
       <div class="strength-track"><div class="strength-fill" id="strength-fill"></div></div>
       <div class="strength-cap">шанс на победу по драфту</div>
     </div>
@@ -52,6 +52,8 @@
       <button type="button" class="ghost-btn" id="redo" title="Ctrl+Shift+Z">Вернуть</button>
     </div>
   </section>
+
+  <div class="connect-note" aria-live="polite">Подключаюсь к ядру…</div>
 
   <main class="stage" id="stage">
     <aside class="team ours" id="team-ours"></aside>

@@ -3,6 +3,7 @@
 
 const ROLE = { 1: 'Керри', 2: 'Мид', 3: 'Оффлейн', 4: 'Четвёрка', 5: 'Пятёрка' };
 const ROLE_LOWER = { 1: 'керри', 2: 'мид', 3: 'оффлейн', 4: 'четвёрка', 5: 'пятёрка' };
+const ROLE_OF = { 1: 'керри', 2: 'мида', 3: 'оффлейна', 4: 'четвёрки', 5: 'пятёрки' };
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -18,6 +19,10 @@ let catalogFor = '';       // bundle version the catalog was loaded for
 let roleFilter = 0;        // 0 = all
 let lastStatus = '';
 let armed = '';            // a destructive action waiting for its second click
+let busy = false;          // a draft action is in flight; further clicks are ignored
+let prevStrength = null;   // our win chance before the last change on the board
+let strengthDelta = null;  // { value, until }
+let seenFilled = new Set();// sequence steps already drawn filled (to animate only new ones)
 
 // ---------- core I/O ----------
 
@@ -31,7 +36,21 @@ async function post(path, body) {
     if (res.ok) setState(await res.json());
     else toast(await res.text());
   } catch {
-    toast('Ядро не отвечает');
+    toast('Ядро не отвечает. Проверьте, что cmnet запущен.');
+  }
+}
+
+// draftAction is a post that changes the board. One at a time: a double click
+// on a card must not record the same choice for the next step as well.
+async function draftAction(path, body) {
+  if (busy) return;
+  busy = true;
+  document.body.classList.add('busy');
+  try {
+    await post(path, body);
+  } finally {
+    busy = false;
+    document.body.classList.remove('busy');
   }
 }
 
@@ -48,15 +67,31 @@ async function loadCatalog() {
 function connect() {
   const es = new EventSource('/api/events');
   es.onmessage = (ev) => setState(JSON.parse(ev.data));
-  es.onerror = () => $('source').textContent = 'Нет связи с ядром, переподключаюсь';
+  es.onerror = () => {
+    $('source').textContent = 'Нет связи с ядром, переподключаюсь…';
+  };
 }
 
 function setState(next) {
+  const before = state?.result?.strength?.ourProb;
+  const boardBefore = boardSize(state);
   state = next;
+  const after = state.result?.strength?.ourProb;
+  // Show how the last pick moved our chances, for a few seconds.
+  if (before != null && after != null && boardSize(state) !== boardBefore && Math.abs(after - before) >= 0.005) {
+    strengthDelta = { value: after - before, until: Date.now() + 6000 };
+    setTimeout(() => render(), 6100);
+  }
+  prevStrength = after;
   if (state.meta.draftReady && state.meta.bundleVersion !== catalogFor) loadCatalog();
   if (state.status && state.status !== lastStatus) toast(humanStatus(state.status));
   lastStatus = state.status || '';
   render();
+}
+
+function boardSize(s) {
+  const b = s?.board;
+  return b ? b.radiantPicks.length + b.radiantBans.length + b.direPicks.length + b.direBans.length : -1;
 }
 
 // ---------- helpers ----------
@@ -69,27 +104,52 @@ function initials(name) {
   return name.split(/[\s-]+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 }
 
-// portrait renders a hero image with the hero's initials underneath, so a
-// missing image file degrades to a readable tile rather than an empty box.
-function portrait(id, cls = 'portrait') {
-  const box = el('div', cls, id ? initials(nameOf(id)) : '');
-  if (id) {
-    const img = new Image();
-    img.alt = '';
-    img.loading = 'lazy';
-    img.src = `/assets/heroes/${id}.png`;
-    img.onload = () => {
-      box.textContent = '';
-      box.style.backgroundImage = `url(${img.src})`;
-    };
+// Portrait images are checked once per hero and remembered, so a state update
+// redraws an already-loaded portrait instantly instead of flashing its initials.
+const imgState = new Map(); // id -> 'ok' | 'missing' | Promise
+function heroImage(id) {
+  if (!imgState.has(id)) {
+    imgState.set(id, new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => { imgState.set(id, 'ok'); resolve('ok'); };
+      img.onerror = () => { imgState.set(id, 'missing'); resolve('missing'); };
+      img.src = `/assets/heroes/${id}.png`;
+    }));
   }
+  return imgState.get(id);
+}
+
+// paint sets a hero portrait as a background, with the hero's initials as the
+// fallback when no image is cached on disk.
+function paint(node, id, withInitials = true) {
+  const st = heroImage(id);
+  const apply = (s) => {
+    if (s === 'ok') {
+      node.style.backgroundImage = `url(/assets/heroes/${id}.png)`;
+      if (withInitials) node.textContent = '';
+    } else if (withInitials && !node.textContent) {
+      node.textContent = initials(nameOf(id));
+    }
+  };
+  if (typeof st === 'string') apply(st);
+  else {
+    if (withInitials) node.textContent = initials(nameOf(id));
+    st.then(apply);
+  }
+  return node;
+}
+
+function portrait(id, cls = 'portrait') {
+  const box = el('div', cls);
+  box.setAttribute('aria-hidden', 'true');
+  if (id) paint(box, id);
   return box;
 }
 
 function humanStatus(s) {
   if (/^our side → /.test(s)) return 'Мы за ' + s.split('→ ')[1];
   if (/^first pick → /.test(s)) return 'Первыми выбирают: ' + s.split('→ ')[1];
-  if (s === 'new draft') return 'Новый драфт';
+  if (s === 'new draft') return 'Доска очищена, новый драфт';
   if (/^(applied|undo|redo|lineup updated)/.test(s)) return '';
   return s;
 }
@@ -101,7 +161,7 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
 }
 
 // The core explains each recommendation as " · "-joined fragments. Turn them
@@ -118,7 +178,7 @@ function reasons(why) {
     if ((m = p.match(/^враг ~(\d+)%/))) { enemyPct = +m[1]; continue; }
     if (p === 'контрит нас') out.push({ text: 'бьёт по нашим героям', hot: true });
     else if (p === 'синергия врага') out.push({ text: 'хорошо ложится в их драфт', hot: true });
-    else if ((m = p.match(/^дыра (\d+)/))) out.push({ text: 'равной замены у них нет', hot: true });
+    else if (/^дыра \d+/.test(p)) out.push({ text: 'равной замены у них нет', hot: true });
     else if (p === 'из наших') out.push({ text: 'наш комфортный герой' });
     else if ((m = p.match(/^исполнимость (\d+)%/))) out.push({ text: `сыграем его: ${m[1]}%` });
     else out.push({ text: p });
@@ -126,8 +186,32 @@ function reasons(why) {
   return { list: out, enemyPct };
 }
 
+// metaLine says where a hero stands in the patch meta for a position, when the
+// baked per-position meta lists it.
+function metaLine(heroId, pos) {
+  const pm = (state.result?.positionMeta || []).find((p) => p.position === pos);
+  if (!pm) return null;
+  const i = pm.heroes.findIndex((h) => h.heroId === heroId);
+  if (i < 0) return null;
+  const wr = pm.heroes[i].winRate;
+  return `№${i + 1} в мете ${ROLE_OF[pos]}` + (wr ? `, побед ${(wr * 100).toFixed(1)}%` : '');
+}
+
+// enemyWants is how likely the enemy is to pick this hero with their next pick,
+// when the core's enemy prediction is about a pick.
+function enemyWants(heroId) {
+  const res = state.result || {};
+  if (!res.enemyStep?.isPick) return 0;
+  return (res.enemyPred || []).find((e) => e.heroId === heroId)?.prob || 0;
+}
+
 function openRoles(slots) {
   return (slots || []).filter((s) => !s.heroId).map((s) => s.position);
+}
+
+function playerName(list, accountId) {
+  if (!accountId) return '';
+  return (list || []).find((p) => p.accountId === accountId)?.name || '';
 }
 
 // ---------- render ----------
@@ -136,6 +220,7 @@ function render() {
   if (!state) return;
   const m = state.meta;
   document.body.dataset.our = ourSide();
+  document.body.classList.remove('connecting');
 
   renderBar(m);
   renderRibbon();
@@ -146,7 +231,9 @@ function render() {
 
 function renderBar(m) {
   document.querySelectorAll('.side-btn').forEach((b) => {
-    b.classList.toggle('on', b.dataset.side === ourSide());
+    const on = b.dataset.side === ourSide();
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
   });
   const fp = $('first-pick');
   const weFirst = m.firstPick === m.ourTeam;
@@ -158,7 +245,8 @@ function renderBar(m) {
   const src = $('source');
   src.textContent = '';
   if (m.gsiMode) {
-    const s = el('span', m.gsiSeen ? 'live' : '', m.gsiSeen ? 'Драфт читается из игры' : 'Жду данные из Dota');
+    const s = el('span', m.gsiSeen ? 'live' : 'wait');
+    s.append(el('i', 'dot'), document.createTextNode(m.gsiSeen ? 'Драфт читается из игры' : 'Жду данные из Dota'));
     src.append(s);
   }
 
@@ -167,10 +255,22 @@ function renderBar(m) {
   if (st) {
     $('strength-num').textContent = pct(st.ourProb);
     $('strength-fill').style.width = `${st.ourProb * 100}%`;
+    $('strength').setAttribute('aria-label', `Шанс на победу по драфту ${pct(st.ourProb)}`);
+    const d = $('strength-delta');
+    if (strengthDelta && Date.now() < strengthDelta.until) {
+      const v = Math.round(strengthDelta.value * 100);
+      d.textContent = v === 0 ? '' : (v > 0 ? `+${v}` : `−${-v}`);
+      d.className = 'strength-delta ' + (v > 0 ? 'up' : 'down');
+      d.title = 'Изменение после последнего хода';
+    } else {
+      d.textContent = '';
+    }
   }
 
   const a = state.auto;
-  $('auto').textContent = a && (a.phase === 'sync' || a.phase === 'train') ? (a.line || '') : '';
+  const busyAuto = a && (a.phase === 'sync' || a.phase === 'train');
+  $('auto').textContent = busyAuto ? (a.line || (a.phase === 'train' ? 'Переобучаю модель' : 'Собираю матчи')) : '';
+  $('auto').title = busyAuto ? (a.line || '') : '';
 
   $('undo').disabled = !m.canUndo;
   $('redo').disabled = !m.canRedo;
@@ -184,12 +284,14 @@ function renderRibbon() {
   if (!seq.length) return;
 
   const key = el('div', 'lane-key');
+  key.setAttribute('aria-hidden', 'true');
   key.append(el('div', 'k-ours', 'Мы'), el('div', 'k-theirs', 'Они'));
   host.append(key);
 
   let phase = null;
   let picks = 0;
   let bans = 0;
+  const filledNow = new Set();
   seq.forEach((s, i) => {
     if (!phase || seq[i - 1].action !== s.action) {
       phase = el('div', 'phase');
@@ -199,20 +301,29 @@ function renderRibbon() {
       phase.append(steps, el('div', 'phase-name', isPick ? `Пики ${picks}` : `Баны ${bans}`));
       host.append(phase);
     }
-    const node = el('div', `step ${s.action === 'Pick' ? 'pick' : 'ban'} ${s.ours ? 'ours' : 'theirs'}`);
+    const isPick = s.action === 'Pick';
+    const node = el('div', `step ${isPick ? 'pick' : 'ban'} ${s.ours ? 'ours' : 'theirs'}`);
     node.style.setProperty('--lane', s.ours ? 1 : 2);
+    const what = `${i + 1}. ${s.ours ? 'Наш' : 'Их'} ${isPick ? 'пик' : 'бан'}`;
     if (s.heroId) {
-      node.title = nameOf(s.heroId);
-      node.style.backgroundImage = `url(/assets/heroes/${s.heroId}.png)`;
+      paint(node, s.heroId, false);
+      node.title = `${what}: ${nameOf(s.heroId)}`;
+      filledNow.add(i);
+      if (!seenFilled.has(i) && seenFilled.size) node.classList.add('fresh');
     } else {
       node.classList.add('empty');
+      node.title = what;
     }
     if (s.current) {
       node.classList.add('now');
-      node.title = `Сейчас: ${s.ours ? 'наш' : 'их'} ${s.action === 'Pick' ? 'пик' : 'бан'}`;
+      node.title = `${what}, сейчас`;
+      node.append(el('span', 'now-tag', 'сейчас'));
     }
+    node.setAttribute('role', 'img');
+    node.setAttribute('aria-label', node.title);
     phase.firstChild.append(node);
   });
+  seenFilled = filledNow;
 }
 
 function renderTeams() {
@@ -221,36 +332,47 @@ function renderTeams() {
   const m = state.meta;
   const ours = ourSide() === 'radiant';
   const sides = [
-    { host: $('team-ours'), name: m.ourTeam, note: 'наша команда', slots: lu?.our, bans: ours ? b.radiantBans : b.direBans, mine: true },
-    { host: $('team-theirs'), name: ours ? 'Dire' : 'Radiant', note: 'соперник, роли угаданы по героям', slots: lu?.enemy, bans: ours ? b.direBans : b.radiantBans, mine: false },
+    { host: $('team-ours'), name: m.ourTeam, note: 'наша команда', slots: lu?.our, players: lu?.allies,
+      bans: ours ? b.radiantBans : b.direBans, mine: true },
+    { host: $('team-theirs'), name: ours ? 'Dire' : 'Radiant', note: 'соперник, роли угаданы по героям', slots: lu?.enemy,
+      players: lu?.enemies, bans: ours ? b.direBans : b.radiantBans, mine: false },
   ];
   for (const s of sides) {
     s.host.textContent = '';
-    s.host.append(el('div', 'team-name', s.name), el('div', 'team-note', s.note));
+    s.host.append(el('h2', 'team-name', s.name), el('div', 'team-note', s.note));
     for (const slot of s.slots || []) {
       const row = el('div', 'seatrow');
       row.append(el('div', 'role', ROLE[slot.position]));
       const who = el('div', 'who');
+      const player = playerName(s.players, slot.accountId);
       if (slot.heroId) {
-        who.append(portrait(slot.heroId), el('span', null, nameOf(slot.heroId)));
+        const text = el('div', 'who-text');
+        text.append(el('span', 'who-hero', nameOf(slot.heroId)));
+        if (player) text.append(el('span', 'who-player', player));
+        who.append(portrait(slot.heroId), text);
       } else {
         row.classList.add('open');
         if (s.mine) row.classList.add('ours-open');
-        who.textContent = s.mine ? 'нужен' : 'ещё нет';
+        const text = el('div', 'who-text');
+        text.append(el('span', 'who-hero', s.mine ? 'нужен' : 'ещё нет'));
+        if (player) text.append(el('span', 'who-player', player));
+        who.append(text);
       }
       row.append(who);
       s.host.append(row);
     }
+    const bansBox = el('div', 'bans');
+    bansBox.append(el('div', 'bans-title', s.bans?.length ? `Баны: ${s.bans.length} из 7` : 'Банов пока нет'));
     if (s.bans?.length) {
-      const bans = el('div', 'bans');
+      const list = el('ul', 'bans-list');
       s.bans.forEach((id) => {
-        const mini = el('div', 'mini');
-        mini.title = nameOf(id);
-        mini.style.backgroundImage = `url(/assets/heroes/${id}.png)`;
-        bans.append(mini);
+        const li = el('li', 'ban');
+        li.append(portrait(id, 'mini'), el('span', null, nameOf(id)));
+        list.append(li);
       });
-      s.host.append(bans);
+      bansBox.append(list);
     }
+    s.host.append(bansBox);
   }
 }
 
@@ -266,21 +388,19 @@ function renderFocus() {
   sub.textContent = '';
 
   if (!m.draftReady) {
-    title.textContent = '';
-    const n = el('div', 'notice');
-    n.append(el('h2', null, 'Модель ещё не обучена'));
-    n.append(el('p', null, m.draftError || 'Советнику нужен бандл: соберите матчи и обучите модель.'));
+    title.textContent = 'Модель ещё не обучена';
+    sub.textContent = m.draftError || 'Советнику нужен бандл: соберите матчи и обучите модель.';
     const act = el('div', 'actions');
     if (m.canTrain) {
       const go = el('button', 'btn', 'Обучить модель');
-      go.onclick = () => post('/api/ops/train');
+      go.type = 'button';
+      go.onclick = () => { go.disabled = true; go.textContent = 'Обучение запущено'; post('/api/ops/train'); };
       act.append(go);
     }
     const data = el('a', 'btn quiet', 'Открыть данные');
     data.href = '/classic.html#data';
     act.append(data);
-    n.append(act);
-    cards.append(n);
+    cards.append(act);
     return;
   }
 
@@ -292,7 +412,8 @@ function renderFocus() {
     if (st) sub.innerHTML = `Шанс на победу по драфту: <b>${pct(st.ourProb)}</b>`;
     if (!m.gsiMode) {
       const again = el('button', 'btn', 'Новый драфт');
-      again.onclick = () => post('/api/new-draft');
+      again.type = 'button';
+      again.onclick = () => draftAction('/api/new-draft');
       rows.append(again);
     }
     return;
@@ -308,14 +429,17 @@ function renderFocus() {
     } else {
       sub.textContent = 'Убираем то, что они скорее всего возьмут и что сильнее всего ударит по нам.';
     }
-    (res.recs || []).slice(0, 5).forEach((r, i) => cards.append(recCard(r, i, isPick)));
-    if (!(res.recs || []).length) cards.append(el('p', 'focus-sub', 'Нет подходящих героев для этого шага.'));
+    const recs = (res.recs || []).slice(0, 5);
+    recs.forEach((r, i) => cards.append(recCard(r, i, isPick)));
+    if (!recs.length) cards.append(el('p', 'empty-note', 'Для этого шага подходящих героев не нашлось. Выберите героя в списке ниже.'));
   } else {
     title.textContent = isPick ? 'Пик соперника' : 'Бан соперника';
     sub.textContent = m.gsiMode
       ? 'Ждём их выбор в игре. Самые вероятные варианты:'
       : 'Отметьте, кого они взяли: нажмите карточку или найдите героя внизу.';
-    (res.enemyPred || []).slice(0, 5).forEach((e, i) => cards.append(enemyCard(e, i, !m.gsiMode)));
+    const preds = (res.enemyPred || []).slice(0, 5);
+    preds.forEach((e, i) => cards.append(enemyCard(e, i, !m.gsiMode)));
+    if (!preds.length) cards.append(el('p', 'empty-note', 'Предсказать их ход не из чего. Отметьте выбор в списке ниже.'));
   }
 
   if (step.isOurs) {
@@ -340,7 +464,10 @@ function recCard(r, i, isPick) {
   const card = el('button', 'card' + (i === 0 ? ' first' : ''));
   card.type = 'button';
   const art = portrait(r.heroId, 'card-art');
-  art.append(el('span', 'card-key', String(i + 1)));
+  const key = el('span', 'card-key', String(i + 1));
+  key.setAttribute('aria-hidden', 'true');
+  art.append(key);
+  if (i === 0) art.append(el('span', 'card-best', 'лучший вариант'));
   card.append(art);
   const body = el('div', 'card-body');
   body.append(el('div', 'card-name', nameOf(r.heroId)));
@@ -356,12 +483,21 @@ function recCard(r, i, isPick) {
     line.append(el('span', 'card-metric', why.enemyPct != null ? `${why.enemyPct}%` : ''));
   }
   body.append(line);
-  if (r.player) body.append(el('div', 'card-role', `играет ${r.player}`));
+  if (r.player) body.append(el('div', 'card-player', `играет ${r.player}`));
+
   const ul = el('ul', 'card-why');
-  why.list.slice(0, 3).forEach((w) => ul.append(el('li', w.hot ? 'hot' : '', w.text)));
+  const lines = [...why.list];
+  if (isPick) {
+    const wants = enemyWants(r.heroId);
+    if (wants >= 0.05) lines.unshift({ text: `заберём у них: хотят с шансом ${pct(wants)}`, hot: true });
+    const meta = r.role ? metaLine(r.heroId, r.role) : null;
+    if (meta) lines.push({ text: meta });
+  }
+  lines.slice(0, 3).forEach((w) => ul.append(el('li', w.hot ? 'hot' : '', w.text)));
   body.append(ul);
   card.append(body);
-  card.onclick = () => post('/api/apply', { heroId: r.heroId });
+  card.setAttribute('aria-label', `${i + 1}. ${nameOf(r.heroId)}` + (isPick ? `, ${r.role ? ROLE_LOWER[r.role] + ', ' : ''}победа ${pct(r.score)}` : ''));
+  card.onclick = () => draftAction('/api/apply', { heroId: r.heroId });
   return card;
 }
 
@@ -372,10 +508,14 @@ function sourceTag(e) {
 }
 
 function enemyCard(e, i, clickable) {
-  const card = el(clickable ? 'button' : 'div', 'card');
+  const card = el(clickable ? 'button' : 'div', 'card enemy');
   if (clickable) card.type = 'button';
   const art = portrait(e.heroId, 'card-art');
-  if (clickable) art.append(el('span', 'card-key', String(i + 1)));
+  if (clickable) {
+    const key = el('span', 'card-key', String(i + 1));
+    key.setAttribute('aria-hidden', 'true');
+    art.append(key);
+  }
   card.append(art);
   const body = el('div', 'card-body');
   body.append(el('div', 'card-name', nameOf(e.heroId)));
@@ -387,26 +527,31 @@ function enemyCard(e, i, clickable) {
   const tag = sourceTag(e);
   if (tag) ul.append(el('li', 'hot', tag));
   if (e.threat > 0.02) ul.append(el('li', 'hot', 'бьёт по нашим героям'));
+  if (e.fit > 0.02) ul.append(el('li', null, 'хорошо ложится в их драфт'));
   body.append(ul);
   card.append(body);
   const bar = el('div', 'card-bar');
+  bar.setAttribute('aria-hidden', 'true');
   const fill = el('div');
   fill.style.width = `${Math.min(100, e.prob * 100 * 2)}%`;
   bar.append(fill);
   card.append(bar);
-  if (clickable) card.onclick = () => post('/api/apply', { heroId: e.heroId });
+  if (clickable) {
+    card.setAttribute('aria-label', `${i + 1}. Они взяли ${nameOf(e.heroId)} (вероятность ${pct(e.prob)})`);
+    card.onclick = () => draftAction('/api/apply', { heroId: e.heroId });
+  }
   return card;
 }
 
 function chipRow(heading, note, list) {
-  const box = el('div', 'chips-row');
+  const box = el('section', 'chips-row');
   const h = el('h2', null, heading);
   if (note) h.append(el('span', null, note));
   box.append(h);
-  const chips = el('div', 'chips');
+  const chips = el('ul', 'chips');
   list.forEach((e) => {
-    const c = el('div', 'chip');
-    c.append(portrait(e.heroId), el('span', null, nameOf(e.heroId)), el('span', 'pct', pct(e.prob)));
+    const c = el('li', 'chip');
+    c.append(portrait(e.heroId), el('span', 'chip-name', nameOf(e.heroId)), el('span', 'pct', pct(e.prob)));
     const tag = sourceTag(e);
     if (tag) c.append(el('span', 'tag', tag));
     chips.append(c);
@@ -432,8 +577,7 @@ function matches(h, q) {
   if (!q) return true;
   const label = (h.localized || h.name || '').toLowerCase();
   const internal = (h.name || '').toLowerCase().replace('npc_dota_hero_', '').replace(/_/g, ' ');
-  const words = label.split(/[\s-]+/);
-  const abbr = words.map((w) => w[0]).join('');
+  const abbr = label.split(/[\s-]+/).map((w) => w[0]).join('');
   return [q, fromRu(q)].some((x) => label.includes(x) || internal.includes(x) || abbr.startsWith(x));
 }
 
@@ -452,7 +596,7 @@ function renderPicker() {
   picker.classList.toggle('readonly', readonly);
   $('picker-hint').textContent = m.gsiMode
     ? 'Доска заполняется из игры'
-    : (!state.step ? '' : 'Enter выбирает первого найденного, цифры 1–5 — карточки, Ctrl+Z отменяет');
+    : (!state.step ? '' : 'Печатайте в любом месте. Enter берёт первого найденного, 1–5 выбирают карточку, Ctrl+Z отменяет');
 
   const rf = $('role-filter');
   if (!rf.childElementCount) {
@@ -464,7 +608,11 @@ function renderPicker() {
       rf.append(b);
     });
   }
-  rf.querySelectorAll('.role-btn').forEach((b) => b.classList.toggle('on', +b.dataset.pos === roleFilter));
+  rf.querySelectorAll('.role-btn').forEach((b) => {
+    const on = +b.dataset.pos === roleFilter;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
   if (readonly) return;
 
   const grid = $('grid');
@@ -472,19 +620,25 @@ function renderPicker() {
   const list = visibleHeroes();
   const q = $('search').value.trim();
   const firstFree = list.find((h) => !h.taken);
+  if (!list.length) {
+    grid.append(el('p', 'empty-note', q ? `Никого не нашли по «${q}». Esc очищает поиск.` : 'В этой роли героев нет.'));
+    return;
+  }
   list.forEach((h) => {
+    const label = h.localized || h.name;
     const b = el('button', 'hero' + (h.taken ? ' taken' : '') + (q && h === firstFree ? ' match' : ''));
     b.type = 'button';
-    b.title = h.localized || h.name;
-    b.append(portrait(h.id), el('span', null, h.localized || h.name));
-    b.onclick = () => applyHero(h.id);
+    b.title = h.taken ? `${label}: уже на доске` : label;
+    b.disabled = h.taken;
+    b.append(portrait(h.id), el('span', null, label));
+    if (!h.taken) b.onclick = () => applyHero(h.id);
     grid.append(b);
   });
 }
 
 function applyHero(id) {
   $('search').value = '';
-  post('/api/apply', { heroId: id });
+  draftAction('/api/apply', { heroId: id });
 }
 
 // ---------- wiring ----------
@@ -494,8 +648,7 @@ document.querySelectorAll('.side-btn').forEach((b) => {
 });
 
 $('first-pick').onclick = () => {
-  const b = state?.board;
-  const empty = b && !(b.radiantPicks.length + b.radiantBans.length + b.direPicks.length + b.direBans.length);
+  const empty = boardSize(state) === 0;
   if (!empty && armed !== 'first') {
     armed = 'first';
     render();
@@ -503,21 +656,26 @@ $('first-pick').onclick = () => {
     return;
   }
   armed = '';
-  post('/api/first-pick');
+  draftAction('/api/first-pick');
 };
 
-$('undo').onclick = () => post('/api/undo');
-$('redo').onclick = () => post('/api/redo');
+$('undo').onclick = () => draftAction('/api/undo');
+$('redo').onclick = () => draftAction('/api/redo');
 
 const menu = $('menu');
 const menuBtn = $('menu-btn');
+const closeMenu = () => { menu.hidden = true; menuBtn.setAttribute('aria-expanded', 'false'); };
 menuBtn.onclick = (e) => {
   e.stopPropagation();
   menu.hidden = !menu.hidden;
   menuBtn.setAttribute('aria-expanded', String(!menu.hidden));
+  if (!menu.hidden) menu.querySelector('button, a')?.focus();
 };
 document.addEventListener('click', (e) => {
-  if (!menu.hidden && !menu.contains(e.target)) { menu.hidden = true; menuBtn.setAttribute('aria-expanded', 'false'); }
+  if (!menu.hidden && !menu.contains(e.target)) closeMenu();
+});
+menu.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeMenu(); menuBtn.focus(); }
 });
 menu.querySelector('[data-cmd="new"]').onclick = (e) => {
   const btn = e.currentTarget;
@@ -530,8 +688,8 @@ menu.querySelector('[data-cmd="new"]').onclick = (e) => {
   }
   btn.dataset.armed = '';
   btn.textContent = 'Новый драфт';
-  menu.hidden = true;
-  post('/api/new-draft');
+  closeMenu();
+  draftAction('/api/new-draft');
 };
 
 const search = $('search');
@@ -553,10 +711,10 @@ document.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 'z') {
     e.preventDefault();
-    post(e.shiftKey ? '/api/redo' : '/api/undo');
+    draftAction(e.shiftKey ? '/api/redo' : '/api/undo');
     return;
   }
-  if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); post('/api/redo'); return; }
+  if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); draftAction('/api/redo'); return; }
   if (mod || e.altKey || inInput) return;
   if (/^[1-5]$/.test(e.key)) {
     const card = $('cards').querySelectorAll('button.card')[+e.key - 1];
