@@ -11,6 +11,7 @@
 
 const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
 const { scan, describe } = require('./datadirs');
+const { autoUpdater } = require('electron-updater');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const net = require('node:net');
@@ -167,6 +168,68 @@ ipcMain.handle('setup:fresh', async () => {
   return {};
 });
 
+// ---- Auto-update ---------------------------------------------------------
+//
+// Releases are published to GitHub (see .github/workflows/release.yml); the
+// installed app checks them at start and every few hours, downloads a newer
+// installer in the background and offers a restart. If the user just closes the
+// app, the update installs on quit. Status goes to the page, which shows it in
+// the top bar and on Настройки → О программе.
+
+const UPDATE_EVERY_MS = 4 * 60 * 60 * 1000;
+let updateStatus = { state: app.isPackaged ? 'idle' : 'dev' };
+
+function setUpdateStatus(st) {
+  updateStatus = st;
+  if (win && !win.isDestroyed()) win.webContents.send('update:status', st);
+}
+
+async function checkForUpdates() {
+  if (!app.isPackaged) return updateStatus;
+  if (['checking', 'downloading', 'ready'].includes(updateStatus.state)) return updateStatus;
+  setUpdateStatus({ state: 'checking' });
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    setUpdateStatus({ state: 'error', error: String(err?.message || err).split('\n')[0] });
+  }
+  return updateStatus;
+}
+
+function initUpdater() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-available', (info) => setUpdateStatus({ state: 'available', version: info.version }));
+  autoUpdater.on('update-not-available', () => setUpdateStatus({ state: 'up-to-date' }));
+  autoUpdater.on('download-progress', (p) =>
+    setUpdateStatus({ state: 'downloading', version: updateStatus.version, percent: p.percent }));
+  autoUpdater.on('update-downloaded', (info) => setUpdateStatus({ state: 'ready', version: info.version }));
+  autoUpdater.on('error', (err) => {
+    if (updateStatus.state === 'ready') return;
+    setUpdateStatus({ state: 'error', error: String(err?.message || err).split('\n')[0] });
+  });
+  setTimeout(checkForUpdates, 10_000);
+  setInterval(checkForUpdates, UPDATE_EVERY_MS);
+}
+
+// installUpdate: the core runs from the install folder, so it is stopped before
+// the installer replaces the files.
+async function installUpdate() {
+  if (updateStatus.state !== 'ready') return;
+  quitting = true;
+  await stopCore();
+  autoUpdater.quitAndInstall(false, true);
+}
+
+ipcMain.on('desktop:info', (e) => {
+  e.returnValue = { version: app.getVersion(), dataDir: dataDir() };
+});
+ipcMain.handle('update:check', () => checkForUpdates());
+ipcMain.handle('update:status', () => updateStatus);
+ipcMain.handle('update:install', () => installUpdate());
+ipcMain.handle('desktop:choose-data-dir', () => showSetup());
+
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
@@ -174,6 +237,7 @@ function buildMenu() {
       submenu: [
         { label: 'Папка данных…', click: showSetup },
         { label: 'Открыть папку данных', click: () => shell.openPath(dataDir()) },
+        { label: 'Проверить обновления', click: () => checkForUpdates() },
         { type: 'separator' },
         { role: 'reload', label: 'Обновить' },
         { role: 'toggleDevTools', label: 'Инструменты разработчика' },
@@ -230,7 +294,10 @@ if (!app.requestSingleInstanceLock()) {
       shell.openExternal(url);
       return { action: 'deny' };
     });
+    // A reload or the switch from splash to the core page loses nothing: the page
+    // asks for the current status when it loads.
     boot();
+    initUpdater();
   });
 
   app.on('before-quit', async (e) => {

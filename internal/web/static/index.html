@@ -6,11 +6,17 @@
   <title>cmnet</title>
   <link rel="stylesheet" href="/ui/style.css">
 </head>
-<body class="connecting">
+<body class="connecting" data-page="draft">
   <header class="bar">
     <div class="brand">cmnet</div>
+    <nav class="nav" aria-label="Разделы">
+      <a href="#draft" data-page="draft">Драфт</a>
+      <a href="#data" data-page="data">Данные</a>
+      <a href="#scout" data-page="scout">Разведка</a>
+      <a href="#settings" data-page="settings">Настройки</a>
+    </nav>
 
-    <div class="seat" id="seat">
+    <div class="draft-only seat" id="seat">
       <span class="seat-label">Мы за</span>
       <div class="switch" role="group" aria-label="Наша сторона">
         <button type="button" data-side="radiant" class="side-btn radiant">Radiant</button>
@@ -19,65 +25,90 @@
       <button type="button" class="link-btn" id="first-pick" title="Кто выбирает первым. Смена очищает доску."></button>
     </div>
 
-    <div class="source" id="source"></div>
+    <div class="draft-only source" id="source"></div>
 
-    <div class="strength" id="strength" role="group" hidden>
+    <div class="draft-only strength" id="strength" role="group" hidden>
       <div class="strength-num"><span id="strength-num"></span><span class="strength-delta" id="strength-delta"></span></div>
       <div class="strength-track"><div class="strength-fill" id="strength-fill"></div></div>
       <div class="strength-cap">шанс на победу по драфту</div>
     </div>
-
-    <div class="bar-end">
-      <span class="auto" id="auto"></span>
-      <button type="button" class="icon-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Меню">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
-      </button>
-      <nav class="menu" id="menu" hidden>
-        <button type="button" data-cmd="new">Новый драфт</button>
-        <hr>
-        <a href="/classic.html#data">Данные и обучение</a>
-        <a href="/classic.html#scout">Разведка соперника</a>
-        <a href="/classic.html#stats">Игроки и пул героев</a>
-        <a href="/classic.html#config">Настройки</a>
-        <hr>
-        <a href="/classic.html">Классический интерфейс</a>
-      </nav>
-    </div>
   </header>
 
-  <section class="ribbon-wrap" aria-label="Ход драфта">
-    <div class="ribbon" id="ribbon"></div>
-    <div class="history">
-      <button type="button" class="ghost-btn" id="undo" title="Ctrl+Z">Отменить</button>
-      <button type="button" class="ghost-btn" id="redo" title="Ctrl+Shift+Z">Вернуть</button>
-    </div>
-  </section>
-
+  <div class="update-bar" id="update-bar" role="status" hidden></div>
+  <div class="offline-bar" role="status">Нет связи с ядром cmnet, переподключаюсь…</div>
   <div class="connect-note" aria-live="polite">Подключаюсь к ядру…</div>
 
-  <main class="stage" id="stage">
-    <aside class="team ours" id="team-ours"></aside>
-
-    <section class="focus" id="focus">
-      <h1 class="focus-title" id="focus-title"></h1>
-      <p class="focus-sub" id="focus-sub"></p>
-      <div class="cards" id="cards"></div>
-      <div class="aside-rows" id="aside-rows"></div>
+  <div class="page page-draft" id="page-draft">
+    <section class="ribbon-wrap" aria-label="Ход драфта">
+      <div class="ribbon" id="ribbon"></div>
+      <div class="history">
+        <button type="button" class="ghost-btn" id="undo" title="Ctrl+Z">Отменить</button>
+        <button type="button" class="ghost-btn" id="redo" title="Ctrl+Shift+Z">Вернуть</button>
+        <button type="button" class="ghost-btn" id="new-draft">Новый драфт</button>
+      </div>
     </section>
 
-    <aside class="team theirs" id="team-theirs"></aside>
+    <main class="stage" id="stage">
+      <aside class="team ours" id="team-ours"></aside>
+      <section class="focus" id="focus">
+        <h1 class="focus-title" id="focus-title"></h1>
+        <p class="focus-sub" id="focus-sub"></p>
+        <div class="cards" id="cards"></div>
+        <div class="aside-rows" id="aside-rows"></div>
+      </section>
+      <aside class="team theirs" id="team-theirs"></aside>
+    </main>
+
+    <section class="picker" id="picker" aria-label="Выбор героя">
+      <div class="picker-head">
+        <input id="search" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Начните вводить имя героя" aria-label="Поиск героя">
+        <div class="roles" id="role-filter" role="group" aria-label="Фильтр по роли"></div>
+        <span class="picker-hint" id="picker-hint"></span>
+      </div>
+      <div class="grid" id="grid"></div>
+    </section>
+  </div>
+
+  <main class="page page-doc" id="page-data" tabindex="-1">
+    <div class="doc">
+      <h1>Данные</h1>
+      <p class="lead">Откуда советник знает мету: собранные матчи, обученная модель и задачи, которые их обновляют.</p>
+      <div id="data-model"></div>
+      <div id="data-jobs"></div>
+      <div id="data-corpus"></div>
+      <div id="data-sources"></div>
+    </div>
   </main>
 
-  <section class="picker" id="picker" aria-label="Выбор героя">
-    <div class="picker-head">
-      <input id="search" type="search" autocomplete="off" spellcheck="false"
-             placeholder="Начните вводить имя героя" aria-label="Поиск героя">
-      <div class="roles" id="role-filter" role="group" aria-label="Фильтр по роли"></div>
-      <span class="picker-hint" id="picker-hint"></span>
+  <main class="page page-doc" id="page-scout" tabindex="-1">
+    <div class="doc">
+      <h1>Разведка</h1>
+      <p class="lead">Что любят играть соперники и наша команда. Советник учитывает это в предсказании их ходов и в наших пиках.</p>
+      <div id="scout-run"></div>
+      <div id="scout-today"></div>
+      <div id="scout-pool"></div>
+      <div id="scout-book"></div>
     </div>
-    <div class="grid" id="grid"></div>
-  </section>
+  </main>
 
+  <main class="page page-doc" id="page-settings" tabindex="-1">
+    <div class="doc">
+      <h1>Настройки</h1>
+      <nav class="subtabs" id="settings-tabs" aria-label="Разделы настроек"></nav>
+      <div id="settings-body"></div>
+    </div>
+  </main>
+
+  <dialog class="dialog" id="matchups" aria-labelledby="matchups-title">
+    <div class="dialog-head">
+      <h2 id="matchups-title"></h2>
+      <button type="button" class="ghost-btn" id="matchups-close">Закрыть</button>
+    </div>
+    <div class="mu" id="matchups-body"></div>
+  </dialog>
+
+  <datalist id="hero-names"></datalist>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="/ui/app.js"></script>

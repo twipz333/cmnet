@@ -213,7 +213,7 @@ func TestGetIsNotAMutation(t *testing.T) {
 
 func TestStaticAssetsAreServed(t *testing.T) {
 	srv := testServer(t)
-	for _, path := range []string{"/", "/app.js", "/style.css"} {
+	for _, path := range []string{"/", "/app.js", "/style.css", "/classic.html", "/ui/app.js", "/ui/core.js", "/ui/draft.js", "/ui/data.js", "/ui/scout.js", "/ui/settings.js", "/ui/style.css"} {
 		w := do(t, srv, http.MethodGet, path, "", nil)
 		if w.Code != http.StatusOK {
 			t.Errorf("GET %s = %d, want 200", path, w.Code)

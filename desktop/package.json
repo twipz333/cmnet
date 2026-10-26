@@ -17,13 +17,33 @@
   "build": {
     "appId": "com.twipz333.cmnet",
     "productName": "cmnet",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "preload.js", "datadirs.js", "splash.html", "welcome.html", "welcome.js", "package.json"],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "datadirs.js",
+      "splash.html",
+      "welcome.html",
+      "welcome.js",
+      "package.json"
+    ],
     "extraResources": [
-      { "from": "resources/advisor.exe", "to": "advisor.exe" }
+      {
+        "from": "resources/advisor.exe",
+        "to": "advisor.exe"
+      }
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -33,7 +53,23 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "cmnet",
-      "deleteAppDataOnUninstall": false
-    }
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "cmnet-setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "twipz333",
+        "repo": "cmnet",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/twipz333/cmnet.git"
   }
 }
