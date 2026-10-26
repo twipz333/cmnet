@@ -493,6 +493,22 @@ func (s *Session) ToggleFirstPick() (draft.Team, error) {
 	return nf, nil
 }
 
+// NewDraft clears the manual board for a fresh draft, keeping both sides as they
+// are. GSI boards follow the game and cannot be cleared from here.
+func (s *Session) NewDraft() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.gsiMode {
+		return errManualOnly
+	}
+	s.drafts = draft.NewWithOrder(s.cfg.FirstPick, s.cmOrder())
+	s.view = s.drafts
+	s.resetLogDraft()
+	s.lastLoggedSeq = -1
+	s.recompute()
+	return nil
+}
+
 // HasMatrices reports whether the bundle carries synergy/counter matrices.
 func (s *Session) HasMatrices() bool {
 	s.mu.Lock()
