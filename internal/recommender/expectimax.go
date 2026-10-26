@@ -133,13 +133,21 @@ func (r *Recommender) expectimaxOur(st searchState, depth int, ourTeam draft.Tea
 	// the same base the live ban score uses.
 	step, _ := st.step()
 	var denyProb []float64
+	var need *roleNeed
 	if step.Action == draft.Ban {
 		denyProb = r.searchEnemyPickPolicy(st, ourTeam)
+	} else if r.hasRoles() {
+		my, _ := st.myEnemyPicks(ourTeam)
+		n := r.needOf(my, r.heroPosOurs)
+		need = &n
 	}
 	cands := make([]cand, 0, len(pool))
 	for _, id := range pool {
 		if st.taken(id) {
 			continue
+		}
+		if need != nil && need.fit(id) < MinRoleFit {
+			continue // we would not draft a hero for a position we already hold
 		}
 		if denyProb != nil {
 			h := 0.0
@@ -244,7 +252,9 @@ func (r *Recommender) enemyStepPolicy(st searchState) []float64 {
 		return make([]float64, n)
 	}
 	b := boardState{rPicks: st.rPicks, dPicks: st.dPicks, rBans: st.rBans, dBans: st.dBans, firstPick: st.firstPick}
-	return r.blendEnemy(r.Predictor.Distribution(predictorState(b, step.Team, step.Action, st.cursor)), step.Action)
+	dist := r.Predictor.Distribution(predictorState(b, step.Team, step.Action, st.cursor))
+	dist = r.roleAdjust(dist, b.picksOf(step.Team), r.pinsForTeam(step.Team), step.Action)
+	return r.blendEnemy(dist, step.Action)
 }
 
 // searchEnemyPickPolicy is the enemy's distribution for their next PICK after st's
@@ -260,7 +270,9 @@ func (r *Recommender) searchEnemyPickPolicy(st searchState, ourTeam draft.Team) 
 			continue
 		}
 		b := boardState{rPicks: st.rPicks, dPicks: st.dPicks, rBans: st.rBans, dBans: st.dBans, firstPick: st.firstPick}
-		return r.blendEnemy(r.Predictor.Distribution(predictorState(b, enemy, draft.Pick, i)), draft.Pick)
+		dist := r.Predictor.Distribution(predictorState(b, enemy, draft.Pick, i))
+		dist = r.roleAdjust(dist, b.picksOf(enemy), r.pinsForTeam(enemy), draft.Pick)
+		return r.blendEnemy(dist, draft.Pick)
 	}
 	return nil
 }

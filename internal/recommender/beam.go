@@ -9,39 +9,6 @@ import (
 
 const picksPerTeam = 5
 
-// prunePool returns the top-PruneN untaken heroes by predictor prior, in
-// descending probability with a hero_id tie-break (deterministic). This bounds the
-// branching factor (~127 heroes) the beam search must consider.
-func (r *Recommender) prunePool(d draft.View, dist []float64) []int {
-	type cand struct {
-		id   int
-		prob float64
-	}
-	cands := make([]cand, 0, len(dist))
-	for idx, p := range dist {
-		id := r.heroMap.ID(idx)
-		if d.IsTaken(id) {
-			continue
-		}
-		cands = append(cands, cand{id: id, prob: p})
-	}
-	sort.SliceStable(cands, func(i, j int) bool {
-		if cands[i].prob != cands[j].prob {
-			return cands[i].prob > cands[j].prob
-		}
-		return cands[i].id < cands[j].id
-	})
-	n := r.beam.PruneN
-	if n <= 0 || n > len(cands) {
-		n = len(cands)
-	}
-	pool := make([]int, n)
-	for i := 0; i < n; i++ {
-		pool[i] = cands[i].id
-	}
-	return pool
-}
-
 // ScoreDraft exposes the value the search ranks candidates by, for offline
 // evaluation (eval's "advisor" ranker): our-perspective boardStrength, the same
 // number the strength bar shows.

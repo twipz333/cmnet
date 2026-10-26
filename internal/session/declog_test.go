@@ -388,10 +388,12 @@ func TestFirstPickSwapStartsANewLoggedDraft(t *testing.T) {
 	if _, err := sess.ToggleFirstPick(); err != nil {
 		t.Fatal(err)
 	}
-	// The opponent now opens the draft, so our first step of the new draft is the
-	// second one.
-	if err := sess.Apply(2); err != nil {
-		t.Fatal(err)
+	// The opponent now opens the draft (7.34+: F F S), so our first step of the
+	// new draft is the third one.
+	for _, hero := range []int{2, 4} {
+		if err := sess.Apply(hero); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if step, _ := sess.CurrentStep(); step.Team != draft.Radiant {
 		t.Fatalf("expected our step after the swap, got %v", step.Team)
