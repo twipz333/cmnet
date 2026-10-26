@@ -18,7 +18,7 @@
     "appId": "com.twipz333.cmnet",
     "productName": "cmnet",
     "directories": { "output": "dist" },
-    "files": ["main.js", "preload.js", "splash.html", "package.json"],
+    "files": ["main.js", "preload.js", "datadirs.js", "splash.html", "welcome.html", "welcome.js", "package.json"],
     "extraResources": [
       { "from": "resources/advisor.exe", "to": "advisor.exe" }
     ],

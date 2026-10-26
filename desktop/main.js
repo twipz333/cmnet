@@ -9,7 +9,8 @@
 // lives in a data folder — by default <userData>/data, changeable from the menu,
 // which is how an existing cmnet folder with a large cmnet.db is reused.
 
-const { app, BrowserWindow, Menu, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
+const { scan, describe } = require('./datadirs');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const net = require('node:net');
@@ -31,10 +32,22 @@ function saveSettings(s) {
   fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2));
 }
 
+const defaultDataDir = () => path.join(app.getPath('userData'), 'data');
+
 function dataDir() {
-  const dir = loadSettings().dataDir || path.join(app.getPath('userData'), 'data');
+  const dir = loadSettings().dataDir || defaultDataDir();
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+// needsSetup: nobody has chosen a data folder yet and the default one holds no
+// trained model. Then the first screen is the data-folder picker, not an empty
+// advisor. (Checking for cmnet.db alone is not enough: the core creates an empty
+// one the first time it starts.)
+function needsSetup() {
+  const s = loadSettings();
+  if (s.dataDir || s.setupDone) return false;
+  return !fs.existsSync(path.join(defaultDataDir(), 'bundle.json'));
 }
 
 // The packaged core sits in resources/; in development it is built next to us.
@@ -118,26 +131,48 @@ function stopCore() {
   });
 }
 
-async function chooseDataDir() {
-  const res = await dialog.showOpenDialog(win, {
-    title: 'Папка данных cmnet (кэш матчей, бандл, конфиг)',
-    defaultPath: dataDir(),
-    properties: ['openDirectory', 'createDirectory'],
-  });
-  if (res.canceled || !res.filePaths[0]) return;
-  saveSettings({ ...loadSettings(), dataDir: res.filePaths[0] });
+// useDataDir switches the core to dir: stop it, remember the choice, start again.
+async function useDataDir(dir) {
+  saveSettings({ ...loadSettings(), dataDir: dir, setupDone: true });
   quitting = true;
   await stopCore();
   quitting = false;
   await boot();
 }
 
+function showSetup() {
+  win.loadFile(path.join(__dirname, 'welcome.html'));
+}
+
+ipcMain.handle('setup:scan', () => scan({ extra: [path.dirname(process.execPath), dataDir()] }));
+ipcMain.handle('setup:choose', async (_e, dir) => {
+  if (!dir || !(await describe(dir))) return { error: 'В этой папке нет cmnet.db' };
+  await useDataDir(dir);
+  return {};
+});
+ipcMain.handle('setup:browse', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Где лежит cmnet.db?',
+    properties: ['openFile'],
+    filters: [{ name: 'База cmnet', extensions: ['db'] }],
+  });
+  if (res.canceled || !res.filePaths[0]) return {};
+  const file = res.filePaths[0];
+  if (path.basename(file).toLowerCase() !== 'cmnet.db') return { error: 'Нужен файл cmnet.db' };
+  await useDataDir(path.dirname(file));
+  return {};
+});
+ipcMain.handle('setup:fresh', async () => {
+  await useDataDir(defaultDataDir());
+  return {};
+});
+
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
       label: 'cmnet',
       submenu: [
-        { label: 'Папка данных…', click: chooseDataDir },
+        { label: 'Папка данных…', click: showSetup },
         { label: 'Открыть папку данных', click: () => shell.openPath(dataDir()) },
         { type: 'separator' },
         { role: 'reload', label: 'Обновить' },
@@ -150,6 +185,10 @@ function buildMenu() {
 }
 
 async function boot() {
+  if (needsSetup()) {
+    showSetup();
+    return;
+  }
   win.loadFile(path.join(__dirname, 'splash.html'));
   try {
     const url = await startCore();
