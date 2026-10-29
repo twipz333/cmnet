@@ -120,6 +120,7 @@ function sideSection(side, s, st, ctx) {
   const running = (s.ops?.active || []).filter((j) => j.kind === (side === 'our' ? 'scout-allies' : 'scout'));
   running.forEach((j) => {
     const line = el('div', 'job live');
+    line.dataset.scoutJob = String(j.id);
     line.append(el('b', null, jobName(j.kind)), el('div', 'job-line', j.lastLine || 'начинаю…'));
     sec.append(line);
   });
