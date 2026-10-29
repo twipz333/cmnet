@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "electron": "42.11.16",
-    "electron-builder": "25.1.8"
+    "electron-builder": "26.18.0"
   },
   "build": {
     "appId": "com.twipz333.cmnet",
@@ -64,7 +64,7 @@
     }
   },
   "dependencies": {
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.8.11"
   },
   "repository": {
     "type": "git",
