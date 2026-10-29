@@ -110,18 +110,24 @@ function sideSection(side, s, st, ctx) {
     sec.append(line);
   });
 
+  // Seat assignment is separate from the scouting job: refresh the full lineup.
+  const seated = [...new Set(seats.filter((id) => id > 0))];
+  if (s.meta[cfg.can] && seated.length) {
+    sec.append(button(`Разведать состав заново (${seated.length})`, 'btn quiet small', () =>
+      post(cfg.scoutPath, { players: seated.join(',') })));
+  }
   if (s.meta[cfg.can]) sec.append(addForm(side, cfg, scouted));
   return sec;
 }
 
-function avatar(accountId, name) {
+export function avatar(accountId, name, version = 0) {
   const a = el('div', 'avatar');
   a.textContent = name && !/^id \d+$/.test(name) ? initials(name) : '?';
   if (accountId) {
     const img = new Image();
     img.alt = '';
     img.onload = () => { a.textContent = ''; a.append(img); };
-    img.src = `/assets/avatars/${accountId}.jpg`;
+    img.src = `/assets/avatars/${accountId}.jpg${version ? `?v=${version}` : ""}`;
   }
   return a;
 }
@@ -179,12 +185,15 @@ function seatCard(side, pos, acct, byId, book, canEdit, s, ctx) {
   }
 
   const who = el('div', 'seat-who');
-  who.append(avatar(acct, name));
+  who.append(avatar(acct, name, p?.avatarVersion || known?.avatarVersion));
   const nm = el('div', 'seat-name');
   nm.append(el('b', null, name));
   const tags = el('div', 'seat-tags');
   if (!p) tags.append(el('span', 'tag', 'не разведан'));
-  else if (!p.resolved) tags.append(el('span', 'tag warn', 'профиль скрыт'));
+  else if (!p.resolved) tags.append(el('span', 'tag warn', 'ID не найден'));
+  else if (p.scoutStatus === 'error') tags.append(el('span', 'tag warn', 'ошибка OpenDota'));
+  else if (p.scoutStatus === 'stale') tags.append(el('span', 'tag warn', 'кэш · сбой API'));
+  else if (!p.topHeroes?.length) tags.append(el('span', 'tag warn', 'нет открытой статистики'));
   if (p?.smurf && p.smurf.level !== 'low') {
     const t = el('span', 'tag ' + (p.smurf.level === 'high' ? 'danger' : 'warn'), p.smurf.label || 'возможен смурф');
     t.title = (p.smurf.reasons || []).join('\n');
@@ -231,12 +240,12 @@ function chooser(side, pos, byId, book, s, ctx) {
   const box = el('div', 'seat-choose');
   const seats = sheet(side);
   const cands = [];
-  byId.forEach((p) => { if (!seats.includes(p.accountId)) cands.push({ id: p.accountId, name: p.nickname || `id ${p.accountId}`, note: 'разведан' }); });
+  byId.forEach((p) => { if (!seats.includes(p.accountId)) cands.push({ id: p.accountId, name: p.nickname || `id ${p.accountId}`, avatarVersion: p.avatarVersion, note: 'разведан' }); });
   const role = side === 'our' ? 'ally' : 'enemy';
   book.forEach((p) => {
     if (seats.includes(p.accountId) || byId.has(p.accountId)) return;
     if (p.role && p.role !== role) return;
-    cands.push({ id: p.accountId, name: p.persona || `id ${p.accountId}`, note: p.pinned ? 'закреплён' : 'из записной книжки', pinned: p.pinned });
+    cands.push({ id: p.accountId, name: p.persona || `id ${p.accountId}`, avatarVersion: p.avatarVersion, note: p.pinned ? 'закреплён' : 'из записной книжки', pinned: p.pinned });
   });
   cands.sort((a, b) => (b.note === 'разведан') - (a.note === 'разведан') || (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
@@ -247,7 +256,7 @@ function chooser(side, pos, byId, book, s, ctx) {
       await seat(side, pos, c.id);
       if (!byId.has(c.id) && s.meta[SIDES[side].can]) post(SIDES[side].scoutPath, { players: String(c.id) });
     });
-    b.append(avatar(c.id, c.name), el('span', 'choose-name', c.name), el('span', 'choose-note', c.note));
+    b.append(avatar(c.id, c.name, c.avatarVersion), el('span', 'choose-name', c.name), el('span', 'choose-note', c.note));
     li.append(b);
     ul.append(li);
   });
@@ -290,7 +299,7 @@ function benchChip(side, p) {
   chip.draggable = true;
   chip.ondragstart = (e) => { e.dataTransfer.setData(`cmnet/${side}`, String(p.accountId)); e.dataTransfer.effectAllowed = 'move'; };
   const name = p.nickname || `id ${p.accountId}`;
-  chip.append(avatar(p.accountId, name), el('span', null, name));
+  chip.append(avatar(p.accountId, name, p.avatarVersion), el('span', null, name));
   (p.topHeroes || []).slice(0, 3).forEach((h) => chip.append(portrait(h.id, 'bench-hero')));
   chip.setAttribute('aria-pressed', picked?.accountId === p.accountId ? 'true' : 'false');
   chip.title = 'Перетащите на позицию или нажмите, затем выберите позицию';
