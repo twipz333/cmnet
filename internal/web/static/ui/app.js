@@ -1,10 +1,10 @@
 // Entry point: navigation between pages, and routing every state update to the
 // page on screen.
 
-import { $, el, store, onState, connect, button } from './core.js';
+import { $, el, store, onState, connect, button, stableView } from './core.js';
 import { initDraft, renderDraft, trackDraft } from './draft.js';
 import { enterData, leaveData, renderData } from './data.js';
-import { enterScout, renderScout, scoutStateChanged } from './scout.js';
+import { enterScout, renderScout, scoutStateChanged, updateScoutProgress } from './scout.js';
 import { enterSettings, renderSettings, setUpdaterStatus } from './settings.js';
 import { enterShare, renderShare } from './share.js';
 
@@ -64,6 +64,20 @@ function applyEdition(s, prev) {
   return false;
 }
 
+// A server progress tick does not change player cards. Re-rendering all ten
+// seats and the address book on every SSE frame was resetting scroll and focus.
+function scoutLayoutKey(s) {
+  return JSON.stringify({
+    team: s.team,
+    canScout: s.meta?.canScout,
+    canScoutAllies: s.meta?.canScoutAllies,
+    canStats: s.meta?.canStats,
+    canEditPool: s.meta?.canEditPool,
+    jobs: (s.ops?.active || []).filter((j) => j.kind === 'scout' || j.kind === 'scout-allies')
+      .map((j) => [j.id, j.kind, j.state]),
+  });
+}
+
 onState((next, prev) => {
   document.body.classList.remove('connecting');
   const moved = applyEdition(next, prev);
@@ -71,8 +85,14 @@ onState((next, prev) => {
   scoutStateChanged(next);
   renderNavBadges(next);
   if (moved) return; // hashchange renders the new page
-  if (!prev) PAGES[page].enter(location.hash.split('/')[1]);
-  else PAGES[page].render();
+  if (!prev) {
+    PAGES[page].enter(location.hash.split('/')[1]);
+  } else if (page === 'scout') {
+    if (scoutLayoutKey(next) !== scoutLayoutKey(prev)) renderScout();
+    else updateScoutProgress(next);
+  } else {
+    stableView($(`page-${page}`), () => PAGES[page].render());
+  }
 });
 
 // The nav marks a page that has something running, so a sync started on the data
