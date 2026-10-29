@@ -12,7 +12,14 @@ on:
     branches: [master]
     tags: ['v*']
   pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop.yml'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
