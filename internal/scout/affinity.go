@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 )
 
 // affinityK damps low-sample heroes: a hero with few games contributes less
@@ -24,10 +25,22 @@ type ResolvedPlayer struct {
 	Discovered bool
 }
 
-// BuildLayer2 fetches per-player hero affinity within windowDays and assembles
-// layer 2. Players that fail to fetch are recorded as unresolved rather than
-// failing the whole snapshot.
+// BuildLayer2 fetches affinity and the additional career/match signals used for
+// smurf assessment. The full path is useful for enemy analysis.
 func BuildLayer2(ctx context.Context, src Source, players []ResolvedPlayer, windowDays int, progress func(string)) *Layer2 {
+	return buildLayer2(ctx, src, players, windowDays, false, progress)
+}
+
+// BuildLayer2Quick is the draft-time ally path: fetching 30-day hero affinity
+// needs one OpenDota call per player, not three. Smurf checks can be performed
+// separately and are never worth holding up the ally roster.
+func BuildLayer2Quick(ctx context.Context, src Source, players []ResolvedPlayer, windowDays int, progress func(string)) *Layer2 {
+	return buildLayer2(ctx, src, players, windowDays, true, progress)
+}
+
+const quickHeroTimeout = 15 * time.Second
+
+func buildLayer2(ctx context.Context, src Source, players []ResolvedPlayer, windowDays int, quick bool, progress func(string)) *Layer2 {
 	if progress == nil {
 		progress = func(string) {}
 	}
@@ -41,21 +54,30 @@ func BuildLayer2(ctx context.Context, src Source, players []ResolvedPlayer, wind
 			pa.Status = "unresolved"
 		}
 		if p.Resolved {
-			if heroes, err := src.PlayerHeroes(ctx, p.AccountID, windowDays); err == nil {
+			queryCtx := ctx
+			cancel := func() {}
+			if quick {
+				queryCtx, cancel = context.WithTimeout(ctx, quickHeroTimeout)
+			}
+			heroes, err := src.PlayerHeroes(queryCtx, p.AccountID, windowDays)
+			cancel()
+			if err == nil {
 				pa.Heroes = heroAffinities(heroes)
 				pa.Status = "ok"
 				if len(pa.Heroes) == 0 {
 					pa.Status = "no_stats"
 				}
-				careerGames := 0
-				if career, err := src.PlayerHeroes(ctx, p.AccountID, 0); err == nil {
-					careerGames = sumHeroGames(career)
+				if !quick {
+					careerGames := 0
+					if career, err := src.PlayerHeroes(ctx, p.AccountID, 0); err == nil {
+						careerGames = sumHeroGames(career)
+					}
+					var matches []MatchRef
+					if refs, err := src.RecentMatches(ctx, p.AccountID); err == nil {
+						matches = refs
+					}
+					pa.Smurf = AssessSmurf(careerGames, matches)
 				}
-				var matches []MatchRef
-				if refs, err := src.RecentMatches(ctx, p.AccountID); err == nil {
-					matches = refs
-				}
-				pa.Smurf = AssessSmurf(careerGames, matches)
 				progress(fmt.Sprintf("layer 2: player %d/%d (account %d) — %d heroes",
 					i+1, len(players), p.AccountID, len(pa.Heroes)))
 			} else {

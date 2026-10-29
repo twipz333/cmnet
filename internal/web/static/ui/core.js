@@ -14,6 +14,50 @@ export function el(tag, cls, text) {
   return n;
 }
 
+// The SSE stream updates timers and progress every second. Rebuilding a page
+// must not behave like a browser navigation: keep its scroll, focused editor,
+// caret and nested log position, even when a component replaces its DOM nodes.
+export function stableView(container, draw) {
+  if (!container) return draw();
+  const top = container.scrollTop;
+  const left = container.scrollLeft;
+  const scrollable = [...container.querySelectorAll('.log-lines, .choose-list, .grid')]
+    .map((node, i) => ({ i, top: node.scrollTop, left: node.scrollLeft }));
+  const focused = document.activeElement;
+  let editing = null;
+  if (focused && container.contains(focused) && focused.matches('input:not([type="checkbox"]):not([type="radio"]), textarea, select')) {
+    const controls = [...container.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]), textarea, select')];
+    const index = controls.indexOf(focused);
+    if (index >= 0) {
+      editing = { index, value: focused.value,
+        start: (() => { try { return focused.selectionStart; } catch { return null; } })(),
+        end: (() => { try { return focused.selectionEnd; } catch { return null; } })() };
+    }
+  }
+  const result = draw();
+  container.scrollTop = top;
+  container.scrollLeft = left;
+  const restored = container.querySelectorAll('.log-lines, .choose-list, .grid');
+  for (const s of scrollable) {
+    if (restored[s.i]) {
+      restored[s.i].scrollTop = s.top;
+      restored[s.i].scrollLeft = s.left;
+    }
+  }
+  if (editing) {
+    const controls = container.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]), textarea, select');
+    const node = controls[editing.index];
+    if (node) {
+      node.value = editing.value;
+      node.focus({ preventScroll: true });
+      if (editing.start != null && editing.end != null && node.setSelectionRange) {
+        try { node.setSelectionRange(editing.start, editing.end); } catch { /* non-text control */ }
+      }
+    }
+  }
+  return result;
+}
+
 export const store = {
   state: null,
   catalog: [],      // [{id, name, localized, roles: [pos…]}]

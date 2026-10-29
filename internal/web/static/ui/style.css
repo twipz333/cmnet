@@ -521,3 +521,98 @@ body.guest .host-only { display: none !important; }
 .book-player { display: flex; align-items: center; gap: .6rem; min-width: 10rem; }
 .book-player .avatar { flex: 0 0 auto; width: 2rem; height: 2rem; }
 .book-player b { overflow-wrap: anywhere; }
+
+/* Desktop UI surface: one stable vertical viewport, no document-width jumps.
+ * The Electron renderer is still HTML; these styles make the controls behave
+ * like an application instead of an arbitrarily scrolling website. */
+.page-doc {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+.page-doc .doc { min-width: 0; }
+.page-doc :is(.log-lines, .choose-list) {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+:where(.page-doc, .log-lines, .choose-list)::-webkit-scrollbar { width: 8px; height: 8px; }
+:where(.page-doc, .log-lines, .choose-list)::-webkit-scrollbar-thumb {
+  background: #3c4c61;
+  border-radius: 999px;
+  border: 2px solid var(--night);
+}
+:where(.page-doc, .log-lines, .choose-list)::-webkit-scrollbar-track { background: transparent; }
+
+body[data-page="scout"] .doc { max-width: 1450px; padding: 24px clamp(16px, 2vw, 32px) 60px; }
+body[data-page="scout"] .doc > h1 { font-size: clamp(27px, 2.8vw, 36px); }
+body[data-page="scout"] .doc-sec {
+  margin: 16px 0;
+  padding: 20px;
+  background: linear-gradient(150deg, #1c2736 0%, #171f2b 100%);
+  border: 1px solid var(--seam);
+  border-radius: 14px;
+  min-width: 0;
+  box-shadow: 0 5px 18px rgb(0 0 0 / 9%);
+}
+body[data-page="scout"] .seat-card {
+  border-radius: 12px;
+  background: #202d3d;
+  min-width: 0;
+}
+body[data-page="scout"] .seat-card:hover { background: #263448; }
+body[data-page="scout"] .job.live { border-radius: 10px; background: #202e3d; }
+body[data-page="scout"] .bulk { display: flex; flex-wrap: wrap; gap: 8px; }
+body[data-page="scout"] .inline-form { min-width: 0; flex-wrap: wrap; }
+body[data-page="scout"] input:not([type="checkbox"]), body[data-page="scout"] select {
+  max-width: 100%;
+  border-radius: 8px;
+}
+body[data-page="scout"] .seats { min-width: 0; }
+
+.book-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.book-entry {
+  min-width: 0;
+  padding: 16px;
+  background: #202d3c;
+  border: 1px solid #344458;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.book-entry:hover { border-color: #4e627e; background: #263448; }
+.book-entry.pinned { border-color: #8e7440; }
+.book-entry-head { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.book-entry-head input { flex: none; }
+.book-entry-person { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.book-entry-person .avatar { width: 42px; height: 42px; font-size: 15px; }
+.book-entry-identity { display: flex; flex-direction: column; min-width: 0; }
+.book-entry-identity b { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.book-entry-identity span { font-size: 12px; font-variant-numeric: tabular-nums; }
+.book-pin { color: var(--gold); font-size: 11px; white-space: nowrap; }
+.book-entry-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.book-entry-note { color: var(--ash); font-size: 12px; overflow-wrap: anywhere; }
+.book-entry-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+.book-fact { font-size: 12px; color: var(--ash); }
+.book-entry-actions { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; border-top: 1px solid #364458; padding-top: 10px; margin-top: auto; }
+.book-entry-actions .link-btn { font-size: 13px; }
+@media (max-width: 780px) {
+  body[data-page="scout"] .seats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-page="scout"] .doc-sec { padding: 14px; }
+  .book-entry-facts { grid-template-columns: 1fr; }
+}
+@media (max-width: 510px) {
+  body[data-page="scout"] .seats { grid-template-columns: 1fr; }
+  .bar { gap: 8px; flex-wrap: wrap; }
+  .nav { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .book-entry { transition: none; }
+}

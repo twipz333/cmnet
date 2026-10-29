@@ -31,6 +31,13 @@ func BuildLayer3(ctx context.Context, src Source, entryID int64, eventWindow str
 
 	l3 := &Layer3{EventWindow: eventWindow, EntryAccountID: entryID}
 	seen := map[int64]int{} // teammate account_id -> matches played alongside the entry
+	// Most recent matches are ordinary pub games without picks_bans. Looking
+	// for N valid drafts must not cause an unbounded sequence of HTTP calls.
+	maxScans := 15
+	if maxMatches > 0 && maxMatches*3 < maxScans {
+		maxScans = maxMatches * 3
+	}
+	scanned := 0
 	for _, ref := range refs {
 		if ctx.Err() != nil {
 			break
@@ -38,11 +45,12 @@ func BuildLayer3(ctx context.Context, src Source, entryID int64, eventWindow str
 		if eventSinceUnix > 0 && ref.StartTime < eventSinceUnix {
 			continue
 		}
-		if maxMatches > 0 && len(l3.TeamDrafts) >= maxMatches {
+		if scanned >= maxScans || (maxMatches > 0 && len(l3.TeamDrafts) >= maxMatches) {
 			break
 		}
+		scanned++
 		md, err := src.MatchDraft(ctx, ref.MatchID)
-		if err != nil {
+		if err != nil || md == nil {
 			continue
 		}
 		// Teammates come from the player list, independent of whether the match
