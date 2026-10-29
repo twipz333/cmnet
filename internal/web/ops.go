@@ -380,6 +380,12 @@ func (s *Server) startScoutLike(r *http.Request, kind string) (string, error) {
 	if len(players) == 0 {
 		return "", fmt.Errorf("give at least one player id or profile URL")
 	}
+	if q := s.shell.Jobs; q != nil {
+		players = foldScouts(q, kind, players)
+		if len(players) == 0 {
+			return "эти игроки уже разведываются", nil
+		}
+	}
 	payload, err := json.Marshal(struct {
 		Players []string `json:"players"`
 	}{players})
@@ -387,6 +393,51 @@ func (s *Server) startScoutLike(r *http.Request, kind string) (string, error) {
 		return "", err
 	}
 	return s.start(kind, string(payload), false, true)
+}
+
+// foldScouts merges a new scout request into the queue's scouts of that kind.
+func foldScouts(q *jobs.Queue, kind string, players []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	running := map[string]bool{}
+	for _, j := range q.Active() {
+		if j.Kind != kind {
+			continue
+		}
+		var p struct {
+			Players []string `json:"players"`
+		}
+		if json.Unmarshal([]byte(j.Payload), &p) != nil {
+			continue
+		}
+		if j.State == cache.JobRunning {
+			for _, x := range p.Players {
+				running[x] = true
+			}
+			continue
+		}
+		if q.Cancel(j.ID) == nil { // still waiting: absorbed into the new one
+			for _, x := range p.Players {
+				add(x)
+			}
+		}
+	}
+	for _, x := range players {
+		add(x)
+	}
+	kept := out[:0]
+	for _, x := range out {
+		if !running[x] {
+			kept = append(kept, x)
+		}
+	}
+	return kept
 }
 
 // cancelOp stops a specific job, or everything in flight when no id is given.
