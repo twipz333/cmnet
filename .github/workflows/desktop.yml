@@ -37,6 +37,12 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+      - name: check desktop and renderer JavaScript syntax
+        shell: bash
+        run: |
+          for f in desktop/{main,preload,welcome,datadirs}.js internal/web/static/ui/*.js; do
+            node --check "$f"
+          done
       - name: build core (static, no CGO)
         shell: bash
         env:
