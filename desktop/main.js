@@ -18,6 +18,12 @@ const net = require('node:net');
 const path = require('node:path');
 const http = require('node:http');
 
+// The guest app is the same shell built with extraMetadata.cmnetEdition=guest
+// (see electron-builder.guest.js): it never picks a data folder with a cmnet.db,
+// starts the core with --guest, and updates from its own channel.
+const EDITION = require('./package.json').cmnetEdition === 'guest' ? 'guest' : 'host';
+const GUEST = EDITION === 'guest';
+
 const settingsFile = () => path.join(app.getPath('userData'), 'desktop.json');
 
 function loadSettings() {
@@ -46,6 +52,7 @@ function dataDir() {
 // advisor. (Checking for cmnet.db alone is not enough: the core creates an empty
 // one the first time it starts.)
 function needsSetup() {
+  if (GUEST) return false; // the guest gets everything from the host, by code
   const s = loadSettings();
   if (s.dataDir || s.setupDone) return false;
   return !fs.existsSync(path.join(defaultDataDir(), 'bundle.json'));
@@ -102,6 +109,7 @@ async function startCore() {
   // against the working directory, so pointing cwd at the data folder is all the
   // configuration the core needs.
   const args = ['--web-addr', addr, '--open=false', '--discord=false'];
+  if (GUEST) args.push('--guest');
   coreLog = [];
   core = spawn(corePath(), args, { cwd, windowsHide: true });
   const keep = (buf) => {
@@ -198,6 +206,11 @@ async function checkForUpdates() {
 
 function initUpdater() {
   if (!app.isPackaged) return;
+  if (GUEST) {
+    // guest.yml next to the host's latest.yml in the same release.
+    autoUpdater.channel = 'guest';
+    autoUpdater.allowDowngrade = false;
+  }
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', (info) => setUpdateStatus({ state: 'available', version: info.version }));
@@ -235,7 +248,7 @@ function buildMenu() {
     {
       label: 'cmnet',
       submenu: [
-        { label: 'Папка данных…', click: showSetup },
+        ...(GUEST ? [] : [{ label: 'Папка данных…', click: showSetup }]),
         { label: 'Открыть папку данных', click: () => shell.openPath(dataDir()) },
         { label: 'Проверить обновления', click: () => checkForUpdates() },
         { type: 'separator' },
@@ -281,7 +294,7 @@ if (!app.requestSingleInstanceLock()) {
       minWidth: 1024,
       minHeight: 640,
       backgroundColor: '#0f1115',
-      title: 'cmnet',
+      title: GUEST ? 'cmnet guest' : 'cmnet',
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,

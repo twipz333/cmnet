@@ -275,11 +275,14 @@ function renderFocus(s) {
   sub.textContent = '';
 
   if (!m.draftReady) {
-    title.textContent = 'Модель ещё не обучена';
-    sub.textContent = m.draftError || 'Советнику нужен бандл: соберите матчи и обучите модель.';
+    const guest = !!s.share?.guest;
+    title.textContent = guest ? 'Модели пока нет' : 'Модель ещё не обучена';
+    sub.textContent = guest
+      ? 'Попросите у хоста код и введите его на странице «Хост».'
+      : (m.draftError || 'Советнику нужен бандл: соберите матчи и обучите модель.');
     const act = el('div', 'actions');
-    const data = el('a', 'btn', 'Открыть «Данные»');
-    data.href = '#data';
+    const data = el('a', 'btn', guest ? 'Ввести код хоста' : 'Открыть «Данные»');
+    data.href = guest ? '#share' : '#data';
     act.append(data);
     cards.append(act);
     return;

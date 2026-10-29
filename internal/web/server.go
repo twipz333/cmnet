@@ -43,6 +43,8 @@ type Server struct {
 	outcome outcomeAgent
 
 	remoteToken string // shared secret for /api/remote/*; empty = disabled
+
+	shareSt shareState // host code / guest receive
 }
 
 // New builds a server over the app's operation callbacks. The draft session is
@@ -185,6 +187,7 @@ func (s *Server) reloadSession() error {
 	s.mu.Unlock()
 
 	s.startGSIPump(sess)
+	s.shareRefresh() // a friend who comes next gets the new model / scouting
 	return nil
 }
 
@@ -311,6 +314,7 @@ func (s *Server) routes() http.Handler {
 		}
 	}
 	s.routeOps(mux)
+	s.routeShare(mux)
 	s.routeRemote(mux)
 	return sameSiteOnly(mux)
 }
@@ -357,6 +361,8 @@ type stateDTO struct {
 	// Sequence is the whole draft in order (24 steps) with the heroes placed so
 	// far and the current step marked.
 	Sequence []seqStepDTO `json:"sequence"`
+	// Share is the host/guest panel.
+	Share shareDTO `json:"share"`
 }
 
 type metaDTO struct {
@@ -443,6 +449,7 @@ func (s *Server) snapshot(ring bool) stateDTO {
 		Status: status,
 		Auto:   autoStatus(sh.Auto),
 		Ring:   ring,
+		Share:  s.shareView(),
 	}
 	if sess == nil {
 		return st

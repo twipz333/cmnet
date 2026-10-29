@@ -8,6 +8,7 @@ import (
 	"cmnet/internal/config"
 	"cmnet/internal/discordbot"
 	"cmnet/internal/jobs"
+	"cmnet/internal/share"
 )
 
 // CorpusStats is the cache's own breakdown of what it holds, surfaced to the
@@ -26,6 +27,13 @@ type CorpusStats = cache.CorpusStats
 type ShellConfig struct {
 	GSI   bool
 	Token bool // whether a STRATZ token was provided (enables sync)
+
+	// Guest marks the guest app: it never collects or trains, and gets its model
+	// and scouting from a host by code (ApplyShare). A host shares with
+	// SharePayload. Exactly one of the two is set.
+	Guest        bool
+	SharePayload func() (share.Payload, error)
+	ApplyShare   func(share.Payload) (string, error)
 
 	// Long operations. Each returns a human summary or an error; they run off the
 	// UI goroutine and emit progress lines via the progress callback.
