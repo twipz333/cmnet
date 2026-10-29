@@ -24,6 +24,10 @@ public static class Program
         if (args.Length == 2 && args[0] == "--data-dir")
             dataDir = args[1];
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+        app.Resources.MergedDictionaries.Add(new ResourceDictionary
+        {
+            Source = new Uri("pack://application:,,,/Theme.xaml", UriKind.Absolute)
+        });
         app.Run(new NativeWindow(dataDir));
     }
 }

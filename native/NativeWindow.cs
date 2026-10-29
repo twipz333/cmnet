@@ -20,18 +20,23 @@ namespace Cmnet.Native;
 public sealed class NativeWindow : Window
 {
     private readonly AdvisorCore core = new();
-    private readonly Brush background = Hex("#101925");
-    private readonly Brush panel = Hex("#1C2939");
-    private readonly Brush soft = Hex("#26364A");
-    private readonly Brush border = Hex("#34465E");
-    private readonly Brush foreground = Hex("#E7E8EA");
-    private readonly Brush muted = Hex("#A0B1C9");
-    private readonly Brush accent = Hex("#E7B65A");
-    private readonly Brush good = Hex("#76C9A6");
+    private readonly Brush background = Hex("#0C131E");
+    private readonly Brush panel = Hex("#172232");
+    private readonly Brush soft = Hex("#202E41");
+    private readonly Brush border = Hex("#344458");
+    private readonly Brush foreground = Hex("#EBF1F6");
+    private readonly Brush muted = Hex("#9DAFC2");
+    private readonly Brush accent = Hex("#70D7CB");
+    private readonly Brush gold = Hex("#E9C37C");
+    private readonly Brush good = Hex("#7DCCA9");
 
     private readonly ContentControl body = new();
     private readonly TextBlock status = new();
     private readonly TextBlock heading = new();
+    private readonly TextBlock subtitle = new();
+    private readonly TextBlock connectionBadge = new();
+    private readonly TextBlock allyMetric = new();
+    private readonly TextBlock enemyMetric = new();
     private readonly Dictionary<string, Button> navigation = new();
     private string page = "Разведка";
     private JsonObject? state;
@@ -54,8 +59,17 @@ public sealed class NativeWindow : Window
     private readonly ObservableCollection<HeroRow> heroRows = new();
     private ListBox? heroList;
     private ListBox? knownPlayersList;
+    private readonly List<PlayerRow> knownPlayerRows = new();
+    private string knownPlayerFilter = "";
+    private TextBlock? bookEmptyHint;
+    private Grid? teamGrid;
     private string heroCatalogKey = "";
+    private string recommendationKey = "";
     private TextBlock? dataActivity;
+    private readonly TextBlock corpusMatches = new();
+    private readonly TextBlock corpusDrafts = new();
+    private readonly TextBlock corpusCoverage = new();
+    private readonly TextBlock corpusHeroes = new();
     private TextBlock? shareStatus;
     private StackPanel? configHost;
     private readonly List<ConfigField> configEditors = new();
@@ -71,70 +85,147 @@ public sealed class NativeWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = background;
         Foreground = foreground;
-        FontFamily = new FontFamily("Segoe UI");
+        FontFamily = new FontFamily("Segoe UI Variable Text");
         UseLayoutRounding = true;
         SnapsToDevicePixels = true;
 
         var layout = new Grid();
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(78) });
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(40) });
         Content = layout;
 
-        var top = new DockPanel { Margin = new Thickness(20, 16, 20, 14), LastChildFill = true };
-        var brand = Text("cmnet", 28, FontWeights.Bold, accent);
-        brand.Margin = new Thickness(0, 0, 20, 0);
-        DockPanel.SetDock(brand, Dock.Left);
+        // Compact command-center header; keep the Windows frame for native
+        // window snapping, accessibility, focus and platform conventions.
+        var top = new Grid { Background = Hex("#121D2B") };
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(230) });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var brand = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(22, 0, 0, 0) };
+        var emblem = new Border { Width = 42, Height = 42, CornerRadius = new CornerRadius(12),
+            Background = Hex("#254F53"), BorderBrush = Hex("#44857F"), BorderThickness = new Thickness(1) };
+        emblem.Child = Text("◇", 30, FontWeights.SemiBold, accent);
+        ((TextBlock)emblem.Child).HorizontalAlignment = HorizontalAlignment.Center;
+        brand.Children.Add(emblem);
+        var identity = new StackPanel { Margin = new Thickness(12, 3, 0, 0) };
+        identity.Children.Add(Text("CMNET", 19, FontWeights.Bold));
+        identity.Children.Add(Text("DRAFT INTELLIGENCE", 10, FontWeights.SemiBold, muted));
+        brand.Children.Add(identity);
         top.Children.Add(brand);
-        var badge = Text("NATIVE  ·  Windows", 12, FontWeights.SemiBold, muted);
-        badge.VerticalAlignment = VerticalAlignment.Center;
-        DockPanel.SetDock(badge, Dock.Left);
-        top.Children.Add(badge);
-        heading.FontSize = 24;
-        heading.FontWeight = FontWeights.SemiBold;
-        heading.HorizontalAlignment = HorizontalAlignment.Right;
-        heading.VerticalAlignment = VerticalAlignment.Center;
-        top.Children.Add(heading);
+
+        var pageHeading = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(22, 0, 0, 0) };
+        heading.FontSize = 20; heading.FontWeight = FontWeights.SemiBold; heading.Foreground = foreground;
+        subtitle.FontSize = 12; subtitle.Foreground = muted; subtitle.Margin = new Thickness(0, 3, 0, 0);
+        pageHeading.Children.Add(heading);
+        pageHeading.Children.Add(subtitle);
+        Grid.SetColumn(pageHeading, 1);
+        top.Children.Add(pageHeading);
+
+        var connection = new Border { Background = Hex("#1B3040"), BorderBrush = Hex("#315467"),
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(100),
+            Padding = new Thickness(13, 8, 13, 8), Margin = new Thickness(10, 0, 24, 0),
+            VerticalAlignment = VerticalAlignment.Center };
+        connectionBadge.Text = "●  Подключение…";
+        connectionBadge.Foreground = accent;
+        connectionBadge.FontSize = 12;
+        connectionBadge.FontWeight = FontWeights.SemiBold;
+        connection.Child = connectionBadge;
+        Grid.SetColumn(connection, 2);
+        top.Children.Add(connection);
         layout.Children.Add(top);
 
-        var inner = new Grid();
-        inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(192) });
-        inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(inner, 1);
-        layout.Children.Add(inner);
+        var content = new Grid();
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(content, 1);
+        layout.Children.Add(content);
 
-        var sidebar = new StackPanel { Margin = new Thickness(12, 14, 8, 12) };
+        var aside = new Border { Background = Hex("#111B29"), BorderBrush = Hex("#243247"),
+            BorderThickness = new Thickness(0, 0, 1, 0) };
+        var sidebar = new StackPanel { Margin = new Thickness(14, 28, 14, 16) };
+        var sectionLabel = Text("РАБОЧЕЕ ПРОСТРАНСТВО", 10, FontWeights.Bold, muted);
+        sectionLabel.Margin = new Thickness(10, 0, 0, 18);
+        sidebar.Children.Add(sectionLabel);
+        var icons = new Dictionary<string, string>
+        {
+            ["Разведка"] = "◎", ["Драфт"] = "◇", ["Данные"] = "▤",
+            ["Настройки"] = "⚙", ["Друзья"] = "♧"
+        };
         foreach (var name in new[] { "Разведка", "Драфт", "Данные", "Настройки", "Друзья" })
         {
-            var item = Btn(name, async () => await OpenPageAsync(name));
+            var item = Btn($"{icons[name]}   {name}", async () => await OpenPageAsync(name), true);
             item.HorizontalContentAlignment = HorizontalAlignment.Left;
-            item.Margin = new Thickness(0, 0, 0, 9);
-            item.Padding = new Thickness(15, 14, 12, 14);
+            item.Margin = new Thickness(0, 0, 0, 7);
+            item.Padding = new Thickness(15, 13, 12, 13);
+            item.FontSize = 14;
+            item.MinHeight = 46;
+            item.BorderThickness = new Thickness(1);
             navigation[name] = item;
             sidebar.Children.Add(item);
         }
-        var sideScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = sidebar };
-        inner.Children.Add(sideScroll);
+        var divider = new Border { Height = 1, Background = border, Margin = new Thickness(8, 22, 8, 17) };
+        sidebar.Children.Add(divider);
+        var shortcut = Text("БЫСТРЫЕ КЛАВИШИ", 10, FontWeights.Bold, muted);
+        shortcut.Margin = new Thickness(10, 0, 0, 12);
+        sidebar.Children.Add(shortcut);
+        sidebar.Children.Add(Text("Ctrl + 1…5   Разделы", 12, color: muted));
+        sidebar.Children.Add(Text("Ctrl + R      Обновить", 12, color: muted));
+        aside.Child = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = sidebar };
+        content.Children.Add(aside);
 
-        var main = Surface(body, new Thickness(0, 0, 14, 10));
+        var main = Surface(body, new Thickness(12, 13, 17, 11));
+        main.Padding = new Thickness(24, 21, 24, 20);
+        main.CornerRadius = new CornerRadius(18);
         Grid.SetColumn(main, 1);
-        inner.Children.Add(main);
+        content.Children.Add(main);
 
+        var footer = new Grid { Background = Hex("#101A27") };
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         status.Foreground = muted;
-        status.FontSize = 12;
-        status.Text = "Запускаем Go-ядро";
-        toast.Foreground = accent;
-        toast.FontSize = 12;
-        var footer = new DockPanel { Margin = new Thickness(24, 2, 24, 12) };
-        DockPanel.SetDock(status, Dock.Left);
+        status.FontSize = 11;
+        status.Margin = new Thickness(22, 0, 0, 0);
+        status.VerticalAlignment = VerticalAlignment.Center;
+        status.TextTrimming = TextTrimming.CharacterEllipsis;
+        status.Text = "Запускаем Go-ядро…";
         footer.Children.Add(status);
-        toast.HorizontalAlignment = HorizontalAlignment.Right;
+        toast.Foreground = gold;
+        toast.FontSize = 11;
+        toast.Margin = new Thickness(12, 0, 23, 0);
+        toast.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(toast, 1);
         footer.Children.Add(toast);
         Grid.SetRow(footer, 2);
         layout.Children.Add(footer);
 
+        PreviewKeyDown += async (_, e) =>
+        {
+            if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+            var n = e.Key switch
+            {
+                Key.D1 or Key.NumPad1 => 0, Key.D2 or Key.NumPad2 => 1,
+                Key.D3 or Key.NumPad3 => 2, Key.D4 or Key.NumPad4 => 3,
+                Key.D5 or Key.NumPad5 => 4, _ => -1
+            };
+            var pages = new[] { "Разведка", "Драфт", "Данные", "Настройки", "Друзья" };
+            if (n >= 0) { e.Handled = true; await OpenPageAsync(pages[n]); }
+            else if (e.Key == Key.R)
+            {
+                e.Handled = true;
+                if (page == "Разведка") await LoadScoutAsync();
+                else if (page == "Данные") await LoadDataAsync();
+                else if (page == "Настройки") await LoadSettingsAsync();
+            }
+        };
+
         core.StateReceived += snapshot => Dispatcher.BeginInvoke(() => ApplyState(snapshot));
-        core.ConnectionChanged += message => Dispatcher.BeginInvoke(() => status.Text = message);
+        core.ConnectionChanged += message => Dispatcher.BeginInvoke(() =>
+        {
+            connectionBadge.Text = message == "Go-ядро подключено" ? "●  Локально · онлайн" : "●  " + message;
+            connectionBadge.Foreground = message == "Go-ядро подключено" ? good : gold;
+        });
         Loaded += async (_, _) => await BootAsync(initialDataDirectory);
         Closed += (_, _) => core.Stop();
         RenderPage();
@@ -148,9 +239,10 @@ public sealed class NativeWindow : Window
     {
         var b = new Button
         {
-            Content = label, Cursor = Cursors.Hand, Padding = new Thickness(12, 9, 12, 9),
-            Background = subtle ? soft : panel, Foreground = foreground,
-            BorderBrush = border, BorderThickness = new Thickness(1), MinHeight = 36
+            Content = label, Cursor = Cursors.Hand, Padding = new Thickness(14, 10, 14, 10),
+            Background = subtle ? soft : Hex("#24555D"), Foreground = foreground,
+            BorderBrush = subtle ? border : Hex("#397D81"),
+            BorderThickness = new Thickness(1), MinHeight = 38
         };
         b.Click += async (_, _) =>
         {
@@ -164,7 +256,7 @@ public sealed class NativeWindow : Window
     private Border Surface(UIElement child, Thickness margin)
         => new() { Background = panel, CornerRadius = new CornerRadius(14),
             BorderBrush = border, BorderThickness = new Thickness(1),
-            Margin = margin, Padding = new Thickness(18), Child = child };
+            Margin = margin, Padding = new Thickness(20), Child = child };
     private StackPanel Stack(params UIElement[] children)
     {
         var s = new StackPanel();
@@ -179,8 +271,8 @@ public sealed class NativeWindow : Window
     };
     private void Header(StackPanel host, string label)
     {
-        var h = Text(label, 20, FontWeights.SemiBold);
-        h.Margin = new Thickness(0, 5, 0, 13);
+        var h = Text(label, 18, FontWeights.SemiBold);
+        h.Margin = new Thickness(0, 8, 0, 15);
         host.Children.Add(h);
     }
     private static JsonNode? Obj(JsonNode? node, params string[] keys) => node.At(keys);
@@ -224,10 +316,21 @@ public sealed class NativeWindow : Window
     private void RenderPage()
     {
         heading.Text = page;
+        subtitle.Text = page switch
+        {
+            "Разведка" => "Команды, игроки и информация о противниках",
+            "Драфт" => "Предложения модели и управление выбором героев",
+            "Данные" => "Корпус матчей и обучение модели",
+            "Настройки" => "Параметры движка и интеграции",
+            _ => "Совместная работа и приглашения"
+        };
         foreach (var item in navigation)
         {
-            item.Value.Background = item.Key == page ? Hex("#364862") : panel;
-            item.Value.BorderBrush = item.Key == page ? accent : border;
+            bool active = item.Key == page;
+            item.Value.Background = active ? Hex("#284551") : Hex("#111B29");
+            item.Value.BorderBrush = active ? Hex("#538B88") : Hex("#111B29");
+            item.Value.Foreground = active ? accent : foreground;
+            item.Value.FontWeight = active ? FontWeights.Bold : FontWeights.Medium;
         }
         body.Content = page switch
         {
@@ -281,63 +384,141 @@ public sealed class NativeWindow : Window
         if (page == "Разведка") await LoadScoutAsync();
     }
 
+    private Border Pill(string label, Brush backgroundColor, Brush textColor)
+    {
+        return new Border
+        {
+            Background = backgroundColor, CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(11, 6, 11, 6), Child = Text(label, 11, FontWeights.SemiBold, textColor),
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center
+        };
+    }
+
+    private Border MetricTile(string label, TextBlock counter, Brush dotColor)
+    {
+        var column = new StackPanel();
+        var line = new StackPanel { Orientation = Orientation.Horizontal };
+        line.Children.Add(new Border { Background = dotColor, CornerRadius = new CornerRadius(4),
+            Width = 7, Height = 7, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+        line.Children.Add(Text(label.ToUpperInvariant(), 10, FontWeights.Bold, muted));
+        column.Children.Add(line);
+        counter.FontSize = 24;
+        counter.FontWeight = FontWeights.Bold;
+        counter.Foreground = foreground;
+        counter.Margin = new Thickness(0, 8, 0, 0);
+        counter.Text = "0 / 5";
+        column.Children.Add(counter);
+        return new Border { Child = column, Background = Hex("#1D2C3B"), BorderBrush = border,
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(18, 14, 22, 14), MinWidth = 150, Margin = new Thickness(0, 0, 10, 10) };
+    }
+
     private StackPanel BuildSide(string side)
     {
         var host = new StackPanel();
-        Header(host, side == "our" ? "Союзники" : "Соперники");
+        var isAlly = side == "our";
+        var title = new Grid { Margin = new Thickness(0, 0, 0, 20) };
+        title.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var caption = new StackPanel();
+        caption.Children.Add(Text(isAlly ? "СВОЙ СОСТАВ" : "СОСТАВ ВРАГА", 10, FontWeights.Bold, muted));
+        var head = Text(isAlly ? "Союзники" : "Противники", 20, FontWeights.Bold);
+        head.Margin = new Thickness(0, 3, 0, 0);
+        caption.Children.Add(head);
+        title.Children.Add(caption);
+        var mark = Pill(isAlly ? "RADIANT / DIRE" : "АНАЛИЗ", Hex(isAlly ? "#203F40" : "#3F302F"),
+            isAlly ? accent : gold);
+        Grid.SetColumn(mark, 1);
+        title.Children.Add(mark);
+        host.Children.Add(title);
+
         for (int pos = 1; pos <= 5; pos++)
         {
             var key = $"{side}:{pos}";
             int position = pos;
-            var row = new Grid { Margin = new Thickness(0, 0, 0, 9) };
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var number = new Border
+            {
+                Background = Hex(isAlly ? "#254D4B" : "#4B3B31"),
+                BorderBrush = Hex(isAlly ? "#416F69" : "#6C5441"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8), Height = 27, Width = 27,
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = Text(pos.ToString("D2"), 11, FontWeights.Bold, isAlly ? accent : gold)
+            };
+            ((TextBlock)number.Child).HorizontalAlignment = HorizontalAlignment.Center;
+            row.Children.Add(number);
 
-            var avatar = new Image { Height = 40, Width = 40, Stretch = Stretch.UniformToFill, Margin = new Thickness(0, 0, 8, 0) };
+            var avatarFrame = new Grid { Height = 39, Width = 39, Margin = new Thickness(0, 0, 6, 0) };
+            avatarFrame.Children.Add(new Border { Background = Hex("#273B4B"), CornerRadius = new CornerRadius(9),
+                Child = Text("?", 16, FontWeights.Bold, muted) });
+            ((TextBlock)((Border)avatarFrame.Children[0]).Child).HorizontalAlignment = HorizontalAlignment.Center;
+            var avatar = new Image { Height = 37, Width = 37, Stretch = Stretch.UniformToFill };
             rosterAvatars[key] = avatar;
-            row.Children.Add(avatar);
+            avatarFrame.Children.Add(avatar);
+            Grid.SetColumn(avatarFrame, 1);
+            row.Children.Add(avatarFrame);
 
-            var names = new StackPanel();
-            var label = Text($"Позиция {pos} — пусто", 15, FontWeights.SemiBold);
-            var heroes = Text("", 11, color: muted);
-            var badge = Text("", 11, color: accent);
+            var identity = new StackPanel { Margin = new Thickness(8, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center };
+            var label = Text("Место свободно", 13, FontWeights.SemiBold);
+            label.TextTrimming = TextTrimming.CharacterEllipsis;
+            label.TextWrapping = TextWrapping.NoWrap;
+            var heroes = Text("Позиция " + pos, 11, color: muted);
+            heroes.TextTrimming = TextTrimming.CharacterEllipsis;
+            heroes.TextWrapping = TextWrapping.NoWrap;
+            var badge = Text("", 10, FontWeights.SemiBold, gold);
+            badge.TextTrimming = TextTrimming.CharacterEllipsis;
+            badge.TextWrapping = TextWrapping.NoWrap;
             rosterLabels[key] = label;
             rosterHeroes[key] = heroes;
             rosterBadges[key] = badge;
-            names.Children.Add(label);
-            names.Children.Add(heroes);
-            names.Children.Add(badge);
-            Grid.SetColumn(names, 1);
-            row.Children.Add(names);
+            identity.Children.Add(label);
+            identity.Children.Add(heroes);
+            identity.Children.Add(badge);
+            Grid.SetColumn(identity, 2);
+            row.Children.Add(identity);
 
             var choose = Btn("Изменить", async () => await EditSeatAsync(side, position), true);
-            choose.FontSize = 12;
-            choose.Padding = new Thickness(9, 5, 9, 5);
-            choose.Margin = new Thickness(8, 0, 0, 0);
-            Grid.SetColumn(choose, 2);
+            choose.FontSize = 11;
+            choose.Padding = new Thickness(10, 6, 10, 6);
+            choose.Margin = new Thickness(7, 0, 0, 0);
+            choose.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(choose, 3);
             row.Children.Add(choose);
-            host.Children.Add(row);
+
+            host.Children.Add(new Border { Child = row, Background = Hex("#1D2B3A"),
+                BorderBrush = Hex("#324457"), BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(11), Padding = new Thickness(12, 11, 12, 11),
+                Margin = new Thickness(0, 0, 0, 8) });
         }
-        var controls = new WrapPanel { Margin = new Thickness(0, 12, 0, 2) };
-        var input = new TextBox { MinWidth = 210, Margin = new Thickness(0, 0, 8, 6),
-            Padding = new Thickness(8), ToolTip = "Steam account ID, OpenDota URL или профиль" };
+        var controls = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
+        controls.Children.Add(Text("ДОБАВИТЬ ИГРОКА", 10, FontWeights.Bold, muted));
+        var input = new TextBox { Margin = new Thickness(0, 9, 0, 10), MinWidth = 0,
+            ToolTip = "Steam account ID или ссылка на профиль" };
         controls.Children.Add(input);
-        controls.Children.Add(Btn("Разведать ID", async () =>
+        var buttons = new WrapPanel();
+        var scout = Btn("◎  Разведать", async () =>
         {
             var value = input.Text.Trim();
             if (value.Length > 0)
-                await RunAction(side == "our" ? "/api/ops/scout-allies" : "/api/ops/scout", new { players = value });
-        }));
-        host.Children.Add(controls);
-        var rescout = Btn("Обновить весь состав", async () =>
+                await RunAction(isAlly ? "/api/ops/scout-allies" : "/api/ops/scout", new { players = value });
+        });
+        scout.Margin = new Thickness(0, 0, 8, 8);
+        buttons.Children.Add(scout);
+        var rescout = Btn("Обновить состав", async () =>
         {
             var ids = state.At("team", side).Items().Select(j => j.L()).Where(id => id > 0).Distinct().ToArray();
             if (ids.Length > 0)
-                await RunAction(side == "our" ? "/api/ops/scout-allies" : "/api/ops/scout", new { players = string.Join(",", ids) });
+                await RunAction(isAlly ? "/api/ops/scout-allies" : "/api/ops/scout", new { players = string.Join(",", ids) });
         }, true);
-        rescout.Margin = new Thickness(0, 8, 0, 0);
-        host.Children.Add(rescout);
+        buttons.Children.Add(rescout);
+        controls.Children.Add(buttons);
+        host.Children.Add(controls);
         return host;
     }
 
@@ -350,35 +531,93 @@ public sealed class NativeWindow : Window
         scoutVersion = "";
         playersVersion = "";
         var host = new StackPanel();
-        host.Children.Add(Text("Составы 5 × 5", 24, FontWeights.Bold));
-        var note = Text("Позиции, Steam-профили и разведка. Карточки не пересоздаются при обновлении прогресса.", 13, color: muted);
-        note.Margin = new Thickness(0, 5, 0, 18);
-        host.Children.Add(note);
+
+        var banner = new Border
+        {
+            Background = new LinearGradientBrush(Color.FromRgb(29, 59, 68), Color.FromRgb(24, 39, 59), 15),
+            CornerRadius = new CornerRadius(14), Padding = new Thickness(22, 20, 22, 18),
+            Margin = new Thickness(0, 0, 0, 22), BorderBrush = Hex("#395966"),
+            BorderThickness = new Thickness(1)
+        };
+        var intro = new StackPanel();
+        intro.Children.Add(Text("MATCH PREPARATION  /  01", 10, FontWeights.Bold, accent));
+        var title = Text("Узнай соперника до первого пика", 25, FontWeights.Bold);
+        title.Margin = new Thickness(0, 9, 0, 8);
+        intro.Children.Add(title);
+        intro.Children.Add(Text("Команды, герои, статистика и активные задания — в одном рабочем пространстве.",
+            13, color: Hex("#C2D3DA")));
+        var metrics = new WrapPanel { Margin = new Thickness(0, 18, 0, 0) };
+        metrics.Children.Add(MetricTile("Союзники", allyMetric, accent));
+        metrics.Children.Add(MetricTile("Противники", enemyMetric, gold));
+        intro.Children.Add(metrics);
+        banner.Child = intro;
+        host.Children.Add(banner);
+
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var our = Surface(BuildSide("our"), new Thickness(0, 0, 8, 8));
-        var theirs = Surface(BuildSide("enemy"), new Thickness(8, 0, 0, 8));
-        // Surface is nested inside the root panel, using independent backgrounds.
-        our.Background = soft; theirs.Background = soft;
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var our = Surface(BuildSide("our"), new Thickness(0, 0, 8, 0));
+        var enemy = Surface(BuildSide("enemy"), new Thickness(8, 0, 0, 0));
         grid.Children.Add(our);
-        Grid.SetColumn(theirs, 1);
-        grid.Children.Add(theirs);
+        Grid.SetColumn(enemy, 1);
+        grid.Children.Add(enemy);
+        // At 890 px total window width the content area is too narrow for two
+        // rosters. Stack them without introducing a horizontal scrollbar.
+        grid.SizeChanged += (_, _) =>
+        {
+            bool compact = grid.ActualWidth < 890;
+            grid.ColumnDefinitions[1].Width = compact ? new GridLength(0) :
+                new GridLength(1, GridUnitType.Star);
+            Grid.SetColumn(enemy, compact ? 0 : 1);
+            Grid.SetRow(enemy, compact ? 1 : 0);
+            our.Margin = compact ? new Thickness(0, 0, 0, 12) : new Thickness(0, 0, 8, 0);
+            enemy.Margin = compact ? new Thickness(0) : new Thickness(8, 0, 0, 0);
+        };
+        teamGrid = grid;
         host.Children.Add(grid);
-        Header(host, "Активная разведка");
-        scoutLive = Text("Ожидание данных…", 13, color: accent);
-        scoutLive.Margin = new Thickness(0, 0, 0, 20);
-        host.Children.Add(scoutLive);
-        Header(host, "Адресная книга Steam");
-        var refresh = Btn("Обновить список", LoadScoutAsync, true);
-        refresh.Margin = new Thickness(0, 0, 0, 12);
-        host.Children.Add(refresh);
-        var book = new ListBox { Name = "KnownPlayers", MaxHeight = 350, BorderThickness = new Thickness(0), Background = panel,
+
+        Header(host, "Ход разведки");
+        var active = new Border { Background = Hex("#142535"), CornerRadius = new CornerRadius(11),
+            BorderBrush = Hex("#315065"), BorderThickness = new Thickness(1),
+            Padding = new Thickness(18, 14, 18, 14), Margin = new Thickness(0, 0, 0, 16) };
+        scoutLive = Text("Заданий нет · данные готовы", 13, color: muted);
+        active.Child = scoutLive;
+        host.Children.Add(active);
+
+        var bookHeader = new DockPanel { Margin = new Thickness(0, 7, 0, 12),
+            LastChildFill = true };
+        var refresh = Btn("↻  Обновить", LoadScoutAsync, true);
+        DockPanel.SetDock(refresh, Dock.Right);
+        bookHeader.Children.Add(refresh);
+        var label = new StackPanel();
+        label.Children.Add(Text("Адресная книга Steam", 19, FontWeights.SemiBold));
+        label.Children.Add(Text("Недавно обнаруженные игроки и сохранённые профили", 12, color: muted));
+        bookHeader.Children.Add(label);
+        host.Children.Add(bookHeader);
+
+        var bookPanel = new StackPanel();
+        var filter = new TextBox { Margin = new Thickness(0, 0, 0, 12),
+            ToolTip = "Поиск по имени, роли и Steam ID" };
+        filter.TextChanged += (_, _) =>
+        {
+            knownPlayerFilter = filter.Text;
+            FilterKnownPlayers();
+        };
+        bookPanel.Children.Add(filter);
+        var book = new ListBox { Name = "KnownPlayers", MaxHeight = 350, MinHeight = 110,
+            BorderThickness = new Thickness(0), Background = Brushes.Transparent,
             Foreground = foreground };
         knownPlayersList = book;
         VirtualizingStackPanel.SetIsVirtualizing(book, true);
         VirtualizingStackPanel.SetVirtualizationMode(book, VirtualizationMode.Recycling);
-        host.Children.Add(book);
+        ScrollViewer.SetCanContentScroll(book, true);
+        bookPanel.Children.Add(book);
+        bookEmptyHint = Text("Пока нет игроков. Добавь Steam ID в состав выше.", 12, color: muted);
+        bookEmptyHint.Margin = new Thickness(6, 10, 6, 10);
+        bookPanel.Children.Add(bookEmptyHint);
+        host.Children.Add(Surface(bookPanel, new Thickness(0, 0, 0, 14)));
         return Scroll(host);
     }
 
@@ -415,9 +654,14 @@ public sealed class NativeWindow : Window
         if (page != "Разведка" || state == null) return;
         var version = string.Join("|", new[] { "our", "enemy" }.SelectMany(side =>
             state.At("team",side).Items().Select(id => side + ":" + id.L()))) +
-            "|" + stats?.ToJsonString()?.GetHashCode();
+            "|" + stats?.ToJsonString()?.GetHashCode() +
+            "|" + players?.ToJsonString()?.GetHashCode();
         if (version == scoutVersion) return;
         scoutVersion = version;
+        var ourIds = state.At("team","our").Items().Count(id => id.L() > 0);
+        var enemyIds = state.At("team","enemy").Items().Count(id => id.L() > 0);
+        allyMetric.Text = $"{ourIds} / 5";
+        enemyMetric.Text = $"{enemyIds} / 5";
         foreach (var side in new[] { "our", "enemy" })
         {
             var ids = state.At("team",side).Items().ToArray();
@@ -463,13 +707,34 @@ public sealed class NativeWindow : Window
         var version = players?.ToJsonString() ?? "";
         if (version == playersVersion) return;
         playersVersion = version;
-        var selected = (list.SelectedItem as PlayerRow)?.Id;
-        var entries = players.At("players").Items()
-            .Select(x => new PlayerRow { Id = x.At("accountId").L(), Role = x.At("role").S(), Name = x.At("persona").S("Steam ID"), Pinned = x.At("pinned").B() })
-            .Where(x => x.Id > 0).ToList();
-        list.ItemsSource = entries;
-        list.DisplayMemberPath = "Label";
-        if (selected is long id) list.SelectedItem = entries.FirstOrDefault(x => x.Id == id);
+        knownPlayerRows.Clear();
+        knownPlayerRows.AddRange(players.At("players").Items()
+            .Select(x => new PlayerRow { Id = x.At("accountId").L(), Role = x.At("role").S(),
+                Name = x.At("persona").S("Steam ID"), Pinned = x.At("pinned").B() })
+            .Where(x => x.Id > 0).OrderByDescending(x => x.Pinned).ThenBy(x => x.Name));
+        FilterKnownPlayers();
+    }
+
+    private void FilterKnownPlayers()
+    {
+        if (knownPlayersList == null) return;
+        var selected = (knownPlayersList.SelectedItem as PlayerRow)?.Id;
+        var phrase = knownPlayerFilter.Trim();
+        var rows = knownPlayerRows.Where(p => phrase.Length == 0 ||
+            p.Name.Contains(phrase, StringComparison.CurrentCultureIgnoreCase) ||
+            p.Role.Contains(phrase, StringComparison.CurrentCultureIgnoreCase) ||
+            p.Id.ToString().Contains(phrase, StringComparison.Ordinal)).ToList();
+        knownPlayersList.ItemsSource = rows;
+        knownPlayersList.DisplayMemberPath = "Label";
+        if (selected.HasValue)
+            knownPlayersList.SelectedItem = rows.FirstOrDefault(x => x.Id == selected.Value);
+        if (bookEmptyHint != null)
+        {
+            bookEmptyHint.Text = knownPlayerRows.Count == 0
+                ? "Пока нет игроков. Добавь Steam ID в состав выше."
+                : "По этому запросу никто не найден.";
+            bookEmptyHint.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     private static ListBox? FindListBox(DependencyObject? node)
@@ -522,41 +787,106 @@ public sealed class NativeWindow : Window
 
     private UIElement BuildDraftView()
     {
+        heroCatalogKey = "";
+        recommendationKey = "";
         var frame = new Grid();
-        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(310) });
+        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
         frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var tools = new StackPanel { Margin = new Thickness(0, 0, 18, 0) };
-        Header(tools, "Ход драфта");
-        draftSummary = Text("Подключаем модель…", 15);
-        draftSummary.Margin = new Thickness(0, 0, 0, 16);
-        tools.Children.Add(draftSummary);
-        var buttons = new WrapPanel();
-        buttons.Children.Add(Btn("Отменить", async () => await RunAction("/api/undo"), true));
-        buttons.Children.Add(Btn("Повторить", async () => await RunAction("/api/redo"), true));
-        buttons.Children.Add(Btn("Новый", async () => await RunAction("/api/new-draft"), true));
-        tools.Children.Add(buttons);
-        Header(tools, "Рекомендации");
-        draftRecommendations = new ListBox { Background = soft, Foreground = foreground, MinHeight = 250 };
+        frame.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        frame.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var tools = new StackPanel();
+        tools.Children.Add(Text("MATCH DRAFT  /  02", 10, FontWeights.Bold, accent));
+        var head = Text("Текущий драфт", 23, FontWeights.Bold);
+        head.Margin = new Thickness(0, 8, 0, 7);
+        tools.Children.Add(head);
+        tools.Children.Add(Text("Рекомендации обновляются вместе с пиками и банами.", 12, color: muted));
+        Header(tools, "Состояние");
+        var statusBox = new Border { Background = Hex("#172C3D"), CornerRadius = new CornerRadius(11),
+            BorderBrush = Hex("#38566A"), BorderThickness = new Thickness(1),
+            Padding = new Thickness(15), Margin = new Thickness(0, 0, 0, 12) };
+        draftSummary = Text("Ожидание модели…", 13);
+        statusBox.Child = draftSummary;
+        tools.Children.Add(statusBox);
+
+        var controls = new WrapPanel();
+        var undo = Btn("↶  Назад", async () => await RunAction("/api/undo"), true);
+        undo.Margin = new Thickness(0, 0, 7, 7);
+        controls.Children.Add(undo);
+        var redo = Btn("↷  Вперёд", async () => await RunAction("/api/redo"), true);
+        redo.Margin = new Thickness(0, 0, 7, 7);
+        controls.Children.Add(redo);
+        controls.Children.Add(Btn("Новый драфт", async () => await RunAction("/api/new-draft"), true));
+        tools.Children.Add(controls);
+
+        Header(tools, "Рекомендации модели");
+        tools.Children.Add(Text("Наиболее подходящие герои в текущем состоянии.", 12, color: muted));
+        draftRecommendations = new ListBox { MinHeight = 195, MaxHeight = 370,
+            Margin = new Thickness(0, 13, 0, 0) };
+        VirtualizingStackPanel.SetIsVirtualizing(draftRecommendations, true);
         tools.Children.Add(draftRecommendations);
-        var left = Scroll(tools);
+        var left = Surface(Scroll(tools), new Thickness(0, 0, 10, 0));
         frame.Children.Add(left);
-        var content = new StackPanel();
-        Header(content, "Выбери героя");
-        var search = new TextBox { Padding = new Thickness(10), Margin = new Thickness(0, 0, 0, 10) };
+
+        // Constrain the hero list with a real Grid star row. A ListBox inside
+        // StackPanel was measured at infinite height and did not scroll.
+        var right = new Grid();
+        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        right.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var pickIntro = new StackPanel();
+        pickIntro.Children.Add(Text("HERO SELECTOR", 10, FontWeights.Bold, accent));
+        var pickTitle = Text("Выбрать героя", 23, FontWeights.Bold);
+        pickTitle.Margin = new Thickness(0, 8, 0, 5);
+        pickIntro.Children.Add(pickTitle);
+        pickIntro.Children.Add(Text("Поиск по имени. Недоступные герои скрываются автоматически.", 12, color: muted));
+        pickIntro.Margin = new Thickness(0, 0, 0, 18);
+        right.Children.Add(pickIntro);
+
+        var search = new TextBox { Margin = new Thickness(0, 0, 0, 12),
+            ToolTip = "Быстрый поиск героя" };
         search.TextChanged += (_, _) => UpdateHeroes(search.Text);
-        content.Children.Add(search);
-        heroList = new ListBox { ItemsSource = heroRows, DisplayMemberPath = "Label", Foreground = foreground, Background = soft };
+        Grid.SetRow(search, 1);
+        right.Children.Add(search);
+        heroList = new ListBox { ItemsSource = heroRows, DisplayMemberPath = "Label",
+            Background = Brushes.Transparent, MinHeight = 135, MaxHeight = 400 };
         VirtualizingStackPanel.SetIsVirtualizing(heroList, true);
         VirtualizingStackPanel.SetVirtualizationMode(heroList, VirtualizationMode.Recycling);
-        content.Children.Add(heroList);
-        content.Children.Add(Btn("Применить выбранного героя", async () =>
+        ScrollViewer.SetCanContentScroll(heroList, true);
+        Grid.SetRow(heroList, 2);
+        right.Children.Add(heroList);
+        var apply = Btn("✓  Применить выбранного героя", async () =>
         {
             if (heroList.SelectedItem is HeroRow h)
                 await RunAction("/api/apply", new { heroId = h.Id });
-        }));
-        Grid.SetColumn(content, 1);
-        frame.Children.Add(content);
-        return frame;
+        });
+        apply.HorizontalAlignment = HorizontalAlignment.Stretch;
+        apply.Margin = new Thickness(0, 15, 0, 0);
+        Grid.SetRow(apply, 3);
+        right.Children.Add(apply);
+        var rightCard = Surface(right, new Thickness(10, 0, 0, 0));
+        Grid.SetColumn(rightCard, 1);
+        frame.Children.Add(rightCard);
+
+        // On small windows stack the selector beneath the recommendations.
+        // This avoids a squeezed right panel and the browser-style x-scroll.
+        bool compactLayout = false;
+        frame.SizeChanged += (_, _) =>
+        {
+            bool compact = frame.ActualWidth < 800;
+            if (compact == compactLayout) return;
+            compactLayout = compact;
+            frame.ColumnDefinitions[0].Width = compact ? new GridLength(1, GridUnitType.Star) : new GridLength(360);
+            frame.ColumnDefinitions[1].Width = compact ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+            frame.RowDefinitions[0].Height = compact ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+            frame.RowDefinitions[1].Height = compact ? new GridLength(480) : GridLength.Auto;
+            Grid.SetColumn(rightCard, compact ? 0 : 1);
+            Grid.SetRow(rightCard, compact ? 1 : 0);
+            left.Margin = compact ? new Thickness(0, 0, 0, 12) : new Thickness(0, 0, 10, 0);
+            rightCard.Margin = compact ? new Thickness(0) : new Thickness(10, 0, 0, 0);
+        };
+        return Scroll(frame);
     }
 
     private void UpdateDraft()
@@ -570,11 +900,15 @@ public sealed class NativeWindow : Window
                 ? m.At("draftError").S("Модель ещё не обучена. Открой раздел «Данные».")
                 : $"Сторона: {m.At("ourTeam").S()}\nХод: {step.At("team").S("—")} · {step.At("action").S("—")}\nПатч: {m.At("patchTag").S("—")}";
         }
-        if (draftRecommendations != null)
-            draftRecommendations.ItemsSource = state.At("result","recs").Items().Take(6)
-                .Select(x => $"{HeroName(x.At("heroId").I())} · {x.At("score").D():0.000}")
-                .ToList();
-        var key = string.Join("|",state.At("heroes").Items().Select(x=>x.ToJsonString()));
+        var recs = state.At("result","recs").Items().Take(6)
+            .Select(x => $"  {HeroName(x.At("heroId").I())}   ·   {x.At("score").D():P1}").ToList();
+        var recKey = string.Join("|", recs);
+        if (draftRecommendations != null && recKey != recommendationKey)
+        {
+            draftRecommendations.ItemsSource = recs;
+            recommendationKey = recKey;
+        }
+        var key = state.At("heroes")?.ToJsonString() + "|" + state.At("board")?.ToJsonString();
         if (key != heroCatalogKey)
         {
             heroCatalogKey = key;
@@ -593,39 +927,93 @@ public sealed class NativeWindow : Window
             .Distinct().Select(id => new HeroRow { Id = id, Name = HeroName(id) })
             .Where(h => h.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
             .OrderBy(h=>h.Name).ToList();
+        var selected = (heroList?.SelectedItem as HeroRow)?.Id;
         heroRows.Clear();
         foreach (var x in all) heroRows.Add(x);
+        if (selected is int hero)
+            heroList!.SelectedItem = heroRows.FirstOrDefault(x => x.Id == hero);
     }
 
     private UIElement BuildDataView()
     {
         var host = new StackPanel();
-        Header(host, "Модель и сбор матчей");
-        var bar = new WrapPanel();
-        bar.Children.Add(Btn("Собрать матчи", async () => await RunAction("/api/ops/sync")));
-        bar.Children.Add(Btn("Обучить модель", async () => await RunAction("/api/ops/train")));
-        bar.Children.Add(Btn("Обновить данные", LoadDataAsync, true));
-        host.Children.Add(bar);
-        Header(host, "Задания");
-        dataActivity = Text("Нет активных заданий", 14, color: accent);
-        host.Children.Add(dataActivity);
-        var summary = new TextBlock { Name = "CorpusSummary", Margin = new Thickness(0, 15, 0, 0), TextWrapping = TextWrapping.Wrap,
-            Foreground = foreground };
-        host.Children.Add(summary);
+        host.Children.Add(Text("Данные и обучение модели", 24, FontWeights.Bold));
+        var note = Text("Следи за корпусом матчей, запускай синхронизацию и обучение без ожидания на главном экране.", 13, color: muted);
+        note.Margin = new Thickness(0, 7, 0, 20);
+        host.Children.Add(note);
+
+        var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 22) };
+        var sync = Btn("↻  Собрать матчи", async () => await RunAction("/api/ops/sync"));
+        sync.Margin = new Thickness(0, 0, 8, 8);
+        actions.Children.Add(sync);
+        var train = Btn("◇  Обучить модель", async () => await RunAction("/api/ops/train"));
+        train.Margin = new Thickness(0, 0, 8, 8);
+        actions.Children.Add(train);
+        actions.Children.Add(Btn("Обновить метрики", LoadDataAsync, true));
+        host.Children.Add(actions);
+
+        var tiles = new WrapPanel();
+        tiles.Children.Add(MetricTile("Всего матчей", corpusMatches, accent));
+        tiles.Children.Add(MetricTile("Драфтов CM", corpusDrafts, gold));
+        tiles.Children.Add(MetricTile("С позициями", corpusCoverage, good));
+        tiles.Children.Add(MetricTile("Героев", corpusHeroes, muted));
+        host.Children.Add(tiles);
+
+        Header(host, "Очередь задач");
+        var job = Surface(Stack(
+            Text("АКТИВНОСТЬ СБОРЩИКА", 10, FontWeights.Bold, muted),
+            Text("Процесс выполняется локально, в Go-ядре", 12, color: muted)
+        ), new Thickness(0, 0, 0, 12));
+        host.Children.Add(job);
+        dataActivity = Text("Активных заданий нет", 13, color: accent);
+        var activityBox = new Border { Child = dataActivity, Background = Hex("#132434"),
+            BorderBrush = Hex("#365061"), BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10), Padding = new Thickness(18, 15, 18, 15) };
+        host.Children.Add(activityBox);
+
+        Header(host, "Популярные герои в корпусе");
+        var heading = Text("Топ пиков по сохранённым матчам", 12, color: muted);
+        heading.Margin = new Thickness(0, 0, 0, 10);
+        host.Children.Add(heading);
+        var top = new ListBox { Name = "CorpusPicks", MaxHeight = 370, MinHeight = 120 };
+        VirtualizingStackPanel.SetIsVirtualizing(top, true);
+        host.Children.Add(top);
         return Scroll(host);
     }
+
     private async Task LoadDataAsync()
     {
         if (page != "Данные" || core.BaseUri == null) return;
         try
         {
             var result = await core.GetAsync("/api/corpus");
-            var text = "Корпус: " + result.At("corpus")?.ToJsonString();
-            // Hide raw huge numeric arrays; metrics can be expanded in the full native migration.
-            var summary = FindNamedText(body.Content as DependencyObject, "CorpusSummary");
-            if (summary != null) summary.Text = text.Length > 1700 ? text[..1700] + "…" : text;
+            var corpus = result.At("corpus");
+            if (corpus == null)
+            {
+                toast.Text = result.At("error").S("Корпус пока недоступен");
+                return;
+            }
+            corpusMatches.Text = corpus.At("matches").L().ToString("N0");
+            corpusDrafts.Text = corpus.At("cmDrafts").L().ToString("N0");
+            corpusCoverage.Text = corpus.At("withPositions").L().ToString("N0");
+            corpusHeroes.Text = corpus.At("heroes").L().ToString("N0");
+            var top = FindNamedList(body.Content as DependencyObject, "CorpusPicks");
+            if (top != null)
+                top.ItemsSource = corpus.At("topPicks").Items().Take(12)
+                    .Select((h, i) => $"{i + 1:D2}    {h.At("name").S("Герой")}    ·    {h.At("count").L():N0} пиков")
+                    .ToList();
         }
-        catch (Exception ex) { toast.Text = ex.Message; }
+        catch (Exception ex) { toast.Text = "Корпус: " + ex.Message; }
+    }
+
+    private static ListBox? FindNamedList(DependencyObject? node, string name)
+    {
+        if (node == null) return null;
+        if (node is ListBox list && list.Name == name) return list;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++)
+            if (FindNamedList(VisualTreeHelper.GetChild(node, i), name) is { } found)
+                return found;
+        return null;
     }
 
     private static TextBlock? FindNamedText(DependencyObject? node, string name)
@@ -755,18 +1143,74 @@ public sealed class NativeWindow : Window
     private UIElement BuildShareView()
     {
         var host = new StackPanel();
-        Header(host,"Друзья и общий драфт");
-        shareStatus=Text("Ожидание статуса…",15,color:accent);
-        shareStatus.Margin=new Thickness(0,0,0,15);
-        host.Children.Add(shareStatus);
-        var buttons=new WrapPanel();
-        buttons.Children.Add(Btn("Открыть раздачу",async()=>await RunAction("/api/share/start")));
-        buttons.Children.Add(Btn("Закрыть раздачу",async()=>await RunAction("/api/share/stop")));
-        host.Children.Add(buttons);
-        Header(host,"Подключиться по коду");
-        var code=new TextBox{Padding=new Thickness(12),MaxLength=24,MinWidth=210};
-        host.Children.Add(code);
-        host.Children.Add(Btn("Получить драфт",async()=>await RunAction("/api/share/receive",new{code=code.Text.Trim()})));
+        host.Children.Add(Text("COLLABORATION  /  05", 10, FontWeights.Bold, accent));
+        var heading = Text("Драфт вместе с командой", 25, FontWeights.Bold);
+        heading.Margin = new Thickness(0, 9, 0, 7);
+        host.Children.Add(heading);
+        var description = Text("Открой сессию для друзей или подключись к чужому драфту по коду.", 13, color: muted);
+        description.Margin = new Thickness(0, 0, 0, 22);
+        host.Children.Add(description);
+
+        var stateBox = new StackPanel();
+        stateBox.Children.Add(Text("ТЕКУЩАЯ СЕССИЯ", 10, FontWeights.Bold, muted));
+        shareStatus = Text("Проверяем подключение…", 15, FontWeights.SemiBold, accent);
+        shareStatus.Margin = new Thickness(0, 10, 0, 0);
+        stateBox.Children.Add(shareStatus);
+        host.Children.Add(Surface(stateBox, new Thickness(0, 0, 0, 18)));
+
+        var cards = new Grid();
+        cards.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        cards.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        cards.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        cards.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var publish = new StackPanel();
+        publish.Children.Add(Text("01  ·  ХОСТ", 10, FontWeights.Bold, accent));
+        var hostTitle = Text("Поделиться драфтом", 19, FontWeights.SemiBold);
+        hostTitle.Margin = new Thickness(0, 9, 0, 8);
+        publish.Children.Add(hostTitle);
+        publish.Children.Add(Text("Сгенерируй код комнаты и покажи союзникам актуальный драфт.", 13, color: muted));
+        var publishActions = new WrapPanel { Margin = new Thickness(0, 18, 0, 0) };
+        var open = Btn("Открыть сессию", async () => await RunAction("/api/share/start"));
+        open.Margin = new Thickness(0, 0, 8, 8);
+        publishActions.Children.Add(open);
+        publishActions.Children.Add(Btn("Завершить", async () => await RunAction("/api/share/stop"), true));
+        publish.Children.Add(publishActions);
+        var publishCard = Surface(publish, new Thickness(0, 0, 9, 0));
+        cards.Children.Add(publishCard);
+
+        var join = new StackPanel();
+        join.Children.Add(Text("02  ·  ГОСТЬ", 10, FontWeights.Bold, gold));
+        var joinTitle = Text("Присоединиться", 19, FontWeights.SemiBold);
+        joinTitle.Margin = new Thickness(0, 9, 0, 8);
+        join.Children.Add(joinTitle);
+        join.Children.Add(Text("Вставь код комнаты, который прислал лидер команды.", 13, color: muted));
+        var codeInput = new TextBox { Margin = new Thickness(0, 16, 0, 9),
+            ToolTip = "Код комнаты", MaxLength = 24 };
+        join.Children.Add(codeInput);
+        join.Children.Add(Btn("Получить драфт", async () =>
+            await RunAction("/api/share/receive", new { code = codeInput.Text.Trim() })));
+        var joinCard = Surface(join, new Thickness(9, 0, 0, 0));
+        Grid.SetColumn(joinCard, 1);
+        cards.Children.Add(joinCard);
+
+        bool compactLayout = false;
+        cards.SizeChanged += (_, _) =>
+        {
+            bool compact = cards.ActualWidth < 700;
+            if (compact == compactLayout) return;
+            compactLayout = compact;
+            cards.ColumnDefinitions[1].Width = compact ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+            Grid.SetColumn(joinCard, compact ? 0 : 1);
+            Grid.SetRow(joinCard, compact ? 1 : 0);
+            publishCard.Margin = compact ? new Thickness(0, 0, 0, 12) : new Thickness(0, 0, 9, 0);
+            joinCard.Margin = compact ? new Thickness(0) : new Thickness(9, 0, 0, 0);
+        };
+        host.Children.Add(cards);
+
+        var footnote = Text("Работает через локальное Go-ядро. Без внешнего браузера и отдельного входа.", 12, color: muted);
+        footnote.Margin = new Thickness(0, 19, 0, 0);
+        host.Children.Add(footnote);
         return Scroll(host);
     }
 
