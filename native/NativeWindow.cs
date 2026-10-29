@@ -136,7 +136,7 @@ public sealed class NativeWindow : Window
         core.StateReceived += snapshot => Dispatcher.BeginInvoke(() => ApplyState(snapshot));
         core.ConnectionChanged += message => Dispatcher.BeginInvoke(() => status.Text = message);
         Loaded += async (_, _) => await BootAsync();
-        Closed += (_, _) => _ = core.DisposeAsync();
+        Closed += (_, _) => core.Stop();
         RenderPage();
     }
 
