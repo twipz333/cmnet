@@ -350,6 +350,8 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		},
 		Sync: run.manualSync(),
 	}
+	cfg.Profiles = func(ids []int64) (map[int64]session.Profile, error) { return opProfiles(h.dbPath, ids) }
+	cfg.RefreshProfiles = run.refreshProfilesOp()
 	if h.guest {
 		applyGuest(&cfg, &h)
 	}

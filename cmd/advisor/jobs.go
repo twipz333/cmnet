@@ -9,6 +9,7 @@ import (
 
 	"cmnet/internal/cache"
 	"cmnet/internal/jobs"
+	"cmnet/internal/scout"
 	"cmnet/internal/session"
 )
 
@@ -21,6 +22,7 @@ const (
 	jobBackfill    = jobs.KindBackfill
 	jobRankfill    = jobs.KindRankfill
 	jobAssets      = jobs.KindAssets
+	jobProfiles    = jobs.KindProfiles
 )
 
 // runner owns the job queue and turns the app's operations into queued work.
@@ -143,8 +145,15 @@ func newRunner(h homeFlags) (*runner, error) {
 			if err := decodePayload(j.Payload, &p); err != nil {
 				return "", err
 			}
-			return opScout(ctx, p.Players,
+			// The user is waiting on this, and it spends the same OpenDota budget
+			// background collection does: collection stands aside until it is done.
+			defer q.HoldBackground()()
+			summary, err := opScout(ctx, p.Players,
 				scoutOpts{outPath: h.snapshotPath, dbPath: h.dbPath, windowDays: 30}, progressOf(log))
+			if err == nil {
+				refreshScoutedProfiles(ctx, h, false, progressOf(log))
+			}
+			return summary, err
 		},
 		MaxAttempts: 1,
 	})
@@ -156,13 +165,67 @@ func newRunner(h homeFlags) (*runner, error) {
 			if err := decodePayload(j.Payload, &p); err != nil {
 				return "", err
 			}
-			return opScoutAllies(ctx, p.Players,
+			defer q.HoldBackground()()
+			summary, err := opScoutAllies(ctx, p.Players,
 				scoutOpts{outPath: h.snapshotPath, dbPath: h.dbPath, windowDays: 30}, progressOf(log))
+			if err == nil {
+				refreshScoutedProfiles(ctx, h, true, progressOf(log))
+			}
+			return summary, err
+		},
+		MaxAttempts: 1,
+	})
+	// Names and avatars. Light (one request per player), but it is what the user
+	// is looking at, so it too goes ahead of background collection.
+	q.Register(jobs.Spec{
+		Kind: jobProfiles,
+		Handler: func(ctx context.Context, j cache.Job, log jobs.Log) (string, error) {
+			var p profilesPayload
+			if err := decodePayload(j.Payload, &p); err != nil {
+				return "", err
+			}
+			defer q.HoldBackground()()
+			return opRefreshProfiles(ctx, h.dbPath, p.IDs, p.Force, progressOf(log))
 		},
 		MaxAttempts: 1,
 	})
 
 	return &runner{q: q, st: st, token: h.token}, nil
+}
+
+// refreshScoutedProfiles fetches name and avatar for the side just scouted.
+func refreshScoutedProfiles(ctx context.Context, h homeFlags, allies bool, log logFunc) {
+	snap, err := scout.LoadSnapshot(h.snapshotPath)
+	if err != nil {
+		return
+	}
+	l2 := snap.Layer2
+	if allies {
+		l2 = snap.Allies
+	}
+	if l2 == nil {
+		return
+	}
+	var ids []int64
+	for _, p := range l2.Players {
+		ids = append(ids, p.AccountID)
+	}
+	_, _ = opRefreshProfiles(ctx, h.dbPath, ids, false, log)
+}
+
+// refreshProfilesOp queues a profile check.
+func (r *runner) refreshProfilesOp() func([]int64, bool) (string, error) {
+	return func(ids []int64, force bool) (string, error) {
+		ids = uniqueIDs(ids)
+		if len(ids) == 0 {
+			return "некого проверять", nil
+		}
+		_, err := r.q.Enqueue(jobProfiles, jobs.PriorityManual, encodePayload(profilesPayload{IDs: ids, Force: force}), false)
+		if err != nil {
+			return "", err
+		}
+		return "проверяю ники и аватарки", nil
+	}
 }
 
 // Queue exposes the queue for the front ends.

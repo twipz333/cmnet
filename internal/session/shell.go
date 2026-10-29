@@ -41,7 +41,11 @@ type ShellConfig struct {
 	// new one as seat pins. SetSeat with accountID 0 empties the seat; placing a
 	// player who already has a seat on that side swaps the two.
 	GetTeam func() (TeamSheet, error)
-	SetSeat func(side string, position int, accountID int64) (TeamSheet, error)
+	// Profiles reports the stored name and avatar of each id; RefreshProfiles
+	// queues a lookup of the current ones (force: even if checked recently).
+	Profiles        func(ids []int64) (map[int64]Profile, error)
+	RefreshProfiles func(ids []int64, force bool) (string, error)
+	SetSeat         func(side string, position int, accountID int64) (TeamSheet, error)
 
 	// Long operations. Each returns a human summary or an error; they run off the
 	// UI goroutine and emit progress lines via the progress callback.
@@ -144,6 +148,15 @@ type StatsView struct {
 	HeroPool     []StatsHero   `json:"heroPool"`
 	ItemRules    string        `json:"itemRules"` // raw advice-DSL text (#10)
 	SnapshotPath string        `json:"snapshotPath"`
+}
+
+// Profile is a player's stored Steam face. Avatar is the avatar file's
+// modification time (unix seconds), 0 when there is none; it doubles as a
+// cache-buster for /assets/avatars/<id>.jpg.
+type Profile struct {
+	Persona   string `json:"persona"`
+	FetchedAt int64  `json:"fetchedAt"`
+	Avatar    int64  `json:"avatar"`
 }
 
 // TeamSheet is the account at each position 1-5 (index 0 = pos 1), 0 = empty.

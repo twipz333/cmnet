@@ -171,6 +171,21 @@ func (s *Store) FetchAvatar(ctx context.Context, accountID int64, url string) er
 	return s.fetch(ctx, KindAvatar, file, url)
 }
 
+// RefreshAvatar re-downloads a player's avatar even when one is cached: people
+// change them, and the profile lookup just said what the current one is. An
+// empty url (no public profile, or no avatar) removes the cached file.
+func (s *Store) RefreshAvatar(ctx context.Context, accountID int64, url string) error {
+	file := AvatarFile(accountID)
+	if url == "" {
+		err := os.Remove(s.Path(KindAvatar, file))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return s.fetch(ctx, KindAvatar, file, url)
+}
+
 // fetch downloads one asset and writes it atomically.
 //
 // Atomic because the file is served by our own HTTP handler while this runs: a

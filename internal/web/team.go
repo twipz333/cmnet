@@ -3,12 +3,56 @@ package web
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"cmnet/internal/session"
 )
 
 func (s *Server) routeTeam(mux *http.ServeMux) {
 	mux.HandleFunc("/api/team/seat", s.mutate(s.setSeat))
+	mux.HandleFunc("/api/profiles", s.handleProfiles)
+	mux.HandleFunc("/api/profiles/refresh", s.mutate(s.refreshProfiles))
+}
+
+// handleProfiles answers ?ids=1,2,3 with each player's stored name and avatar.
+func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
+	if s.shell.Profiles == nil {
+		http.Error(w, "profiles are not available in this mode", http.StatusNotFound)
+		return
+	}
+	var ids []int64
+	for _, part := range strings.Split(r.URL.Query().Get("ids"), ",") {
+		if id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64); err == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > 200 {
+		ids = ids[:200]
+	}
+	out, err := s.shell.Profiles(ids)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"profiles": map[string]any{}, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"profiles": out})
+}
+
+func (s *Server) refreshProfiles(r *http.Request) (string, error) {
+	if s.shell.RefreshProfiles == nil {
+		return "", errors.New("проверка профилей недоступна в этом режиме")
+	}
+	var req struct {
+		IDs   []int64 `json:"ids"`
+		Force bool    `json:"force"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	if len(req.IDs) > 50 {
+		req.IDs = req.IDs[:50]
+	}
+	return s.shell.RefreshProfiles(req.IDs, req.Force)
 }
 
 // teamView is the cached team sheet for the state frame (nil when this build

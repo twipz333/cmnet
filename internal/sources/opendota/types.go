@@ -219,8 +219,37 @@ func (c *Client) PlayerHeroes(ctx context.Context, accountID int64, days int) ([
 // it is a pointer: "no profile" is a normal answer here, not an error.
 type profileRaw struct {
 	Profile *struct {
-		PersonaName string `json:"personaname"`
+		PersonaName  string `json:"personaname"`
+		Avatar       string `json:"avatar"`
+		AvatarMedium string `json:"avatarmedium"`
+		AvatarFull   string `json:"avatarfull"`
 	} `json:"profile"`
+}
+
+// PlayerProfile is a player's public Steam face as OpenDota mirrors it.
+type PlayerProfile struct {
+	Persona string
+	Avatar  string // URL of the largest avatar, "" when none
+}
+
+// Profile fetches a player's display name and avatar (GET /players/{id}). Both
+// are empty, with no error, when the account has no public profile.
+func (c *Client) Profile(ctx context.Context, accountID int64) (PlayerProfile, error) {
+	var out profileRaw
+	if err := c.getJSON(ctx, "/players/"+itoa(accountID), &out); err != nil {
+		return PlayerProfile{}, err
+	}
+	if out.Profile == nil {
+		return PlayerProfile{}, nil
+	}
+	av := out.Profile.AvatarFull
+	if av == "" {
+		av = out.Profile.AvatarMedium
+	}
+	if av == "" {
+		av = out.Profile.Avatar
+	}
+	return PlayerProfile{Persona: sanitizeDisplayName(out.Profile.PersonaName), Avatar: av}, nil
 }
 
 // PersonaName fetches a player's display name (GET /players/{id}). It returns an
@@ -246,7 +275,7 @@ type SearchHit struct {
 	AccountID   int64   `json:"account_id"`
 	PersonaName string  `json:"personaname"`
 	Similarity  float64 `json:"similarity"` // present on some payloads
-	SML         float64 `json:"sml"`         // OpenDota's current similarity field
+	SML         float64 `json:"sml"`        // OpenDota's current similarity field
 }
 
 // Search looks up players by persona / vanity name (GET /search?q=).

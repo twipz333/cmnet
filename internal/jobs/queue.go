@@ -47,6 +47,7 @@ const (
 	KindScout       = "scout"
 	KindScoutAllies = "scout-allies"
 	KindAssets      = "assets"
+	KindProfiles    = "profiles"
 	KindBackfill    = "backfill"
 	KindRankfill    = "rankfill"
 )
@@ -90,6 +91,7 @@ type Queue struct {
 	specs   map[string]Spec
 	running map[int64]*runState
 	busy    map[Resource]int64 // resource -> job holding it
+	holds   int                // HoldBackground calls not yet released
 
 	wake     chan struct{}
 	onChange func() // called when queue state changed; drives the UI push
@@ -109,6 +111,8 @@ type runState struct {
 	lastPhase string
 	lastSeq   int64
 	lastAt    int64 // unix millis
+	// paused: stopped by HoldBackground; goes back to the queue, not to history.
+	paused bool
 }
 
 // Options configure a queue.
@@ -219,11 +223,15 @@ func (q *Queue) dispatch(ctx context.Context) {
 		q.mu.Lock()
 		free := q.workers - len(q.running)
 		skip := q.blockedKindsLocked()
+		minPriority := -1 << 31
+		if q.holds > 0 {
+			minPriority = PriorityManual
+		}
 		q.mu.Unlock()
 		if free <= 0 {
 			return
 		}
-		job, err := q.st.ClaimJob(skip)
+		job, err := q.st.ClaimJobMin(skip, minPriority)
 		if err != nil || job == nil {
 			return
 		}
@@ -297,7 +305,13 @@ func (q *Queue) start(ctx context.Context, job cache.Job) {
 		summary, err := spec.Handler(jobCtx, job, lg.log)
 		lg.close()
 
+		q.mu.Lock()
+		paused := rs.paused
+		q.mu.Unlock()
 		switch {
+		case paused && ctx.Err() == nil:
+			// Stood aside for something the user is waiting on; it resumes after.
+			_ = q.st.RetryJob(job.ID, "paused for a manual operation", 0)
 		case jobCtx.Err() != nil && ctx.Err() == nil:
 			// Cancelled on purpose (the user, or a higher-priority job taking over).
 			_ = q.st.FinishJob(job.ID, cache.JobCancelled, summary, "")
@@ -333,6 +347,37 @@ func (q *Queue) start(ctx context.Context, job cache.Job) {
 		q.signal()
 		q.changed()
 	}()
+}
+
+// HoldBackground makes background work stand aside while the caller runs
+// something the user is waiting on, such as a scout that needs the same API
+// budget the collector is spending. Running background jobs are stopped and
+// put back in the queue; none start until every hold is released.
+func (q *Queue) HoldBackground() (release func()) {
+	q.mu.Lock()
+	q.holds++
+	var victims []context.CancelFunc
+	for _, rs := range q.running {
+		if rs.job.Priority < PriorityManual {
+			rs.paused = true
+			victims = append(victims, rs.cancel)
+		}
+	}
+	q.mu.Unlock()
+	for _, c := range victims {
+		c()
+	}
+	q.changed()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			q.mu.Lock()
+			q.holds--
+			q.mu.Unlock()
+			q.signal()
+			q.changed()
+		})
+	}
 }
 
 // Cancel stops a job. A pending one is marked cancelled; a running one is asked to

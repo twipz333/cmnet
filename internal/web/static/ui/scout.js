@@ -8,39 +8,64 @@ import { renderTeams, placePending } from './team.js';
 
 let stats = null;
 let players = null;
+let profiles = {}; // account id -> {persona, fetchedAt, avatar}
 let roleFilter = '';
 const selected = new Set();
 
-export function enterScout() {
-  loadStats();
-  loadPlayers();
+export async function enterScout() {
   renderScout();
+  await Promise.all([loadStats(), loadPlayers()]);
+  // Names and avatars change; re-check the people on screen (the core skips
+  // anyone checked in the last half hour).
+  const ids = teamIds();
+  if (ids.length) post('/api/profiles/refresh', { ids, force: false }, { quiet: true });
 }
 
 async function loadStats() {
   stats = await getJSON('/api/stats');
   placePending(stats);
+  await loadProfiles();
   renderScout();
 }
 
 async function loadPlayers() {
   players = await getJSON('/api/players' + (roleFilter ? `?role=${roleFilter}` : ''));
+  await loadProfiles();
   renderScout();
 }
 
-// After a scout finishes the snapshot changes; refresh when a scout job leaves
-// the active list.
-let wasScouting = false;
+// teamIds: everyone on the team sheets and in today's scouting.
+function teamIds() {
+  const ids = new Set();
+  const t = store.state?.team;
+  ['our', 'enemy'].forEach((k) => (t?.[k] || []).forEach((id) => id && ids.add(id)));
+  const st = stats?.stats;
+  [...(st?.allyPlayers || []), ...(st?.enemyPlayers || [])].forEach((p) => p.accountId && ids.add(p.accountId));
+  return [...ids];
+}
+
+async function loadProfiles() {
+  const ids = new Set(teamIds());
+  (players?.players || []).slice(0, 120).forEach((p) => ids.add(p.accountId));
+  if (!ids.size) return;
+  const r = await getJSON('/api/profiles?ids=' + [...ids].join(','));
+  if (r && r.profiles) profiles = r.profiles;
+}
+
+// After each scout or profile check finishes the data changes: refresh as soon
+// as any one of them leaves the active list, not only when all have.
+let activeIds = new Set();
 export function scoutStateChanged(s) {
-  const scouting = (s.ops?.active || []).some((j) => j.kind === 'scout' || j.kind === 'scout-allies');
-  if (wasScouting && !scouting) { loadStats(); loadPlayers(); }
-  wasScouting = scouting;
+  const now = new Set((s.ops?.active || []).filter((j) => ['scout', 'scout-allies', 'profiles'].includes(j.kind)).map((j) => j.id));
+  const finished = [...activeIds].some((id) => !now.has(id));
+  activeIds = now;
+  if (finished) { loadStats(); loadPlayers(); }
 }
 
 export function renderScout() {
   const s = store.state;
   if (!s) return;
-  renderTeams($('scout-teams'), { stats, players, reload: () => { loadStats(); loadPlayers(); }, rerender: renderScout });
+  renderTeams($('scout-teams'), { stats, players, profiles, reload: () => { loadStats(); loadPlayers(); }, rerender: renderScout });
   renderPool();
   renderBook();
 }

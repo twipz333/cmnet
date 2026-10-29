@@ -236,7 +236,7 @@ export function confirmable(btn, prompt, fn) {
 }
 
 const JOB_NAMES = {
-  sync: 'Сбор матчей', train: 'Обучение', scout: 'Разведка соперников', 'scout-allies': 'Разведка союзников',
+  sync: 'Сбор матчей', train: 'Обучение', scout: 'Разведка соперников', 'scout-allies': 'Разведка союзников', profiles: 'Проверка профилей',
   assets: 'Картинки героев', backfill: 'Дозагрузка статистики', rankfill: 'Дозагрузка рангов', eval: 'Оценка модели',
 };
 export const jobName = (kind) => JOB_NAMES[kind] || kind;

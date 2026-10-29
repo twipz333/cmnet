@@ -13,6 +13,33 @@ const SIDES = {
 const ROLE_HINT = { 1: 'лёгкая линия', 2: 'центр', 3: 'сложная линия', 4: 'роумер', 5: 'полная поддержка' };
 
 let rerender = () => {};
+let profiles = {}; // id -> {persona, fetchedAt, avatar}
+// Ids sent to scouting and not yet seen in the results, per side. Seating players
+// one by one becomes one scout of all of them: the requests are gathered for a
+// moment and the core folds them into whatever is already queued.
+const inflight = { our: new Set(), enemy: new Set() };
+const batch = { our: new Set(), enemy: new Set() };
+const batchTimer = {};
+
+function queueScout(side, ids) {
+  const s = store.state;
+  if (!s?.meta?.[SIDES[side].can]) return;
+  ids.forEach((id) => { if (id && !inflight[side].has(id)) { batch[side].add(id); inflight[side].add(id); } });
+  if (!batch[side].size) return;
+  clearTimeout(batchTimer[side]);
+  batchTimer[side + 'Armed'] = true; // until the job is in the queue, it is still ours
+  batchTimer[side] = setTimeout(async () => {
+    const list = [...batch[side]];
+    batch[side].clear();
+    await post(SIDES[side].scoutPath, { players: list.join(',') });
+    batchTimer[side + 'Armed'] = false;
+  }, 1200);
+  rerender();
+}
+
+function nameFor(id, p, known) {
+  return profiles[id]?.persona || p?.nickname || known?.persona || `id ${id}`;
+}
 let choosing = null; // {side, pos}: the free card whose player list is open
 let picked = null; // {side, accountId}: chosen on the bench, waiting for a card
 const pending = {}; // side -> {pos, before:Set}: a profile link being scouted for a seat
@@ -20,6 +47,15 @@ const pending = {}; // side -> {pos, before:Set}: a profile link being scouted f
 // ctx: {stats, players, reload()} from the scout page.
 export function renderTeams(host, ctx) {
   rerender = ctx.rerender;
+  profiles = ctx.profiles || {};
+  const kindOf = { our: 'scout-allies', enemy: 'scout' };
+  ['our', 'enemy'].forEach((side) => {
+    const list = side === 'our' ? ctx.stats?.stats?.allyPlayers : ctx.stats?.stats?.enemyPlayers;
+    (list || []).forEach((p) => inflight[side].delete(p.accountId));
+    // Nothing of this kind left in the queue: whatever did not come back failed.
+    const busy = (store.state?.ops?.active || []).some((j) => j.kind === kindOf[side]);
+    if (!busy && !batch[side].size && !batchTimer[side + 'Armed']) inflight[side].clear();
+  });
   host.textContent = '';
   const s = store.state;
   const st = ctx.stats?.stats;
@@ -77,6 +113,17 @@ function sideSection(side, s, st, ctx) {
   const seats = sheet(side);
   const canEdit = !!s.team;
 
+  const acts = el('div', 'team-acts');
+  const unscouted = seats.filter((id) => id && !byId.has(id) && !inflight[side].has(id));
+  if (unscouted.length && s.meta[cfg.can]) {
+    acts.append(button(unscouted.length === 1 ? 'Разведать игрока' : `Разведать всех (${unscouted.length})`, 'btn small', () => queueScout(side, unscouted)));
+  }
+  const faces = [...new Set([...seats.filter(Boolean), ...scouted.map((p) => p.accountId)])];
+  if (faces.length) {
+    acts.append(button('Обновить ники и аватарки', 'link-btn', () => post('/api/profiles/refresh', { ids: faces, force: true })));
+  }
+  if (acts.childElementCount) head.insertBefore(acts, head.children[1] || null);
+
   const row = el('div', 'seats');
   for (let pos = 1; pos <= 5; pos++) {
     row.append(seatCard(side, pos, seats[pos - 1], byId, book, canEdit, s, ctx));
@@ -103,25 +150,31 @@ function sideSection(side, s, st, ctx) {
     sec.append(l3);
   }
 
-  const running = (s.ops?.active || []).filter((j) => j.kind === (side === 'our' ? 'scout-allies' : 'scout'));
-  running.forEach((j) => {
+  const jobsOf = (s.ops?.active || []).filter((j) => j.kind === (side === 'our' ? 'scout-allies' : 'scout'));
+  if (jobsOf.length) {
+    const run = jobsOf.find((j) => j.state === 'running') || jobsOf[0];
     const line = el('div', 'job live');
-    line.append(el('b', null, jobName(j.kind)), el('div', 'job-line', j.lastLine || 'начинаю…'));
+    const more = jobsOf.length - 1;
+    line.append(el('b', null, jobName(run.kind) + (more > 0 ? ` · ещё в очереди ${more}` : '')),
+      el('div', 'job-line', run.state === 'running' ? (run.lastLine || 'начинаю…') : 'ждёт очереди'));
     sec.append(line);
-  });
+  }
 
   if (s.meta[cfg.can]) sec.append(addForm(side, cfg, scouted));
   return sec;
 }
 
+// avatar: the Steam picture when one is stored, initials otherwise. The file's
+// time is in the URL, so a refreshed avatar replaces the browser's cached copy.
 function avatar(accountId, name) {
   const a = el('div', 'avatar');
   a.textContent = name && !/^id \d+$/.test(name) ? initials(name) : '?';
-  if (accountId) {
+  const pr = profiles[accountId];
+  if (accountId && (!pr || pr.avatar)) {
     const img = new Image();
     img.alt = '';
     img.onload = () => { a.textContent = ''; a.append(img); };
-    img.src = `/assets/avatars/${accountId}.jpg`;
+    img.src = `/assets/avatars/${accountId}.jpg${pr?.avatar ? `?v=${pr.avatar}` : ''}`;
   }
   return a;
 }
@@ -169,7 +222,7 @@ function seatCard(side, pos, acct, byId, book, canEdit, s, ctx) {
 
   const p = byId.get(acct);
   const known = book.get(acct);
-  const name = p?.nickname || known?.persona || `id ${acct}`;
+  const name = nameFor(acct, p, known);
   card.draggable = canEdit;
   card.ondragstart = (e) => { e.dataTransfer.setData(`cmnet/${side}`, String(acct)); e.dataTransfer.effectAllowed = 'move'; card.classList.add('dragging'); };
   card.ondragend = () => card.classList.remove('dragging');
@@ -183,7 +236,8 @@ function seatCard(side, pos, acct, byId, book, canEdit, s, ctx) {
   const nm = el('div', 'seat-name');
   nm.append(el('b', null, name));
   const tags = el('div', 'seat-tags');
-  if (!p) tags.append(el('span', 'tag', 'не разведан'));
+  if (!p && inflight[side].has(acct)) tags.append(el('span', 'tag', 'разведка…'));
+  else if (!p) tags.append(el('span', 'tag', 'не разведан'));
   else if (!p.resolved) tags.append(el('span', 'tag warn', 'профиль скрыт'));
   if (p?.smurf && p.smurf.level !== 'low') {
     const t = el('span', 'tag ' + (p.smurf.level === 'high' ? 'danger' : 'warn'), p.smurf.label || 'возможен смурф');
@@ -202,8 +256,8 @@ function seatCard(side, pos, acct, byId, book, canEdit, s, ctx) {
     heroes.append(li);
   });
   if (p?.topHeroes?.length) card.append(heroes);
-  else if (!p && s.meta[SIDES[side].can]) {
-    card.append(button('Разведать', 'btn quiet small', () => post(SIDES[side].scoutPath, { players: String(acct) })));
+  else if (!p && !inflight[side].has(acct) && s.meta[SIDES[side].can]) {
+    card.append(button('Разведать', 'btn quiet small', () => queueScout(side, [acct])));
   }
 
   if (canEdit) {
@@ -231,12 +285,12 @@ function chooser(side, pos, byId, book, s, ctx) {
   const box = el('div', 'seat-choose');
   const seats = sheet(side);
   const cands = [];
-  byId.forEach((p) => { if (!seats.includes(p.accountId)) cands.push({ id: p.accountId, name: p.nickname || `id ${p.accountId}`, note: 'разведан' }); });
+  byId.forEach((p) => { if (!seats.includes(p.accountId)) cands.push({ id: p.accountId, name: nameFor(p.accountId, p, book.get(p.accountId)), note: 'разведан' }); });
   const role = side === 'our' ? 'ally' : 'enemy';
   book.forEach((p) => {
     if (seats.includes(p.accountId) || byId.has(p.accountId)) return;
     if (p.role && p.role !== role) return;
-    cands.push({ id: p.accountId, name: p.persona || `id ${p.accountId}`, note: p.pinned ? 'закреплён' : 'из записной книжки', pinned: p.pinned });
+    cands.push({ id: p.accountId, name: nameFor(p.accountId, null, p), note: p.pinned ? 'закреплён' : 'из записной книжки', pinned: p.pinned });
   });
   cands.sort((a, b) => (b.note === 'разведан') - (a.note === 'разведан') || (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
@@ -245,7 +299,7 @@ function chooser(side, pos, byId, book, s, ctx) {
     const li = el('li');
     const b = button('', 'choose-btn', async () => {
       await seat(side, pos, c.id);
-      if (!byId.has(c.id) && s.meta[SIDES[side].can]) post(SIDES[side].scoutPath, { players: String(c.id) });
+      if (!byId.has(c.id)) queueScout(side, [c.id]);
     });
     b.append(avatar(c.id, c.name), el('span', 'choose-name', c.name), el('span', 'choose-note', c.note));
     li.append(b);
@@ -271,10 +325,11 @@ function chooser(side, pos, byId, book, s, ctx) {
       if (!ref) { input.focus(); return; }
       if (/^\d+$/.test(ref) && Number(ref) > 0 && Number(ref) < 2 ** 32) {
         await seat(side, pos, Number(ref)); // a bare account id: seat it now
-      } else {
-        pending[side] = { pos, before: new Set([...byId.keys()]) };
-        choosing = null;
+        queueScout(side, [Number(ref)]);
+        return;
       }
+      pending[side] = { pos, before: new Set([...byId.keys()]) };
+      choosing = null;
       post(SIDES[side].scoutPath, { players: ref });
     };
     box.append(f);
@@ -289,7 +344,7 @@ function benchChip(side, p) {
   chip.type = 'button';
   chip.draggable = true;
   chip.ondragstart = (e) => { e.dataTransfer.setData(`cmnet/${side}`, String(p.accountId)); e.dataTransfer.effectAllowed = 'move'; };
-  const name = p.nickname || `id ${p.accountId}`;
+  const name = nameFor(p.accountId, p, null);
   chip.append(avatar(p.accountId, name), el('span', null, name));
   (p.topHeroes || []).slice(0, 3).forEach((h) => chip.append(portrait(h.id, 'bench-hero')));
   chip.setAttribute('aria-pressed', picked?.accountId === p.accountId ? 'true' : 'false');

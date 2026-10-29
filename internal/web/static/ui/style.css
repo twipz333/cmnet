@@ -515,3 +515,6 @@ body.guest .host-only { display: none !important; }
 .follow-line .dot.on { background: var(--radiant); }
 .follow-line .dot.wait { background: var(--gold); }
 @media (max-width: 700px) { .mode-choice { grid-template-columns: 1fr; } }
+.team-sec .sec-head { gap: 12px; }
+.team-acts { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.team-sec .sec-head > .link-btn.danger { margin-left: 0; }
