@@ -65,6 +65,10 @@ public sealed class NativeWindow : Window
     private Grid? teamGrid;
     private string heroCatalogKey = "";
     private TextBlock? dataActivity;
+    private readonly TextBlock corpusMatches = new();
+    private readonly TextBlock corpusDrafts = new();
+    private readonly TextBlock corpusCoverage = new();
+    private readonly TextBlock corpusHeroes = new();
     private TextBlock? shareStatus;
     private StackPanel? configHost;
     private readonly List<ConfigField> configEditors = new();
@@ -860,32 +864,83 @@ public sealed class NativeWindow : Window
     private UIElement BuildDataView()
     {
         var host = new StackPanel();
-        Header(host, "Модель и сбор матчей");
-        var bar = new WrapPanel();
-        bar.Children.Add(Btn("Собрать матчи", async () => await RunAction("/api/ops/sync")));
-        bar.Children.Add(Btn("Обучить модель", async () => await RunAction("/api/ops/train")));
-        bar.Children.Add(Btn("Обновить данные", LoadDataAsync, true));
-        host.Children.Add(bar);
-        Header(host, "Задания");
-        dataActivity = Text("Нет активных заданий", 14, color: accent);
-        host.Children.Add(dataActivity);
-        var summary = new TextBlock { Name = "CorpusSummary", Margin = new Thickness(0, 15, 0, 0), TextWrapping = TextWrapping.Wrap,
-            Foreground = foreground };
-        host.Children.Add(summary);
+        host.Children.Add(Text("Данные и обучение модели", 24, FontWeights.Bold));
+        var note = Text("Следи за корпусом матчей, запускай синхронизацию и обучение без ожидания на главном экране.", 13, color: muted);
+        note.Margin = new Thickness(0, 7, 0, 20);
+        host.Children.Add(note);
+
+        var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 22) };
+        var sync = Btn("↻  Собрать матчи", async () => await RunAction("/api/ops/sync"));
+        sync.Margin = new Thickness(0, 0, 8, 8);
+        actions.Children.Add(sync);
+        var train = Btn("◇  Обучить модель", async () => await RunAction("/api/ops/train"));
+        train.Margin = new Thickness(0, 0, 8, 8);
+        actions.Children.Add(train);
+        actions.Children.Add(Btn("Обновить метрики", LoadDataAsync, true));
+        host.Children.Add(actions);
+
+        var tiles = new WrapPanel();
+        tiles.Children.Add(MetricTile("Всего матчей", corpusMatches, accent));
+        tiles.Children.Add(MetricTile("Драфтов CM", corpusDrafts, gold));
+        tiles.Children.Add(MetricTile("С позициями", corpusCoverage, good));
+        tiles.Children.Add(MetricTile("Героев", corpusHeroes, muted));
+        host.Children.Add(tiles);
+
+        Header(host, "Очередь задач");
+        var job = Surface(Stack(
+            Text("АКТИВНОСТЬ СБОРЩИКА", 10, FontWeights.Bold, muted),
+            Text("Процесс выполняется локально, в Go-ядре", 12, color: muted)
+        ), new Thickness(0, 0, 0, 12));
+        host.Children.Add(job);
+        dataActivity = Text("Активных заданий нет", 13, color: accent);
+        var activityBox = new Border { Child = dataActivity, Background = Hex("#132434"),
+            BorderBrush = Hex("#365061"), BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10), Padding = new Thickness(18, 15, 18, 15) };
+        host.Children.Add(activityBox);
+
+        Header(host, "Популярные герои в корпусе");
+        var heading = Text("Топ пиков по сохранённым матчам", 12, color: muted);
+        heading.Margin = new Thickness(0, 0, 0, 10);
+        host.Children.Add(heading);
+        var top = new ListBox { Name = "CorpusPicks", MaxHeight = 370, MinHeight = 120 };
+        VirtualizingStackPanel.SetIsVirtualizing(top, true);
+        host.Children.Add(top);
         return Scroll(host);
     }
+
     private async Task LoadDataAsync()
     {
         if (page != "Данные" || core.BaseUri == null) return;
         try
         {
             var result = await core.GetAsync("/api/corpus");
-            var text = "Корпус: " + result.At("corpus")?.ToJsonString();
-            // Hide raw huge numeric arrays; metrics can be expanded in the full native migration.
-            var summary = FindNamedText(body.Content as DependencyObject, "CorpusSummary");
-            if (summary != null) summary.Text = text.Length > 1700 ? text[..1700] + "…" : text;
+            var corpus = result.At("corpus");
+            if (corpus == null)
+            {
+                toast.Text = result.At("error").S("Корпус пока недоступен");
+                return;
+            }
+            corpusMatches.Text = corpus.At("matches").L().ToString("N0");
+            corpusDrafts.Text = corpus.At("cmDrafts").L().ToString("N0");
+            corpusCoverage.Text = corpus.At("withPositions").L().ToString("N0");
+            corpusHeroes.Text = corpus.At("heroes").L().ToString("N0");
+            var top = FindNamedList(body.Content as DependencyObject, "CorpusPicks");
+            if (top != null)
+                top.ItemsSource = corpus.At("topPicks").Items().Take(12)
+                    .Select((h, i) => $"{i + 1:D2}    {h.At("name").S("Герой")}    ·    {h.At("count").L():N0} пиков")
+                    .ToList();
         }
-        catch (Exception ex) { toast.Text = ex.Message; }
+        catch (Exception ex) { toast.Text = "Корпус: " + ex.Message; }
+    }
+
+    private static ListBox? FindNamedList(DependencyObject? node, string name)
+    {
+        if (node == null) return null;
+        if (node is ListBox list && list.Name == name) return list;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++)
+            if (FindNamedList(VisualTreeHelper.GetChild(node, i), name) is { } found)
+                return found;
+        return null;
     }
 
     private static TextBlock? FindNamedText(DependencyObject? node, string name)
