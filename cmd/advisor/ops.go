@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"cmnet/internal/alerts"
+	"cmnet/internal/assets"
 	"cmnet/internal/blend"
 	"cmnet/internal/bundle"
 	"cmnet/internal/cache"
@@ -1389,28 +1391,27 @@ func rememberScouted(dbPath string, resolved []scout.ResolvedPlayer,
 // whatever has not arrived by then is simply shown as an account id.
 const personaNameTimeout = 8 * time.Second
 
-// personaNameTTL is how long a cached display name is trusted. People do rename
-// themselves, and an account that was private when we asked may have opened up
-// since, so the cache is refreshed occasionally rather than never.
-const personaNameTTL = 14 * 24 * time.Hour
+// Profiles are refreshed once a day during scouting and explicit refreshes;
+// unchanged names and images remain available offline.
+const personaNameTTL = 24 * time.Hour
 
-// personaNames returns account_id → display name for the given ids, reading the
-// local cache first and querying OpenDota only for the ones missing from it. Newly
-// fetched names are written back to the cache. Failures are silent by design: the
-// caller falls back to the account id.
+// personaNames is cache-first and best-effort. Presentation metadata is kept
+// OUT of the shared, hashed scouting snapshot.
 func personaNames(ctx context.Context, dbPath string, ids []int64) map[int64]string {
+	names, _ := refreshProfiles(ctx, dbPath, ids, false)
+	return names
+}
+
+// refreshProfiles reads cached profiles, then fetches missing/stale ones (or all
+// requested accounts when forced). The database is never held open during HTTP.
+func refreshProfiles(ctx context.Context, dbPath string, ids []int64, force bool) (map[int64]string, int) {
 	out := make(map[int64]string, len(ids))
 	if len(ids) == 0 {
-		return out
+		return out, 0
 	}
-
-	// The cache handle is opened, read, and CLOSED before any network call. Holding
-	// it across the fetch below would keep a connection (and its locks) on the same
-	// file a background sync is writing to, which is exactly how a name lookup ends
-	// up stalling an unrelated sync.
 	store, err := cache.Open(dbPath)
 	if err != nil {
-		return out
+		return out, 0
 	}
 	cached, err := store.Players(ids)
 	if err != nil {
@@ -1419,50 +1420,74 @@ func personaNames(ctx context.Context, dbPath string, ids []int64) map[int64]str
 	store.Close()
 
 	stale := time.Now().Add(-personaNameTTL).Unix()
-	var missing []int64
+	missing := make([]int64, 0, len(ids))
+	seen := make(map[int64]bool, len(ids))
 	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
 		p, ok := cached[id]
 		if ok {
-			// A stale entry is still shown; it is only queued for a refresh, so an
-			// offline run keeps displaying the last known name instead of an id.
 			out[id] = p.Persona
 		}
-		if !ok || p.FetchedAt < stale {
+		if force || !ok || p.FetchedAt < stale {
 			missing = append(missing, id)
 		}
 	}
 	if len(missing) == 0 {
-		return out
+		return out, 0
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, personaNameTimeout)
 	defer cancel()
-
 	cl := opendota.New()
+	as, _ := assets.New(assetsDirFor(dbPath))
 	var fresh []cache.Player
 	for _, id := range missing {
 		if ctx.Err() != nil {
-			break // out of time: the rest keep whatever the cache had
+			break
 		}
-		name, err := cl.PersonaName(ctx, id)
+		profile, err := cl.Profile(ctx, id)
 		if err != nil {
-			// One bad account (deleted, 404, transient error) must not cost the
-			// others their names, so keep going until the context itself expires.
-			continue
+			continue // transient errors retain previously fetched names and avatars
 		}
-		out[id] = name
-		// An empty name is cached too — it means "asked, no public profile", which
-		// stops every screen refresh from re-querying a private account.
-		fresh = append(fresh, cache.Player{AccountID: id, Persona: name})
+		avatarURL := safeSteamAvatarURL(profile.AvatarURL)
+		out[id] = profile.Persona
+		fresh = append(fresh, cache.Player{AccountID: id, Persona: profile.Persona, AvatarURL: avatarURL})
+		// Refresh only if needed; a new URL means a changed Steam avatar. Forced
+		// refresh also repairs a corrupt local image and rechecks an unchanged URL.
+		if as != nil && avatarURL != "" {
+			if force || cached[id].AvatarURL != avatarURL {
+				_ = as.RefreshAvatar(ctx, id, avatarURL)
+			} else {
+				_ = as.FetchAvatar(ctx, id, avatarURL)
+			}
+		}
 	}
 	if len(fresh) > 0 {
-		// Reopened just for the write, for the same reason it was closed above.
 		if w, err := cache.Open(dbPath); err == nil {
 			_ = w.UpsertPlayers(fresh)
 			w.Close()
 		}
 	}
-	return out
+	return out, len(fresh)
+}
+
+// safeSteamAvatarURL permits only Steam image hosts: never let untrusted API
+// profile data turn the local image downloader into an SSRF client.
+func safeSteamAvatarURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "steamstatic.com" || strings.HasSuffix(host, ".steamstatic.com") ||
+		host == "steamusercontent.com" || strings.HasSuffix(host, ".steamusercontent.com") ||
+		host == "steamcdn-a.akamaihd.net" {
+		return u.String()
+	}
+	return ""
 }
 
 // playerLabel is what the Statistics screen shows for a player: their display name
