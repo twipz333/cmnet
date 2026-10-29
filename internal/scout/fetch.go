@@ -3,6 +3,7 @@ package scout
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -143,17 +144,54 @@ func ExpandWithTeammates(ctx context.Context, src Source, players []ResolvedPlay
 	if maxDiscovered == 0 {
 		maxDiscovered = 4
 	}
-	out := BuildLayer2(ctx, src, players, windowDays, progress)
+	progress("allies: quick hero affinity (extra career/smurf requests skipped)")
+	out := BuildLayer2Quick(ctx, src, players, windowDays, progress)
 	entry, ok := firstResolved(players)
 	if !ok || maxDiscovered < 0 {
 		return out
 	}
-	// Reuse BuildLayer3's match walk for teammate ids; discard drafts.
-	shell := BuildLayer3(ctx, src, entry.AccountID, "", 0, 5, progress)
-	discovered := discoveredPlayers(shell, players, maxDiscovered)
+	// Recent matches often have NO Captain's Mode draft. The old code walked
+	// every match looking for five drafts, even though all we need are teammate
+	// account IDs. Probe only two matches under a short deadline.
+	discoveryCtx, cancel := context.WithTimeout(ctx, 9*time.Second)
+	discovered := discoverRecentTeammates(discoveryCtx, src, players, maxDiscovered, progress)
+	cancel()
 	if len(discovered) == 0 {
 		return out
 	}
-	progress(fmt.Sprintf("allies: %d teammate(s) recovered from recent matches…", len(discovered)))
-	return appendPlayers(out, BuildLayer2(ctx, src, discovered, windowDays, progress))
+	progress(fmt.Sprintf("allies: %d possible teammate(s) from 2 recent matches", len(discovered)))
+	return appendPlayers(out, BuildLayer2Quick(ctx, src, discovered, windowDays, progress))
+}
+
+// discoverRecentTeammates intentionally does not inspect drafts. It fetches at
+// most two full match records (rather than scanning indefinitely for CM drafts),
+// and ranks account IDs by occurrences alongside the entry player.
+func discoverRecentTeammates(ctx context.Context, src Source, named []ResolvedPlayer, maxDiscovered int, progress func(string)) []ResolvedPlayer {
+	entry, ok := firstResolved(named)
+	if !ok || maxDiscovered < 0 || ctx.Err() != nil {
+		return nil
+	}
+	refs, err := src.RecentMatches(ctx, entry.AccountID)
+	if err != nil {
+		progress(fmt.Sprintf("allies: teammate lookup skipped: %v", err))
+		return nil
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].StartTime > refs[j].StartTime })
+	seen := map[int64]int{}
+	for i, ref := range refs {
+		if i >= 2 || ctx.Err() != nil {
+			break
+		}
+		md, err := src.MatchDraft(ctx, ref.MatchID)
+		if err != nil || md == nil {
+			continue
+		}
+		for _, id := range teammatesOf(md, entry.AccountID) {
+			seen[id]++
+		}
+	}
+	return discoveredPlayers(&Layer3{
+		EntryAccountID: entry.AccountID,
+		TeamAccountIDs: rankTeammates(seen),
+	}, named, maxDiscovered)
 }
