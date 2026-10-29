@@ -97,6 +97,7 @@ type Session struct {
 	result recommender.Result
 
 	gsiMode      bool
+	following    bool // the board follows a host's live draft (guest)
 	gsiSeen      bool
 	live         *draft.Live
 	alerts       []objectives.Alert
