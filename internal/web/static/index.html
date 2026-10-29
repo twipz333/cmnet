@@ -11,8 +11,9 @@
     <div class="brand">cmnet</div>
     <nav class="nav" aria-label="Разделы">
       <a href="#draft" data-page="draft">Драфт</a>
-      <a href="#data" data-page="data">Данные</a>
-      <a href="#scout" data-page="scout">Разведка</a>
+      <a href="#data" data-page="data" class="host-only">Данные</a>
+      <a href="#scout" data-page="scout" class="host-only">Разведка</a>
+      <a href="#share" data-page="share" id="nav-share">Друзья</a>
       <a href="#settings" data-page="settings">Настройки</a>
     </nav>
 
@@ -89,6 +90,13 @@
       <div id="scout-today"></div>
       <div id="scout-pool"></div>
       <div id="scout-book"></div>
+    </div>
+  </main>
+
+  <main class="page page-doc" id="page-share" tabindex="-1">
+    <div class="doc">
+      <h1 id="share-title">Друзья</h1>
+      <div id="share-body"></div>
     </div>
   </main>
 

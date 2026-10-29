@@ -56,14 +56,12 @@
       "deleteAppDataOnUninstall": false,
       "artifactName": "cmnet-setup-${version}.${ext}"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "twipz333",
-        "repo": "cmnet",
-        "releaseType": "release"
-      }
-    ]
+    "publish": {
+      "provider": "github",
+      "owner": "twipz333",
+      "repo": "cmnet",
+      "releaseType": "release"
+    }
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
@@ -71,5 +69,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/twipz333/cmnet.git"
-  }
+  },
+  "cmnetEdition": "host"
 }

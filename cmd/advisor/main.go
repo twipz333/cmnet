@@ -128,6 +128,7 @@ type homeFlags struct {
 	debugState         bool
 	debugStateInterval time.Duration
 	debugStateFormat   string
+	guest              bool
 }
 
 func (h *homeFlags) bind(cmd *cobra.Command) {
@@ -152,6 +153,7 @@ func (h *homeFlags) bind(cmd *cobra.Command) {
 	f.BoolVar(&h.debugState, "debug-state", false, "print a live track.State snapshot about once a second (implies --gsi)")
 	f.DurationVar(&h.debugStateInterval, "debug-state-interval", time.Second, "how often --debug-state prints")
 	f.StringVar(&h.debugStateFormat, "debug-state-format", "text", "debug-state format: text|json")
+	f.BoolVar(&h.guest, "guest", edition == "guest", "guest app: no sync, train or scouting; the model and scouting come from a host by code")
 	f.IntVar(&h.windowDays, "window-days", 31, "recency window in days (T-N)")
 	f.IntVar(&h.minRankTier, "min-rank-tier", 40, "min avg_rank_tier (40=Archon,50=Legend,60=Ancient,70=Divine,80=Immortal)")
 	f.IntVar(&h.maxRankTier, "max-rank-tier", 85, "max avg_rank_tier")
@@ -348,6 +350,10 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		},
 		Sync: run.manualSync(),
 	}
+	if h.guest {
+		applyGuest(&cfg, &h)
+	}
+	shareShell(&cfg, h)
 	// Background collection. The lock is claimed before the worker is wired into
 	// anything, so a second instance behaves exactly like one started with
 	// --auto=false rather than half-connected.
