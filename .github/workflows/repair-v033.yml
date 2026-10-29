@@ -1,0 +1,29 @@
+name: Repair split v0.3.3 release
+
+# One-time recovery: publishing host+guest independently created duplicate
+# GitHub Releases with the same tag. This workflow runs once when merged to
+# master; workflow_dispatch permits retry if the API/CDN fails during copying.
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/repair-v033.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-v033
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Combine host, guest and update metadata into one release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/repair_v033_release.py
