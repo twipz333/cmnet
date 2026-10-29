@@ -342,6 +342,9 @@ func runHome(cmd *cobra.Command, h homeFlags) error {
 		AddPlayer: func(ref string, ally bool) (string, error) {
 			return opAddPlayer(cmd.Context(), h.dbPath, ref, ally)
 		},
+		RefreshProfiles: func(ids []int64) (string, error) {
+			return opRefreshProfiles(cmd.Context(), h.dbPath, ids)
+		},
 		ForgetPlayer: func(accountID int64) (string, error) {
 			return opForgetPlayer(h.dbPath, accountID, decisionLog)
 		},
