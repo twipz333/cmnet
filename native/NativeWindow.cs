@@ -850,7 +850,7 @@ public sealed class NativeWindow : Window
         Grid.SetRow(search, 1);
         right.Children.Add(search);
         heroList = new ListBox { ItemsSource = heroRows, DisplayMemberPath = "Label",
-            Background = Brushes.Transparent, MinHeight = 135 };
+            Background = Brushes.Transparent, MinHeight = 135, MaxHeight = 400 };
         VirtualizingStackPanel.SetIsVirtualizing(heroList, true);
         VirtualizingStackPanel.SetVirtualizationMode(heroList, VirtualizationMode.Recycling);
         ScrollViewer.SetCanContentScroll(heroList, true);
