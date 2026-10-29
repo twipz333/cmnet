@@ -112,6 +112,8 @@ type ShellConfig struct {
 	// AddPlayer files an account in the book without scouting it, so a stack can
 	// be assembled once and reused. ref is an id or a profile URL.
 	AddPlayer func(ref string, ally bool) (string, error)
+	// RefreshProfiles forcibly rechecks current Steam personas and avatars.
+	RefreshProfiles func(ids []int64) (string, error)
 
 	// BuildScan loads the bundle (+snapshot) and returns the draft-screen config.
 	BuildScan func() (Config, error)
@@ -202,6 +204,8 @@ type StatsPlayer struct {
 	Nickname  string      `json:"nickname"`
 	Resolved  bool        `json:"resolved"`
 	TopHeroes []StatsHero `json:"topHeroes"`
+	AvatarVersion int64 `json:"avatarVersion,omitempty"`
+	ScoutStatus string `json:"scoutStatus,omitempty"`
 	Smurf     *StatsSmurf `json:"smurf,omitempty"`
 }
 
@@ -250,6 +254,7 @@ type CorpusBanRow struct {
 type KnownPlayer struct {
 	AccountID int64  `json:"accountId"`
 	Persona   string `json:"persona"`
+	AvatarVersion int64 `json:"avatarVersion,omitempty"`
 	Role      string `json:"role"`
 	Note      string `json:"note,omitempty"`
 	LastSeen  int64  `json:"lastSeen"`
