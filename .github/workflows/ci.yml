@@ -36,6 +36,7 @@ jobs:
         # Job logs are not always reachable; annotations are. Each failing test
         # becomes one annotation carrying its output.
         run: |
+          if [ ! -f test.log ]; then exit 0; fi
           awk '/^--- FAIL/{if(b!="")print b; b=$0; n=0; next}
                b!="" && n<25 {b=b"%0A"$0; n++}
                /^(FAIL|ok)[ \t]/{if(b!=""){print b; b=""}}
