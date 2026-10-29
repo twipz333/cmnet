@@ -72,7 +72,9 @@ func opKnownPlayers(dbPath, snapshotPath, role string) ([]session.KnownPlayer, e
 	out := make([]session.KnownPlayer, 0, len(rows))
 	for _, p := range rows {
 		avatarVersion := int64(0)
+		profileCheckedAt := int64(0)
 		if profile, ok := profiles[p.AccountID]; ok {
+			profileCheckedAt = profile.FetchedAt
 			if profile.Persona != "" { p.Persona = profile.Persona }
 			if profile.AvatarURL != "" { avatarVersion = profile.FetchedAt }
 		}
@@ -80,6 +82,7 @@ func opKnownPlayers(dbPath, snapshotPath, role string) ([]session.KnownPlayer, e
 			AccountID: p.AccountID,
 			Persona:   p.Persona,
 			AvatarVersion: avatarVersion,
+			ProfileCheckedAt: profileCheckedAt,
 			Role:      string(p.Role),
 			Note:      p.Note,
 			LastSeen:  p.LastSeen,
