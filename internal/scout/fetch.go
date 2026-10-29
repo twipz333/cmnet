@@ -146,7 +146,7 @@ func ExpandWithTeammates(ctx context.Context, src Source, players []ResolvedPlay
 	}
 	progress("allies: quick hero affinity (extra career/smurf requests skipped)")
 	out := BuildLayer2Quick(ctx, src, players, windowDays, progress)
-	entry, ok := firstResolved(players)
+	_, ok := firstResolved(players)
 	if !ok || maxDiscovered < 0 {
 		return out
 	}
