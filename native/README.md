@@ -31,7 +31,7 @@ Or download the `cmnet-native-preview-win-x64` artifact from the
   address book, seat changes, ally/enemy scouting and full-roster refresh
 - Draft status / hero selection / recommendations / undo / redo
 - Data jobs (sync/train), basic model / corpus status
-- Read-only config display and directory opener
+- Native configuration editor (typed fields, override toggles), save via Go API, directory opener
 - Basic host sharing / receiving by code
 
 ## Not yet parity-complete (issue #17 remains OPEN)
