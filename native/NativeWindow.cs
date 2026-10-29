@@ -1143,18 +1143,74 @@ public sealed class NativeWindow : Window
     private UIElement BuildShareView()
     {
         var host = new StackPanel();
-        Header(host,"Друзья и общий драфт");
-        shareStatus=Text("Ожидание статуса…",15,color:accent);
-        shareStatus.Margin=new Thickness(0,0,0,15);
-        host.Children.Add(shareStatus);
-        var buttons=new WrapPanel();
-        buttons.Children.Add(Btn("Открыть раздачу",async()=>await RunAction("/api/share/start")));
-        buttons.Children.Add(Btn("Закрыть раздачу",async()=>await RunAction("/api/share/stop")));
-        host.Children.Add(buttons);
-        Header(host,"Подключиться по коду");
-        var code=new TextBox{Padding=new Thickness(12),MaxLength=24,MinWidth=210};
-        host.Children.Add(code);
-        host.Children.Add(Btn("Получить драфт",async()=>await RunAction("/api/share/receive",new{code=code.Text.Trim()})));
+        host.Children.Add(Text("COLLABORATION  /  05", 10, FontWeights.Bold, accent));
+        var heading = Text("Драфт вместе с командой", 25, FontWeights.Bold);
+        heading.Margin = new Thickness(0, 9, 0, 7);
+        host.Children.Add(heading);
+        var description = Text("Открой сессию для друзей или подключись к чужому драфту по коду.", 13, color: muted);
+        description.Margin = new Thickness(0, 0, 0, 22);
+        host.Children.Add(description);
+
+        var stateBox = new StackPanel();
+        stateBox.Children.Add(Text("ТЕКУЩАЯ СЕССИЯ", 10, FontWeights.Bold, muted));
+        shareStatus = Text("Проверяем подключение…", 15, FontWeights.SemiBold, accent);
+        shareStatus.Margin = new Thickness(0, 10, 0, 0);
+        stateBox.Children.Add(shareStatus);
+        host.Children.Add(Surface(stateBox, new Thickness(0, 0, 0, 18)));
+
+        var cards = new Grid();
+        cards.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        cards.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        cards.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        cards.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var publish = new StackPanel();
+        publish.Children.Add(Text("01  ·  ХОСТ", 10, FontWeights.Bold, accent));
+        var hostTitle = Text("Поделиться драфтом", 19, FontWeights.SemiBold);
+        hostTitle.Margin = new Thickness(0, 9, 0, 8);
+        publish.Children.Add(hostTitle);
+        publish.Children.Add(Text("Сгенерируй код комнаты и покажи союзникам актуальный драфт.", 13, color: muted));
+        var publishActions = new WrapPanel { Margin = new Thickness(0, 18, 0, 0) };
+        var open = Btn("Открыть сессию", async () => await RunAction("/api/share/start"));
+        open.Margin = new Thickness(0, 0, 8, 8);
+        publishActions.Children.Add(open);
+        publishActions.Children.Add(Btn("Завершить", async () => await RunAction("/api/share/stop"), true));
+        publish.Children.Add(publishActions);
+        var publishCard = Surface(publish, new Thickness(0, 0, 9, 0));
+        cards.Children.Add(publishCard);
+
+        var join = new StackPanel();
+        join.Children.Add(Text("02  ·  ГОСТЬ", 10, FontWeights.Bold, gold));
+        var joinTitle = Text("Присоединиться", 19, FontWeights.SemiBold);
+        joinTitle.Margin = new Thickness(0, 9, 0, 8);
+        join.Children.Add(joinTitle);
+        join.Children.Add(Text("Вставь код комнаты, который прислал лидер команды.", 13, color: muted));
+        var codeInput = new TextBox { Margin = new Thickness(0, 16, 0, 9),
+            ToolTip = "Код комнаты", MaxLength = 24 };
+        join.Children.Add(codeInput);
+        join.Children.Add(Btn("Получить драфт", async () =>
+            await RunAction("/api/share/receive", new { code = codeInput.Text.Trim() })));
+        var joinCard = Surface(join, new Thickness(9, 0, 0, 0));
+        Grid.SetColumn(joinCard, 1);
+        cards.Children.Add(joinCard);
+
+        bool compactLayout = false;
+        cards.SizeChanged += (_, _) =>
+        {
+            bool compact = cards.ActualWidth < 700;
+            if (compact == compactLayout) return;
+            compactLayout = compact;
+            cards.ColumnDefinitions[1].Width = compact ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+            Grid.SetColumn(joinCard, compact ? 0 : 1);
+            Grid.SetRow(joinCard, compact ? 1 : 0);
+            publishCard.Margin = compact ? new Thickness(0, 0, 0, 12) : new Thickness(0, 0, 9, 0);
+            joinCard.Margin = compact ? new Thickness(0) : new Thickness(9, 0, 0, 0);
+        };
+        host.Children.Add(cards);
+
+        var footnote = Text("Работает через локальное Go-ядро. Без внешнего браузера и отдельного входа.", 12, color: muted);
+        footnote.Margin = new Thickness(0, 19, 0, 0);
+        host.Children.Add(footnote);
         return Scroll(host);
     }
 
