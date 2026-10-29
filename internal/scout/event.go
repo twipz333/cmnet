@@ -19,6 +19,17 @@ import (
 // construction. Recovering the other four from a record we already fetched costs
 // nothing extra.
 func BuildLayer3(ctx context.Context, src Source, entryID int64, eventWindow string, eventSinceUnix int64, maxMatches int, progress func(string)) *Layer3 {
+	return buildLayer3(ctx, src, entryID, eventWindow, eventSinceUnix, maxMatches, 15, progress)
+}
+
+// BuildLayer3Fast limits the draft-time path to three match details and at most
+// two recovered drafts. This prevents ordinary non-CM pub match histories from
+// blocking the draft clock. The caller separately applies a total time budget.
+func BuildLayer3Fast(ctx context.Context, src Source, entryID int64, eventWindow string, eventSinceUnix int64, progress func(string)) *Layer3 {
+	return buildLayer3(ctx, src, entryID, eventWindow, eventSinceUnix, 2, 3, progress)
+}
+
+func buildLayer3(ctx context.Context, src Source, entryID int64, eventWindow string, eventSinceUnix int64, maxMatches, maxScans int, progress func(string)) *Layer3 {
 	if progress == nil {
 		progress = func(string) {}
 	}
@@ -33,7 +44,6 @@ func BuildLayer3(ctx context.Context, src Source, entryID int64, eventWindow str
 	seen := map[int64]int{} // teammate account_id -> matches played alongside the entry
 	// Most recent matches are ordinary pub games without picks_bans. Looking
 	// for N valid drafts must not cause an unbounded sequence of HTTP calls.
-	maxScans := 15
 	if maxMatches > 0 && maxMatches*3 < maxScans {
 		maxScans = maxMatches * 3
 	}
