@@ -171,6 +171,16 @@ func (s *Store) FetchAvatar(ctx context.Context, accountID int64, url string) er
 	return s.fetch(ctx, KindAvatar, file, url)
 }
 
+// RefreshAvatar replaces a cached avatar only when the profile's image URL changed
+// or the user explicitly requested a refresh. Failed downloads leave the old file
+// intact; the asset fetcher writes via an atomic rename.
+func (s *Store) RefreshAvatar(ctx context.Context, accountID int64, url string) error {
+	if url == "" {
+		return nil
+	}
+	return s.fetch(ctx, KindAvatar, AvatarFile(accountID), url)
+}
+
 // fetch downloads one asset and writes it atomically.
 //
 // Atomic because the file is served by our own HTTP handler while this runs: a

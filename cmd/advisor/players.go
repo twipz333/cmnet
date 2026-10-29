@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
+	"cmnet/internal/assets"
 	"cmnet/internal/cache"
 	"cmnet/internal/declog"
 	"cmnet/internal/scout"
@@ -58,11 +61,28 @@ func opKnownPlayers(dbPath, snapshotPath, role string) ([]session.KnownPlayer, e
 	if err != nil {
 		return nil, err
 	}
+
+	// Use the profile cache as the source of truth for current Steam names;
+	// known_players.persona is only a fallback for older/offline databases.
+	ids := make([]int64, 0, len(rows))
+	for _, p := range rows {
+		ids = append(ids, p.AccountID)
+	}
+	profiles, _ := store.Players(ids)
 	out := make([]session.KnownPlayer, 0, len(rows))
 	for _, p := range rows {
+		avatarVersion := int64(0)
+		profileCheckedAt := int64(0)
+		if profile, ok := profiles[p.AccountID]; ok {
+			profileCheckedAt = profile.FetchedAt
+			if profile.Persona != "" { p.Persona = profile.Persona }
+			if profile.AvatarURL != "" { avatarVersion = profile.FetchedAt }
+		}
 		v := session.KnownPlayer{
 			AccountID: p.AccountID,
 			Persona:   p.Persona,
+			AvatarVersion: avatarVersion,
+			ProfileCheckedAt: profileCheckedAt,
 			Role:      string(p.Role),
 			Note:      p.Note,
 			LastSeen:  p.LastSeen,
@@ -95,6 +115,9 @@ func opForgetPlayer(dbPath string, accountID int64, log *declog.Logger) (string,
 	if err := store.ForgetPlayer(accountID); err != nil {
 		return "", err
 	}
+	// The avatar is a local file independent of the database: explicitly remove
+	// it as part of "Forget" rather than leaving identifiable images on disk.
+	_ = os.Remove(filepathJoinAvatar(dbPath, accountID))
 	// The decision log is the other place their identity ended up (§6.1): headers
 	// carry the ten account ids and the profiles as of each draft. Forgetting has
 	// to mean everywhere, or it means nothing.
@@ -230,4 +253,27 @@ func cachePlayerAffinity(dbPath string, players []scout.PlayerAffinity, windowDa
 		}
 		_ = store.ReplacePlayerHeroStats(p.AccountID, windowDays, rows)
 	}
+}
+
+// opRefreshProfiles explicitly rechecks profile presentation data. No scouting
+// statistics are changed, and failures do not erase working cached metadata.
+func opRefreshProfiles(ctx context.Context, dbPath string, ids []int64) (string, error) {
+	if len(ids) == 0 || len(ids) > 10 {
+		return "", fmt.Errorf("choose 1 to 10 player accounts to refresh")
+	}
+	for _, id := range ids {
+		if id <= 0 || id >= 1<<32 {
+			return "", fmt.Errorf("invalid account id: %d", id)
+		}
+	}
+	_, updated := refreshProfiles(ctx, dbPath, ids, true)
+	if updated == 0 {
+		return "", fmt.Errorf("could not refresh profiles: OpenDota unavailable or timed out")
+	}
+	return fmt.Sprintf("Steam profiles checked: %d of %d; names and avatars updated when available", updated, len(ids)), nil
+}
+
+// filepathJoinAvatar keeps per-account images in the same local data directory.
+func filepathJoinAvatar(dbPath string, id int64) string {
+	return filepath.Join(assetsDirFor(dbPath), string(assets.KindAvatar), assets.AvatarFile(id))
 }

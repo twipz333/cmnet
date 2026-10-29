@@ -39,6 +39,7 @@ func applyGuest(cfg *tui.ShellConfig, h *homeFlags) {
 	cfg.Scout = nil
 	cfg.ScoutAllies = nil
 	cfg.AddPlayer = nil
+	cfg.RefreshProfiles = nil
 	cfg.Corpus = nil
 	cfg.CorpusMeta = nil
 	cfg.SetHeroPool = nil

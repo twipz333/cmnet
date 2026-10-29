@@ -141,6 +141,10 @@ func (s *Store) ForgetPlayer(accountID int64) error {
 	if _, err := s.db.Exec(`DELETE FROM known_players WHERE account_id = ?`, accountID); err != nil {
 		return err
 	}
+	// A forgotten player must also lose cached Steam persona/avatar metadata.
+	if _, err := s.db.Exec(`DELETE FROM players WHERE account_id = ?`, accountID); err != nil {
+		return err
+	}
 	return s.ForgetPlayerStats(accountID)
 }
 

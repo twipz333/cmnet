@@ -39,6 +39,8 @@ type PlayerAffinity struct {
 	AccountID int64          `json:"account_id"`
 	Nickname  string         `json:"nickname"`
 	Resolved  bool           `json:"resolved"`
+	// Status distinguishes API errors from accounts with no public match data.
+	Status    string         `json:"status,omitempty"` // ok|no_stats|error|unresolved|stale
 	Heroes    []HeroAffinity `json:"heroes"`
 	// Discovered marks a player recovered from a teammate's match record rather
 	// than named by the user. Omitted when false so snapshots written before this

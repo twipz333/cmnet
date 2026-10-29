@@ -4,7 +4,7 @@
 import {
   $, el, store, post, getJSON, button, confirmable, nameOf, portrait, pct, ago, jobName, num,
 } from './core.js';
-import { renderTeams, placePending } from './team.js';
+import { renderTeams, placePending, avatar } from './team.js';
 
 let stats = null;
 let players = null;
@@ -145,19 +145,33 @@ function renderBook() {
   const list = players.players || [];
   if (!list.length) { sec.append(el('p', 'muted', 'Пока никого нет.')); host.append(sec); return; }
 
+  const refreshIDs = () => {
+    const chosen = [...selected];
+    return chosen.length ? chosen.slice(0, 10) : list.map((p) => p.accountId).slice(0, 10);
+  };
+  const refresh = async (ids) => {
+    if (!ids.length) return;
+    if (await post('/api/players/refresh', { accountIds: ids })) {
+      await Promise.all([loadPlayers(), loadStats()]);
+    }
+  };
+
   const bulk = el('div', 'bulk');
   const ids = () => [...selected].join(',');
   const b1 = button(`Разведать как соперников (${selected.size})`, 'btn quiet', async () => { await post('/api/ops/scout', { players: ids() }); selected.clear(); renderScout(); });
   const b2 = button(`Разведать как своих (${selected.size})`, 'btn quiet', async () => { await post('/api/ops/scout-allies', { players: ids() }); selected.clear(); renderScout(); });
   b1.disabled = b2.disabled = !selected.size;
-  bulk.append(b1, b2);
+  bulk.append(b1, b2, button(
+    selected.size ? `Обновить ники и аватарки (${Math.min(10, selected.size)} из ${selected.size})` : 'Обновить ники и аватарки (первые 10)',
+    'btn quiet', () => refresh(refreshIDs()),
+  ));
   if (selected.size) bulk.append(button('Снять выбор', 'link-btn', () => { selected.clear(); renderScout(); }));
   sec.append(bulk);
 
   const table = el('table', 'tbl book');
   const thead = el('thead');
   const hr = el('tr');
-  ['', 'Игрок', 'Кто', 'Героев в кэше', 'Видели', 'Сегодня', ''].forEach((h) => hr.append(el('th', null, h)));
+  ['', 'Игрок', 'Кто', 'Героев в кэше', 'Видели', 'Профиль проверен', 'Сегодня', ''].forEach((h) => hr.append(el('th', null, h)));
   thead.append(hr);
   table.append(thead);
   const tbody = el('tbody');
@@ -170,14 +184,18 @@ function renderBook() {
     cb.onchange = () => { if (cb.checked) selected.add(p.accountId); else selected.delete(p.accountId); renderScout(); };
     const tdc = el('td'); tdc.append(cb);
     const name = el('td');
-    name.append(el('b', null, p.persona || `id ${p.accountId}`));
+    const identity = el('div', 'book-player');
+    identity.append(avatar(p.accountId, p.persona || `id ${p.accountId}`, p.avatarVersion));
+    identity.append(el('b', null, p.persona || `id ${p.accountId}`));
+    name.append(identity);
     if (p.note) name.append(el('div', 'muted', p.note));
     const today = p.inSnapshot === 'ally' ? 'в нашем составе' : p.inSnapshot === 'enemy' ? 'в составе соперника' : '';
     const acts = el('td', 'acts');
+    acts.append(button('Проверить профиль', 'link-btn', () => refresh([p.accountId])));
     acts.append(button(p.pinned ? 'Открепить' : 'Закрепить', 'link-btn', async () => { await post('/api/players/pin', { accountId: p.accountId, pinned: !p.pinned }); loadPlayers(); }));
     acts.append(confirmable(button('Забыть', 'link-btn danger'), 'Забыть насовсем?', async () => { await post('/api/players/forget', { accountId: p.accountId }); selected.delete(p.accountId); loadPlayers(); }));
     tr.append(tdc, name, el('td', null, p.role === 'ally' ? 'свой' : p.role === 'enemy' ? 'соперник' : '—'),
-      el('td', 'n', num(p.heroes)), el('td', null, ago(p.lastSeen)), el('td', null, today), acts);
+      el('td', 'n', num(p.heroes)), el('td', null, ago(p.lastSeen)), el('td', null, p.profileCheckedAt ? ago(p.profileCheckedAt) : 'ещё нет'), el('td', null, today), acts);
     if (p.pinned) tr.classList.add('pinned');
     tbody.append(tr);
   });

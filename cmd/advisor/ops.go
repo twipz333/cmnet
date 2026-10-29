@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"cmnet/internal/alerts"
+	"cmnet/internal/assets"
 	"cmnet/internal/blend"
 	"cmnet/internal/bundle"
 	"cmnet/internal/cache"
@@ -1389,28 +1391,27 @@ func rememberScouted(dbPath string, resolved []scout.ResolvedPlayer,
 // whatever has not arrived by then is simply shown as an account id.
 const personaNameTimeout = 8 * time.Second
 
-// personaNameTTL is how long a cached display name is trusted. People do rename
-// themselves, and an account that was private when we asked may have opened up
-// since, so the cache is refreshed occasionally rather than never.
-const personaNameTTL = 14 * 24 * time.Hour
+// Profiles are refreshed once a day during scouting and explicit refreshes;
+// unchanged names and images remain available offline.
+const personaNameTTL = 24 * time.Hour
 
-// personaNames returns account_id → display name for the given ids, reading the
-// local cache first and querying OpenDota only for the ones missing from it. Newly
-// fetched names are written back to the cache. Failures are silent by design: the
-// caller falls back to the account id.
+// personaNames is cache-first and best-effort. Presentation metadata is kept
+// OUT of the shared, hashed scouting snapshot.
 func personaNames(ctx context.Context, dbPath string, ids []int64) map[int64]string {
+	names, _ := refreshProfiles(ctx, dbPath, ids, false)
+	return names
+}
+
+// refreshProfiles reads cached profiles, then fetches missing/stale ones (or all
+// requested accounts when forced). The database is never held open during HTTP.
+func refreshProfiles(ctx context.Context, dbPath string, ids []int64, force bool) (map[int64]string, int) {
 	out := make(map[int64]string, len(ids))
 	if len(ids) == 0 {
-		return out
+		return out, 0
 	}
-
-	// The cache handle is opened, read, and CLOSED before any network call. Holding
-	// it across the fetch below would keep a connection (and its locks) on the same
-	// file a background sync is writing to, which is exactly how a name lookup ends
-	// up stalling an unrelated sync.
 	store, err := cache.Open(dbPath)
 	if err != nil {
-		return out
+		return out, 0
 	}
 	cached, err := store.Players(ids)
 	if err != nil {
@@ -1419,50 +1420,82 @@ func personaNames(ctx context.Context, dbPath string, ids []int64) map[int64]str
 	store.Close()
 
 	stale := time.Now().Add(-personaNameTTL).Unix()
-	var missing []int64
+	missing := make([]int64, 0, len(ids))
+	seen := make(map[int64]bool, len(ids))
 	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
 		p, ok := cached[id]
 		if ok {
-			// A stale entry is still shown; it is only queued for a refresh, so an
-			// offline run keeps displaying the last known name instead of an id.
 			out[id] = p.Persona
 		}
-		if !ok || p.FetchedAt < stale {
+		if force || !ok || p.FetchedAt < stale {
 			missing = append(missing, id)
 		}
 	}
 	if len(missing) == 0 {
-		return out
+		return out, 0
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, personaNameTimeout)
+	timeout := personaNameTimeout
+	if force { timeout = 30 * time.Second }
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-
 	cl := opendota.New()
+	as, _ := assets.New(assetsDirFor(dbPath))
 	var fresh []cache.Player
 	for _, id := range missing {
 		if ctx.Err() != nil {
-			break // out of time: the rest keep whatever the cache had
+			break
 		}
-		name, err := cl.PersonaName(ctx, id)
+		profile, err := cl.Profile(ctx, id)
 		if err != nil {
-			// One bad account (deleted, 404, transient error) must not cost the
-			// others their names, so keep going until the context itself expires.
-			continue
+			continue // transient errors retain previously fetched names and avatars
 		}
-		out[id] = name
-		// An empty name is cached too — it means "asked, no public profile", which
-		// stops every screen refresh from re-querying a private account.
-		fresh = append(fresh, cache.Player{AccountID: id, Persona: name})
+		avatarURL := safeSteamAvatarURL(profile.AvatarURL)
+		out[id] = profile.Persona
+		fresh = append(fresh, cache.Player{AccountID: id, Persona: profile.Persona, AvatarURL: avatarURL})
 	}
 	if len(fresh) > 0 {
-		// Reopened just for the write, for the same reason it was closed above.
 		if w, err := cache.Open(dbPath); err == nil {
 			_ = w.UpsertPlayers(fresh)
 			w.Close()
 		}
 	}
-	return out
+	// Network avatars are slower and optional. Fetch ALL profile metadata first,
+	// so one stalled CDN never prevents the next player's nickname being checked.
+	for _, profile := range fresh {
+		if as == nil || ctx.Err() != nil {
+			break
+		}
+		if profile.AvatarURL == "" {
+			continue
+		}
+		if force || cached[profile.AccountID].AvatarURL != profile.AvatarURL {
+			_ = as.RefreshAvatar(ctx, profile.AccountID, profile.AvatarURL)
+		} else {
+			_ = as.FetchAvatar(ctx, profile.AccountID, profile.AvatarURL)
+		}
+	}
+	return out, len(fresh)
+}
+
+// safeSteamAvatarURL permits only Steam image hosts: never let untrusted API
+// profile data turn the local image downloader into an SSRF client.
+func safeSteamAvatarURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "steamstatic.com" || strings.HasSuffix(host, ".steamstatic.com") ||
+		host == "steamusercontent.com" || strings.HasSuffix(host, ".steamusercontent.com") ||
+		host == "steamcdn-a.akamaihd.net" {
+		return u.String()
+	}
+	return ""
 }
 
 // playerLabel is what the Statistics screen shows for a player: their display name
@@ -1565,11 +1598,18 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 		log = discard
 	}
 	resolved := resolvePlayersAs(ctx, players, o.dbPath, cache.RoleEnemy, log)
+	if !hasResolvedPlayer(resolved) {
+		return "", fmt.Errorf("no valid Steam account IDs resolved: check the player URLs")
+	}
 	fresh, err := scout.Fetch(ctx, scout.NewOpenDotaSource(), resolved, scout.FetchOptions{
 		WindowDays: o.windowDays, EventWindow: o.eventWindow,
 	}, log)
 	if err != nil {
 		return "", err
+	}
+	if err := ctx.Err(); err != nil { return "", err }
+	if !scoutHadAnswer(fresh.Layer2) && fresh.Layer3 == nil {
+		return "", fmt.Errorf("OpenDota returned no player scouting data; try again later (previous snapshot preserved)")
 	}
 	if fresh.Layer2 != nil {
 		cachePlayerAffinity(o.dbPath, fresh.Layer2.Players, o.windowDays)
@@ -1598,6 +1638,27 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 	return fmt.Sprintf("snapshot %s: layer2 players %d, layer3 drafts %d", o.outPath, l2, l3), nil
 }
 
+// scoutHadAnswer prevents a rate-limited/dead API from turning a failed job
+// into a misleading 'scouted 5 players' success.
+func scoutHadAnswer(layer *scout.Layer2) bool {
+	if layer == nil { return false }
+	for _, p := range layer.Players {
+		if p.Status == "ok" || p.Status == "no_stats" || (p.Status == "" && p.Resolved) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasResolvedPlayer(players []scout.ResolvedPlayer) bool {
+	for _, p := range players {
+		if p.Resolved && p.AccountID > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // opScoutAllies fetches our own team's hero affinity (#3) and merges it into the
 // snapshot as the ally layer, preserving enemy layers and the hero pool.
 func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFunc) (string, error) {
@@ -1605,10 +1666,17 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 		log = discard
 	}
 	resolved := resolvePlayersAs(ctx, players, o.dbPath, cache.RoleAlly, log)
+	if !hasResolvedPlayer(resolved) {
+		return "", fmt.Errorf("no valid Steam account IDs resolved: check the player URLs")
+	}
 	src := scout.NewOpenDotaSource()
 	// One typed ally should recover the rest of the stack from their recent matches,
 	// same idea as enemy scout via layer 3 — otherwise capability sees a one-row roster.
 	allies := scout.ExpandWithTeammates(ctx, src, resolved, o.windowDays, 4, log)
+	if err := ctx.Err(); err != nil { return "", err }
+	if !scoutHadAnswer(allies) {
+		return "", fmt.Errorf("OpenDota returned no ally scouting data; try again later (previous snapshot preserved)")
+	}
 	if allies != nil {
 		cachePlayerAffinity(o.dbPath, allies.Players, o.windowDays)
 		rememberDiscoveredAs(ctx, o.dbPath, allies.Players, cache.RoleAlly, log)
@@ -1685,7 +1753,16 @@ func mergeLayer2(existing, fresh *scout.Layer2) *scout.Layer2 {
 	}
 	for _, p := range fresh.Players {
 		if idx, ok := byID[p.AccountID]; ok && p.AccountID != 0 {
-			existing.Players[idx] = p
+			if p.Status == "error" && len(existing.Players[idx].Heroes) > 0 {
+				// A failed API request is not new evidence about the player's
+				// hero pool. Keep the last successful scout and expose that it
+				// is stale rather than silently replacing it with no data.
+				previous := existing.Players[idx]
+				previous.Status = "stale"
+				existing.Players[idx] = previous
+			} else {
+				existing.Players[idx] = p
+			}
 		} else {
 			byID[p.AccountID] = len(existing.Players)
 			existing.Players = append(existing.Players, p)
@@ -1922,6 +1999,11 @@ func opStats(snapshotPath, dbPath string) (tui.StatsView, error) {
 		}
 	}
 	names := personaNames(context.Background(), dbPath, ids)
+	profileCache := map[int64]cache.Player{}
+	if st, err := cache.Open(dbPath); err == nil {
+		profileCache, _ = st.Players(ids)
+		st.Close()
+	}
 
 	toPlayers := func(l2 *scout.Layer2) []tui.StatsPlayer {
 		if l2 == nil {
@@ -1933,6 +2015,10 @@ func opStats(snapshotPath, dbPath string) (tui.StatsView, error) {
 				AccountID: p.AccountID,
 				Nickname:  playerLabel(names[p.AccountID], p.AccountID, p.Resolved, p.Nickname),
 				Resolved:  p.Resolved,
+				ScoutStatus: p.Status,
+			}
+			if profile := profileCache[p.AccountID]; profile.AvatarURL != "" {
+				sp.AvatarVersion = profile.FetchedAt
 			}
 			if p.Smurf != nil {
 				sp.Smurf = &tui.StatsSmurf{

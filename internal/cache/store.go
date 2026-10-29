@@ -116,6 +116,7 @@ var migrations = []migration{
 	{4, "player aggregates", migratePlayerStats},
 	{5, "known players", migrateKnownPlayers},
 	{6, "rank probe bookkeeping", migrateRankProbe},
+	{7, "Steam avatar URL in player profile cache", migratePlayerAvatars},
 }
 
 // migrateRankProbe records that a match's rank tier was looked up, whatever the

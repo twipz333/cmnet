@@ -224,6 +224,7 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 	// a click rather than a profile URL pasted again.
 	mux.HandleFunc("/api/players", s.handleKnownPlayers)
 	mux.HandleFunc("/api/players/add", s.mutate(s.addPlayer))
+	mux.HandleFunc("/api/players/refresh", s.mutate(s.refreshProfiles))
 	mux.HandleFunc("/api/players/forget", s.mutate(s.forgetPlayer))
 	mux.HandleFunc("/api/players/pin", s.mutate(s.pinPlayer))
 
@@ -540,6 +541,21 @@ func (s *Server) addPlayer(r *http.Request) (string, error) {
 		return "", fmt.Errorf("give an account id or a profile URL")
 	}
 	return s.shell.AddPlayer(strings.TrimSpace(req.Ref), req.Ally)
+}
+
+// refreshProfiles is an explicit action; ordinary /api/players GET requests
+// never block on Steam/OpenDota profile lookups.
+func (s *Server) refreshProfiles(r *http.Request) (string, error) {
+	if s.shell.RefreshProfiles == nil {
+		return "", fmt.Errorf("profile refresh is not available in this build")
+	}
+	var req struct {
+		AccountIDs []int64 `json:"accountIds"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", err
+	}
+	return s.shell.RefreshProfiles(req.AccountIDs)
 }
 
 func (s *Server) forgetPlayer(r *http.Request) (string, error) {
