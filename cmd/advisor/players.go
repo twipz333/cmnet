@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
+	"cmnet/internal/assets"
 	"cmnet/internal/cache"
 	"cmnet/internal/declog"
 	"cmnet/internal/scout"
@@ -109,6 +112,9 @@ func opForgetPlayer(dbPath string, accountID int64, log *declog.Logger) (string,
 	if err := store.ForgetPlayer(accountID); err != nil {
 		return "", err
 	}
+	// The avatar is a local file independent of the database: explicitly remove
+	// it as part of "Forget" rather than leaving identifiable images on disk.
+	_ = os.Remove(filepathJoinAvatar(dbPath, accountID))
 	// The decision log is the other place their identity ended up (§6.1): headers
 	// carry the ten account ids and the profiles as of each draft. Forgetting has
 	// to mean everywhere, or it means nothing.
@@ -262,4 +268,9 @@ func opRefreshProfiles(ctx context.Context, dbPath string, ids []int64) (string,
 		return "", fmt.Errorf("could not refresh profiles: OpenDota unavailable or timed out")
 	}
 	return fmt.Sprintf("Steam profiles checked: %d of %d; names and avatars updated when available", updated, len(ids)), nil
+}
+
+// filepathJoinAvatar keeps per-account images in the same local data directory.
+func filepathJoinAvatar(dbPath string, id int64) string {
+	return filepath.Join(assetsDirFor(dbPath), string(assets.KindAvatar), assets.AvatarFile(id))
 }
