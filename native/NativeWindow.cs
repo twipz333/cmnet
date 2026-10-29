@@ -52,6 +52,7 @@ public sealed class NativeWindow : Window
     private ListBox? draftRecommendations;
     private readonly ObservableCollection<HeroRow> heroRows = new();
     private ListBox? heroList;
+    private ListBox? knownPlayersList;
     private string heroCatalogKey = "";
     private TextBlock? dataActivity;
     private TextBlock? shareStatus;
@@ -365,7 +366,8 @@ public sealed class NativeWindow : Window
         refresh.Margin = new Thickness(0, 0, 0, 12);
         host.Children.Add(refresh);
         var book = new ListBox { Name = "KnownPlayers", MaxHeight = 350, BorderThickness = new Thickness(0), Background = panel,
-            Foreground = foreground, ScrollViewer = { VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+            Foreground = foreground };
+        knownPlayersList = book;
         VirtualizingStackPanel.SetIsVirtualizing(book, true);
         VirtualizingStackPanel.SetVirtualizationMode(book, VirtualizationMode.Recycling);
         host.Children.Add(book);
@@ -446,7 +448,7 @@ public sealed class NativeWindow : Window
     private void UpdateKnownPlayers()
     {
         if (page != "Разведка") return;
-        var list = FindListBox(body.Content as DependencyObject);
+        var list = knownPlayersList;
         if (list == null) return;
         var selected = (list.SelectedItem as PlayerRow)?.Id;
         var entries = players.At("players").Items()
@@ -605,7 +607,7 @@ public sealed class NativeWindow : Window
         try
         {
             var result = await core.GetAsync("/api/corpus");
-            var text = "Корпус: " + result.At("corpus").ToJsonString();
+            var text = "Корпус: " + result.At("corpus")?.ToJsonString();
             // Hide raw huge numeric arrays; metrics can be expanded in the full native migration.
             var summary = FindNamedText(body.Content as DependencyObject, "CorpusSummary");
             if (summary != null) summary.Text = text.Length > 1700 ? text[..1700] + "…" : text;
@@ -645,7 +647,7 @@ public sealed class NativeWindow : Window
         try
         {
             var cfg = await core.GetAsync("/api/config");
-            var text = cfg.At("config").ToJsonString(new System.Text.Json.JsonSerializerOptions{WriteIndented=true});
+            var text = cfg.At("config")?.ToJsonString(new System.Text.Json.JsonSerializerOptions{WriteIndented=true}) ?? "Конфигурация недоступна";
             var t = FindNamedText(body.Content as DependencyObject,"ConfigSummary");
             if (t!=null) t.Text = text.Length>9000 ? text[..9000]+"…" : text;
         }
