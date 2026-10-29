@@ -38,6 +38,7 @@ public sealed class NativeWindow : Window
     private JsonObject? stats;
     private JsonObject? players;
     private string scoutVersion = "";
+    private string playersVersion = "";
     private DateTime lastScoutLoad = DateTime.MinValue;
     private bool loadingScout;
 
@@ -343,6 +344,7 @@ public sealed class NativeWindow : Window
         rosterBadges.Clear();
         rosterHeroes.Clear();
         scoutVersion = "";
+        playersVersion = "";
         var host = new StackPanel();
         host.Children.Add(Text("Составы 5 × 5", 24, FontWeights.Bold));
         var note = Text("Позиции, Steam-профили и разведка. Карточки не пересоздаются при обновлении прогресса.", 13, color: muted);
@@ -401,7 +403,7 @@ public sealed class NativeWindow : Window
     {
         if (id <= 0) return "Не назначен";
         var p = players.At("players").Items().FirstOrDefault(p => p.At("accountId").L() == id);
-        return p.At("persona").S($"ID {id}");
+        return string.IsNullOrWhiteSpace(p.At("persona").S()) ? $"ID {id}" : p.At("persona").S();
     }
 
     private void UpdateScoutRoster()
@@ -452,6 +454,11 @@ public sealed class NativeWindow : Window
         if (page != "Разведка") return;
         var list = knownPlayersList;
         if (list == null) return;
+        // The API is polled every few seconds while scouting. Avoid resetting
+        // ItemsSource unless a Steam persona or player list actually changed.
+        var version = players?.ToJsonString() ?? "";
+        if (version == playersVersion) return;
+        playersVersion = version;
         var selected = (list.SelectedItem as PlayerRow)?.Id;
         var entries = players.At("players").Items()
             .Select(x => new PlayerRow { Id = x.At("accountId").L(), Role = x.At("role").S(), Name = x.At("persona").S("Steam ID"), Pinned = x.At("pinned").B() })
