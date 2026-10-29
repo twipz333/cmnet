@@ -16,10 +16,15 @@ namespace Cmnet.Native;
 public static class Program
 {
     [STAThread]
-    public static void Main()
+    public static void Main(string[] args)
     {
+        // Explicit override for users whose Electron data folder is elsewhere.
+        // The default still reads the existing Electron desktop.json dataDir.
+        string? dataDir = null;
+        if (args.Length == 2 && args[0] == "--data-dir")
+            dataDir = args[1];
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
-        app.Run(new NativeWindow());
+        app.Run(new NativeWindow(dataDir));
     }
 }
 
