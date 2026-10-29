@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -25,17 +26,63 @@ type ResolvedPlayer struct {
 	Discovered bool
 }
 
-// BuildLayer2 fetches affinity and the additional career/match signals used for
-// smurf assessment. The full path is useful for enemy analysis.
+// BuildLayer2 is the normal draft-time path for BOTH teams: hero affinity
+// only. Career/match-history lookups for smurf detection do not belong here.
 func BuildLayer2(ctx context.Context, src Source, players []ResolvedPlayer, windowDays int, progress func(string)) *Layer2 {
+	return buildLayer2(ctx, src, players, windowDays, true, progress)
+}
+
+// BuildLayer2Quick is kept for compatibility with ally scouting.
+func BuildLayer2Quick(ctx context.Context, src Source, players []ResolvedPlayer, windowDays int, progress func(string)) *Layer2 {
+	return BuildLayer2(ctx, src, players, windowDays, progress)
+}
+
+// BuildLayer2WithSmurf is deliberately opt-in for a future standalone
+// diagnostics action. Normal enemy/ally scouting NEVER calls it.
+func BuildLayer2WithSmurf(ctx context.Context, src Source, players []ResolvedPlayer, windowDays int, progress func(string)) *Layer2 {
 	return buildLayer2(ctx, src, players, windowDays, false, progress)
 }
 
-// BuildLayer2Quick is the draft-time ally path: fetching 30-day hero affinity
-// needs one OpenDota call per player, not three. Smurf checks can be performed
-// separately and are never worth holding up the ally roster.
-func BuildLayer2Quick(ctx context.Context, src Source, players []ResolvedPlayer, windowDays int, progress func(string)) *Layer2 {
-	return buildLayer2(ctx, src, players, windowDays, true, progress)
+// BuildLayer2Concurrent fetches independent enemy hero affinity in parallel,
+// preserving the input's deterministic order. Results and progress are assembled
+// on the caller goroutine, so frontend logging does not race.
+func BuildLayer2Concurrent(ctx context.Context, src Source, players []ResolvedPlayer, windowDays int, progress func(string)) *Layer2 {
+	if progress == nil {
+		progress = func(string) {}
+	}
+	out := &Layer2{WindowDays: windowDays, Players: make([]PlayerAffinity, len(players))}
+	limit := make(chan struct{}, 4)
+	type result struct {
+		index int
+		affinity PlayerAffinity
+	}
+	results := make(chan result, len(players))
+	var wg sync.WaitGroup
+	for i, p := range players {
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		go func(i int, p ResolvedPlayer) {
+			defer wg.Done()
+			select {
+			case limit <- struct{}{}:
+				defer func() { <-limit }()
+			case <-ctx.Done():
+				results <- result{index: i, affinity: PlayerAffinity{AccountID: p.AccountID, Nickname: p.Nickname, Resolved: p.Resolved, Discovered: p.Discovered, Status: "error"}}
+				return
+			}
+			one := buildLayer2(ctx, src, []ResolvedPlayer{p}, windowDays, true, nil)
+			results <- result{index: i, affinity: one.Players[0]}
+		}(i, p)
+	}
+	go func() { wg.Wait(); close(results) }()
+	for item := range results {
+		out.Players[item.index] = item.affinity
+		progress(fmt.Sprintf("layer 2: player %d/%d (account %d) — %d heroes [%s]",
+			item.index+1, len(players), item.affinity.AccountID, len(item.affinity.Heroes), item.affinity.Status))
+	}
+	return out
 }
 
 const quickHeroTimeout = 15 * time.Second
