@@ -2,7 +2,7 @@
 // players we have met, and our own hero pool.
 
 import {
-  $, el, store, post, getJSON, button, confirmable, nameOf, portrait, pct, ago, jobName, num,
+  $, el, store, post, getJSON, button, confirmable, nameOf, portrait, pct, ago, jobName, num, stableView,
 } from './core.js';
 import { renderTeams, placePending, avatar } from './team.js';
 
@@ -42,9 +42,23 @@ export function scoutStateChanged(s) {
 export function renderScout() {
   const s = store.state;
   if (!s) return;
-  renderTeams($('scout-teams'), { stats, players, reload: () => { loadStats(); loadPlayers(); }, rerender: renderScout });
-  renderPool();
-  renderBook();
+  stableView($('page-scout'), () => {
+    renderTeams($('scout-teams'), { stats, players, reload: () => { loadStats(); loadPlayers(); }, rerender: renderScout });
+    renderPool();
+    renderBook();
+  });
+}
+
+// Live progress does not require tearing down the entire roster and book.
+// Job identity/visibility changes still trigger a full render via app.js.
+export function updateScoutProgress(s) {
+  const jobs = new Map((s.ops?.active || []).map((j) => [String(j.id), j]));
+  document.querySelectorAll('#scout-teams [data-scout-job]').forEach((node) => {
+    const j = jobs.get(node.dataset.scoutJob);
+    if (!j) return;
+    const line = node.querySelector('.job-line');
+    if (line) line.textContent = j.lastLine || 'начинаю…';
+  });
 }
 
 function renderPool() {
