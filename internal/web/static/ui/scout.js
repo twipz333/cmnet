@@ -147,7 +147,7 @@ function renderBook() {
 
   const refreshIDs = () => {
     const chosen = [...selected];
-    return chosen.length ? chosen : list.map((p) => p.accountId).slice(0, 10);
+    return chosen.length ? chosen.slice(0, 10) : list.map((p) => p.accountId).slice(0, 10);
   };
   const refresh = async (ids) => {
     if (!ids.length) return;
@@ -162,7 +162,7 @@ function renderBook() {
   const b2 = button(`Разведать как своих (${selected.size})`, 'btn quiet', async () => { await post('/api/ops/scout-allies', { players: ids() }); selected.clear(); renderScout(); });
   b1.disabled = b2.disabled = !selected.size;
   bulk.append(b1, b2, button(
-    selected.size ? `Обновить ники и аватарки (${selected.size})` : 'Обновить ники и аватарки (первые 10)',
+    selected.size ? `Обновить ники и аватарки (${Math.min(10, selected.size)} из ${selected.size})` : 'Обновить ники и аватарки (первые 10)',
     'btn quiet', () => refresh(refreshIDs()),
   ));
   if (selected.size) bulk.append(button('Снять выбор', 'link-btn', () => { selected.clear(); renderScout(); }));
@@ -171,7 +171,7 @@ function renderBook() {
   const table = el('table', 'tbl book');
   const thead = el('thead');
   const hr = el('tr');
-  ['', 'Игрок', 'Кто', 'Героев в кэше', 'Видели', 'Сегодня', ''].forEach((h) => hr.append(el('th', null, h)));
+  ['', 'Игрок', 'Кто', 'Героев в кэше', 'Видели', 'Профиль проверен', 'Сегодня', ''].forEach((h) => hr.append(el('th', null, h)));
   thead.append(hr);
   table.append(thead);
   const tbody = el('tbody');
@@ -195,7 +195,7 @@ function renderBook() {
     acts.append(button(p.pinned ? 'Открепить' : 'Закрепить', 'link-btn', async () => { await post('/api/players/pin', { accountId: p.accountId, pinned: !p.pinned }); loadPlayers(); }));
     acts.append(confirmable(button('Забыть', 'link-btn danger'), 'Забыть насовсем?', async () => { await post('/api/players/forget', { accountId: p.accountId }); selected.delete(p.accountId); loadPlayers(); }));
     tr.append(tdc, name, el('td', null, p.role === 'ally' ? 'свой' : p.role === 'enemy' ? 'соперник' : '—'),
-      el('td', 'n', num(p.heroes)), el('td', null, ago(p.lastSeen)), el('td', null, today), acts);
+      el('td', 'n', num(p.heroes)), el('td', null, ago(p.lastSeen)), el('td', null, p.profileCheckedAt ? ago(p.profileCheckedAt) : 'ещё нет'), el('td', null, today), acts);
     if (p.pinned) tr.classList.add('pinned');
     tbody.append(tr);
   });
