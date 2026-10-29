@@ -220,7 +220,29 @@ func (c *Client) PlayerHeroes(ctx context.Context, accountID int64, days int) ([
 type profileRaw struct {
 	Profile *struct {
 		PersonaName string `json:"personaname"`
+		AvatarFull  string `json:"avatarfull"`
 	} `json:"profile"`
+}
+
+// PlayerProfile is public presentation data; it never affects scouting scores.
+type PlayerProfile struct {
+	Persona   string
+	AvatarURL string
+}
+
+// Profile fetches the current public persona and Steam avatar URL from OpenDota.
+func (c *Client) Profile(ctx context.Context, accountID int64) (PlayerProfile, error) {
+	var out profileRaw
+	if err := c.getJSON(ctx, "/players/"+itoa(accountID), &out); err != nil {
+		return PlayerProfile{}, err
+	}
+	if out.Profile == nil {
+		return PlayerProfile{}, nil
+	}
+	return PlayerProfile{
+		Persona: sanitizeDisplayName(out.Profile.PersonaName),
+		AvatarURL: out.Profile.AvatarFull,
+	}, nil
 }
 
 // PersonaName fetches a player's display name (GET /players/{id}). It returns an
@@ -231,14 +253,8 @@ type profileRaw struct {
 // ends up printed straight into a terminal by the TUI, where an embedded escape
 // sequence could repaint or reprogram it.
 func (c *Client) PersonaName(ctx context.Context, accountID int64) (string, error) {
-	var out profileRaw
-	if err := c.getJSON(ctx, "/players/"+itoa(accountID), &out); err != nil {
-		return "", err
-	}
-	if out.Profile == nil {
-		return "", nil
-	}
-	return sanitizeDisplayName(out.Profile.PersonaName), nil
+	p, err := c.Profile(ctx, accountID)
+	return p.Persona, err
 }
 
 // SearchHit is one row of GET /search?q=.
