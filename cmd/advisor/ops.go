@@ -1590,6 +1590,9 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 		log = discard
 	}
 	resolved := resolvePlayersAs(ctx, players, o.dbPath, cache.RoleEnemy, log)
+	if !hasResolvedPlayer(resolved) {
+		return "", fmt.Errorf("no valid Steam account IDs resolved: check the player URLs")
+	}
 	fresh, err := scout.Fetch(ctx, scout.NewOpenDotaSource(), resolved, scout.FetchOptions{
 		WindowDays: o.windowDays, EventWindow: o.eventWindow,
 	}, log)
@@ -1623,6 +1626,15 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 	return fmt.Sprintf("snapshot %s: layer2 players %d, layer3 drafts %d", o.outPath, l2, l3), nil
 }
 
+func hasResolvedPlayer(players []scout.ResolvedPlayer) bool {
+	for _, p := range players {
+		if p.Resolved && p.AccountID > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // opScoutAllies fetches our own team's hero affinity (#3) and merges it into the
 // snapshot as the ally layer, preserving enemy layers and the hero pool.
 func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFunc) (string, error) {
@@ -1630,6 +1642,9 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 		log = discard
 	}
 	resolved := resolvePlayersAs(ctx, players, o.dbPath, cache.RoleAlly, log)
+	if !hasResolvedPlayer(resolved) {
+		return "", fmt.Errorf("no valid Steam account IDs resolved: check the player URLs")
+	}
 	src := scout.NewOpenDotaSource()
 	// One typed ally should recover the rest of the stack from their recent matches,
 	// same idea as enemy scout via layer 3 — otherwise capability sees a one-row roster.
@@ -1710,7 +1725,16 @@ func mergeLayer2(existing, fresh *scout.Layer2) *scout.Layer2 {
 	}
 	for _, p := range fresh.Players {
 		if idx, ok := byID[p.AccountID]; ok && p.AccountID != 0 {
-			existing.Players[idx] = p
+			if p.Status == "error" && len(existing.Players[idx].Heroes) > 0 {
+				// A failed API request is not new evidence about the player's
+				// hero pool. Keep the last successful scout and expose that it
+				// is stale rather than silently replacing it with no data.
+				previous := existing.Players[idx]
+				previous.Status = "stale"
+				existing.Players[idx] = previous
+			} else {
+				existing.Players[idx] = p
+			}
 		} else {
 			byID[p.AccountID] = len(existing.Players)
 			existing.Players = append(existing.Players, p)
