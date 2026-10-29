@@ -1439,7 +1439,9 @@ func refreshProfiles(ctx context.Context, dbPath string, ids []int64, force bool
 		return out, 0
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, personaNameTimeout)
+	timeout := personaNameTimeout
+	if force { timeout = 30 * time.Second }
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cl := opendota.New()
 	as, _ := assets.New(assetsDirFor(dbPath))
@@ -1599,6 +1601,10 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 	if err != nil {
 		return "", err
 	}
+	if err := ctx.Err(); err != nil { return "", err }
+	if !scoutHadAnswer(fresh.Layer2) && fresh.Layer3 == nil {
+		return "", fmt.Errorf("OpenDota returned no player scouting data; try again later (previous snapshot preserved)")
+	}
 	if fresh.Layer2 != nil {
 		cachePlayerAffinity(o.dbPath, fresh.Layer2.Players, o.windowDays)
 		rememberDiscovered(ctx, o.dbPath, fresh.Layer2.Players, log)
@@ -1626,6 +1632,18 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 	return fmt.Sprintf("snapshot %s: layer2 players %d, layer3 drafts %d", o.outPath, l2, l3), nil
 }
 
+// scoutHadAnswer prevents a rate-limited/dead API from turning a failed job
+// into a misleading 'scouted 5 players' success.
+func scoutHadAnswer(layer *scout.Layer2) bool {
+	if layer == nil { return false }
+	for _, p := range layer.Players {
+		if p.Status == "ok" || p.Status == "no_stats" || (p.Status == "" && p.Resolved) {
+			return true
+		}
+	}
+	return false
+}
+
 func hasResolvedPlayer(players []scout.ResolvedPlayer) bool {
 	for _, p := range players {
 		if p.Resolved && p.AccountID > 0 {
@@ -1649,6 +1667,10 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 	// One typed ally should recover the rest of the stack from their recent matches,
 	// same idea as enemy scout via layer 3 — otherwise capability sees a one-row roster.
 	allies := scout.ExpandWithTeammates(ctx, src, resolved, o.windowDays, 4, log)
+	if err := ctx.Err(); err != nil { return "", err }
+	if !scoutHadAnswer(allies) {
+		return "", fmt.Errorf("OpenDota returned no ally scouting data; try again later (previous snapshot preserved)")
+	}
 	if allies != nil {
 		cachePlayerAffinity(o.dbPath, allies.Players, o.windowDays)
 		rememberDiscoveredAs(ctx, o.dbPath, allies.Players, cache.RoleAlly, log)
