@@ -1762,8 +1762,18 @@ func orDefault(s, fallback string) string {
 // mergeLayer2 merges fresh players into existing, deduped by account_id (fresh
 // wins on conflict). Either side may be nil.
 func mergeLayer2(existing, fresh *scout.Layer2) *scout.Layer2 {
+	// Smurf risk is no longer calculated as part of draft-time scouting.
+	// Clear previously persisted risk labels when refreshing either side.
+	if existing != nil {
+		for i := range existing.Players {
+			existing.Players[i].Smurf = nil
+		}
+	}
 	if fresh == nil {
 		return existing
+	}
+	for i := range fresh.Players {
+		fresh.Players[i].Smurf = nil
 	}
 	if existing == nil {
 		return fresh

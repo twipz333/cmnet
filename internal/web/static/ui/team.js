@@ -209,11 +209,6 @@ function seatCard(side, pos, acct, byId, book, canEdit, s, ctx) {
   else if (p.scoutStatus === 'error') tags.append(el('span', 'tag warn', 'ошибка OpenDota'));
   else if (p.scoutStatus === 'stale') tags.append(el('span', 'tag warn', 'кэш · сбой API'));
   else if (!p.topHeroes?.length) tags.append(el('span', 'tag warn', 'нет открытой статистики'));
-  if (p?.smurf && p.smurf.level !== 'low') {
-    const t = el('span', 'tag ' + (p.smurf.level === 'high' ? 'danger' : 'warn'), p.smurf.label || 'возможен смурф');
-    t.title = (p.smurf.reasons || []).join('\n');
-    tags.append(t);
-  }
   nm.append(tags);
   who.append(nm);
   card.append(who);

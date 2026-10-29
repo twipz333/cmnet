@@ -100,7 +100,7 @@ func TestBuildLayer2AttachesSmurf(t *testing.T) {
 		heroes:  map[int64][]PlayerHero{7: {{HeroID: 1, Games: 40, Wins: 30}}},
 		recents: map[int64][]MatchRef{7: ms},
 	}
-	l2 := BuildLayer2(context.Background(), src, []ResolvedPlayer{{AccountID: 7, Nickname: "a", Resolved: true}}, 30, nil)
+	l2 := BuildLayer2WithSmurf(context.Background(), src, []ResolvedPlayer{{AccountID: 7, Nickname: "a", Resolved: true}}, 30, nil)
 	if l2.Players[0].Smurf == nil || l2.Players[0].Smurf.Level != "high" {
 		t.Fatalf("smurf = %+v", l2.Players[0].Smurf)
 	}
