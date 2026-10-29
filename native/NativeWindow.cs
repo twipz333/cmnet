@@ -61,7 +61,7 @@ public sealed class NativeWindow : Window
     private readonly List<ConfigField> configEditors = new();
     private readonly TextBlock toast = new();
 
-    public NativeWindow()
+    public NativeWindow(string? initialDataDirectory = null)
     {
         Title = "cmnet · Native Preview";
         Width = 1370;
@@ -135,7 +135,7 @@ public sealed class NativeWindow : Window
 
         core.StateReceived += snapshot => Dispatcher.BeginInvoke(() => ApplyState(snapshot));
         core.ConnectionChanged += message => Dispatcher.BeginInvoke(() => status.Text = message);
-        Loaded += async (_, _) => await BootAsync();
+        Loaded += async (_, _) => await BootAsync(initialDataDirectory);
         Closed += (_, _) => core.Stop();
         RenderPage();
     }
@@ -202,8 +202,12 @@ public sealed class NativeWindow : Window
                     var dialog = new OpenFolderDialog { Title = "Папка с cmnet.db и bundle.json" };
                     if (dialog.ShowDialog(this) == true)
                     {
-                        await core.DisposeAsync();
-                        MessageBox.Show(this, "Перезапустите native preview с параметром --data-dir, либо задайте путь в desktop.json. Существующие файлы не изменены.", "cmnet");
+                        var executable = Environment.ProcessPath ?? throw new InvalidOperationException("Путь приложения неизвестен");
+                        var psi = new System.Diagnostics.ProcessStartInfo(executable) { UseShellExecute = true };
+                        psi.ArgumentList.Add("--data-dir");
+                        psi.ArgumentList.Add(dialog.FolderName);
+                        System.Diagnostics.Process.Start(psi);
+                        Close();
                     }
                 }));
             body.Content = stack;
