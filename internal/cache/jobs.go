@@ -168,7 +168,10 @@ func (s *Store) EnqueueJob(kind string, priority int, payload string, dedupe boo
 //
 // The claim is a single transaction: two workers racing for the last pending job
 // must not both get it.
-func (s *Store) ClaimJob(skip []string) (*Job, error) {
+func (s *Store) ClaimJob(skip []string) (*Job, error) { return s.ClaimJobMin(skip, -1<<31) }
+
+// ClaimJobMin is ClaimJob restricted to jobs of at least minPriority.
+func (s *Store) ClaimJobMin(skip []string, minPriority int) (*Job, error) {
 	now := time.Now().Unix()
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -178,8 +181,8 @@ func (s *Store) ClaimJob(skip []string) (*Job, error) {
 
 	q := `SELECT id, kind, priority, state, payload, attempts, next_run_at, created_at, started_at, updated_at, result, error
 	      FROM jobs
-	      WHERE state = ? AND next_run_at <= ?`
-	args := []any{string(JobPending), now}
+	      WHERE state = ? AND next_run_at <= ? AND priority >= ?`
+	args := []any{string(JobPending), now, minPriority}
 	for _, k := range skip {
 		q += " AND kind <> ?"
 		args = append(args, k)

@@ -143,6 +143,7 @@ func newRunner(h homeFlags) (*runner, error) {
 			if err := decodePayload(j.Payload, &p); err != nil {
 				return "", err
 			}
+			defer q.HoldBackground()()
 			return opScout(ctx, p.Players,
 				scoutOpts{outPath: h.snapshotPath, dbPath: h.dbPath, windowDays: 30}, progressOf(log))
 		},
@@ -156,6 +157,7 @@ func newRunner(h homeFlags) (*runner, error) {
 			if err := decodePayload(j.Payload, &p); err != nil {
 				return "", err
 			}
+			defer q.HoldBackground()()
 			return opScoutAllies(ctx, p.Players,
 				scoutOpts{outPath: h.snapshotPath, dbPath: h.dbPath, windowDays: 30}, progressOf(log))
 		},

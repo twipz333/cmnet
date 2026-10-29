@@ -348,3 +348,52 @@ func TestUnknownKindIsLeftAlone(t *testing.T) {
 		}
 	}
 }
+
+// A hold stops a running background job, keeps background work from starting
+// while held, and puts the stopped job back in the queue to resume afterwards.
+func TestHoldBackgroundPausesAndResumes(t *testing.T) {
+	q := New(newStore(t), Options{Workers: 3})
+	var runs atomic.Int32
+	started := make(chan struct{}, 8)
+	release := make(chan struct{})
+	q.Register(Spec{Kind: "sync", Resources: []Resource{ResSyncWatermarks}, Handler: func(ctx context.Context, j cache.Job, log Log) (string, error) {
+		runs.Add(1)
+		started <- struct{}{}
+		select {
+		case <-release:
+			return "done", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+
+	id, err := q.Enqueue("sync", PriorityBackground, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !waitFor(t, started, 2*time.Second, "background sync") {
+		return
+	}
+	done := q.HoldBackground()
+	if !notWithin(started, 500*time.Millisecond) {
+		t.Fatal("background job restarted while held")
+	}
+	j, err := q.Job(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.State != cache.JobPending {
+		t.Fatalf("held job state = %s, want pending (back in the queue)", j.State)
+	}
+	done()
+	if !waitFor(t, started, 3*time.Second, "resumed sync") {
+		return
+	}
+	close(release)
+	if runs.Load() != 2 {
+		t.Fatalf("runs = %d, want 2 (started, paused, resumed)", runs.Load())
+	}
+}

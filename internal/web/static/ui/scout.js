@@ -28,13 +28,15 @@ async function loadPlayers() {
   renderScout();
 }
 
-// After a scout finishes the snapshot changes; refresh when a scout job leaves
-// the active list.
-let wasScouting = false;
+// Refresh as EACH scouting job ends, including when others remain queued.
+let activeScoutIds = new Set();
 export function scoutStateChanged(s) {
-  const scouting = (s.ops?.active || []).some((j) => j.kind === 'scout' || j.kind === 'scout-allies');
-  if (wasScouting && !scouting) { loadStats(); loadPlayers(); }
-  wasScouting = scouting;
+  const now = new Set((s.ops?.active || [])
+    .filter((j) => j.kind === 'scout' || j.kind === 'scout-allies')
+    .map((j) => j.id));
+  const finished = [...activeScoutIds].some((id) => !now.has(id));
+  activeScoutIds = now;
+  if (finished) { loadStats(); loadPlayers(); }
 }
 
 export function renderScout() {
