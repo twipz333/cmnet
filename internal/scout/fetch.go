@@ -49,33 +49,47 @@ func Fetch(ctx context.Context, src Source, players []ResolvedPlayer, opts Fetch
 		return nil, fmt.Errorf("no players to scout")
 	}
 
-	progress("layer 2: fetching player affinities…")
+	progress("layer 2: quick enemy hero affinity; smurf checks disabled")
 	snap := &OpponentSnapshot{
 		FrozenAt:         time.Now().UTC().Format(time.RFC3339),
 		BundleVersionRef: opts.BundleVersionRef,
 		SourceTag:        "opendota",
-		Layer2:           BuildLayer2(ctx, src, players, opts.WindowDays, progress),
+		Layer2:           BuildLayer2Concurrent(ctx, src, players, opts.WindowDays, progress),
 	}
 
-	if entry, ok := firstResolved(players); ok {
-		progress(fmt.Sprintf("layer 3: recovering team drafts via account %d…", entry.AccountID))
-		l3 := BuildLayer3(ctx, src, entry.AccountID, opts.EventWindow, opts.EventSinceUnix, opts.MaxEventMatches, progress)
-
-		// Layer 3 also handed us the rest of the squad. Fetch their affinity too:
-		// without it the snapshot describes one opponent out of five and every
-		// per-player judgement downstream is drawn from a quarter of the team.
-		if discovered := discoveredPlayers(l3, players, opts.MaxDiscovered); len(discovered) > 0 {
-			progress(fmt.Sprintf("layer 2: %d teammate(s) recovered from the team's matches…", len(discovered)))
-			snap.Layer2 = appendPlayers(snap.Layer2, BuildLayer2(ctx, src, discovered, opts.WindowDays, progress))
+	if entry, ok := firstResolved(players); ok && ctx.Err() == nil {
+		// Event drafts improve scoring, but must not hold up enemy affinity.
+		// The previous flow scanned as many as 15 heavy match records at 40 s
+		// each (after 3 serial requests per player). A 10 s hard budget and
+		// three-match cap make this a best-effort supplement instead.
+		progress(fmt.Sprintf("layer 3: fast event scan for account %d (up to 3 matches / 10 s)", entry.AccountID))
+		eventCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		l3 := BuildLayer3Fast(eventCtx, src, entry.AccountID, opts.EventWindow, opts.EventSinceUnix, progress)
+		cancel()
+		// Only discover extra accounts if we do not already have five distinct
+		// resolved players, and never turn discovery into more full-history work.
+		if discovered := discoveredPlayers(l3, players, opts.MaxDiscovered); len(discovered) > 0 && uniqueResolvedCount(players) < 5 {
+			progress(fmt.Sprintf("layer 2: %d recovered teammate(s), quick hero affinity", len(discovered)))
+			snap.Layer2 = appendPlayers(snap.Layer2, BuildLayer2Concurrent(ctx, src, discovered, opts.WindowDays, progress))
 		}
-		// Publish layer 3 only when it actually carries event drafts. A drafts-less
-		// shell exists solely so discovery can run; blending code treats any non-nil
-		// Layer3 as "we have event evidence".
 		if l3 != nil && l3.DraftsObserved > 0 {
 			snap.Layer3 = l3
+		} else {
+			progress("layer 3: no recent draft found within quick-scan budget; hero stats are available")
 		}
 	}
 	return snap, nil
+}
+
+// uniqueResolvedCount counts actual account IDs, not unresolved aliases.
+func uniqueResolvedCount(players []ResolvedPlayer) int {
+	seen := map[int64]bool{}
+	for _, p := range players {
+		if p.Resolved && p.AccountID > 0 {
+			seen[p.AccountID] = true
+		}
+	}
+	return len(seen)
 }
 
 // discoveredPlayers picks the teammates recovered by layer 3 that the user did not
