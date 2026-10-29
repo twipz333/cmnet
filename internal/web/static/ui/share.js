@@ -35,11 +35,34 @@ export function renderShare() {
   else renderHost(host, s, sh);
 }
 
+function modeChoice(sh, active) {
+  const box = el('div', 'mode-choice');
+  box.setAttribute('role', 'radiogroup');
+  box.setAttribute('aria-label', 'Что раздавать');
+  const opt = (live, title, text) => {
+    const b = button('', `mode-opt${sh.live === live ? ' on' : ''}`, () => {
+      if (sh.live === live) return;
+      post('/api/share/mode', { live });
+    });
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(sh.live === live));
+    b.append(el('b', null, title), el('span', null, text));
+    return b;
+  };
+  box.append(
+    opt(false, 'Модель и разведка', 'Друг сам ведёт свой драфт: руками или из своей Dota.'),
+    opt(true, 'Модель, разведка и живой драфт', 'У друга доска повторяет твою: из твоей Dota или как ты вводишь руками.'),
+  );
+  if (active && sh.live) box.append(el('p', 'muted small mode-note', sh.followers ? `Следят за драфтом: ${sh.followers}` : 'За драфтом пока никто не следит.'));
+  return box;
+}
+
 function renderHost(host, s, sh) {
   const h = sh.host || {};
   const sec = el('section', 'doc-sec');
   sec.append(el('h2', null, 'Дать другу cmnet'));
   sec.append(el('p', 'muted', 'Друг ставит гостевую версию cmnet и вводит код. Ему придут твоя модель, разведка соперников и портреты героев. Сам он ничего не собирает и не обучает.'));
+  sec.append(modeChoice(sh, !!h.active));
 
   if (h.active) {
     const box = el('div', 'share-code');
@@ -82,6 +105,22 @@ function renderHost(host, s, sh) {
   $('share-body').append(dl);
 }
 
+function followBox(sh) {
+  const box = el('div', 'follow-box');
+  box.append(el('h3', null, 'Живой драфт хоста'));
+  const text = !sh.follow
+    ? 'Выключено: вы вводите драфт сами.'
+    : ({ connected: `Доска повторяет драфт хоста${sh.followVia === 'https' ? ' (через HTTPS)' : ''}.`,
+      waiting: 'Хост сейчас не на связи. Доска ждёт и подключится сама.',
+    }[sh.followState] || 'Подключаюсь к драфту хоста…');
+  const line = el('p', 'follow-line');
+  line.append(el('i', `dot ${sh.follow && sh.followState === 'connected' ? 'on' : sh.follow ? 'wait' : ''}`), document.createTextNode(text));
+  box.append(line);
+  box.append(button(sh.follow ? 'Вводить драфт самому' : 'Следить за драфтом хоста', sh.follow ? 'btn quiet' : 'btn',
+    () => post('/api/share/follow', { on: !sh.follow })));
+  return box;
+}
+
 function renderGuest(host, s, sh) {
   const got = sh.received;
   const sec = el('section', 'doc-sec');
@@ -102,6 +141,7 @@ function renderGuest(host, s, sh) {
     if (sh.lastCode) act.append(el('span', 'muted', `код ${sh.lastCode}`));
     sec.append(act);
     sec.append(el('p', 'muted', 'Хост сделал новую разведку? Нажмите «Обновить». Доска драфта при этом очистится.'));
+    if (sh.live) sec.append(followBox(sh));
   } else {
     sec.append(el('p', 'muted', 'Попросите у хоста код. Он появляется у него в cmnet: «Друзья», затем «Открыть раздачу».'));
   }

@@ -497,3 +497,21 @@ body.guest .host-only { display: none !important; }
 @media (prefers-reduced-motion: reduce) { .seat-card, .seat-empty { transition: none; } }
 .seat-hero { display: grid; place-items: center; background-color: var(--night); color: var(--ash); font: 600 13px var(--display); }
 .bench-hero { width: 32px; height: 18px; flex: none; border-radius: 2px; background: var(--night) center / cover; font-size: 9px; display: grid; place-items: center; color: var(--ash); }
+
+/* Share mode (host) and follow (guest) */
+.mode-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 760px; margin: 4px 0 16px; }
+.mode-opt { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px; background: var(--slate); color: var(--bone);
+  border: 1px solid var(--seam); border-radius: 8px; cursor: pointer; font: 400 14px var(--body); transition: border-color 150ms ease; }
+.mode-opt b { font: 600 16px var(--display); }
+.mode-opt span { color: var(--ash); }
+.mode-opt:hover { border-color: #46566c; }
+.mode-opt.on { border-color: var(--gold); box-shadow: inset 3px 0 0 var(--gold); }
+.mode-opt:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.mode-note { grid-column: 1 / -1; margin: 0; }
+.follow-box { margin: 18px 0 6px; padding: 14px 16px; background: var(--slate); border: 1px solid var(--seam); border-radius: 8px; max-width: 560px; }
+.follow-box h3 { margin: 0 0 6px; }
+.follow-line { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+.follow-line .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ash); flex: none; }
+.follow-line .dot.on { background: var(--radiant); }
+.follow-line .dot.wait { background: var(--gold); }
+@media (max-width: 700px) { .mode-choice { grid-template-columns: 1fr; } }

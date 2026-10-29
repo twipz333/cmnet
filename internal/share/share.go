@@ -48,6 +48,8 @@ type Meta struct {
 	SharedAt      time.Time `json:"sharedAt"`
 	HasSnapshot   bool      `json:"hasSnapshot"`
 	Scouted       int       `json:"scouted"` // enemy players in the snapshot
+	// Live: the host also streams its draft board; the guest can follow it.
+	Live bool `json:"live,omitempty"`
 }
 
 // Payload is what a guest receives.

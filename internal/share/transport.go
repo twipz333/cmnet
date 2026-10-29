@@ -52,7 +52,7 @@ type Relay struct {
 
 func (r *Relay) Name() string { return "relay" }
 
-func (r *Relay) connect(ctx context.Context, code string) (net.Conn, error) {
+func (r *Relay) connect(ctx context.Context, code, purpose string) (net.Conn, error) {
 	dial := r.Dial
 	if dial == nil {
 		d := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
@@ -64,7 +64,7 @@ func (r *Relay) connect(ctx context.Context, code string) (net.Conn, error) {
 	}
 	// Closing the connection is the only way to abandon a blocked read.
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
-	token := rendezvous(code, "relay")
+	token := rendezvous(code, "relay"+purpose)
 	var side [8]byte
 	_, _ = rand.Read(side[:])
 	hello := fmt.Sprintf("please relay %s for side %s\n", hex.EncodeToString(token[:]), hex.EncodeToString(side[:]))
@@ -112,7 +112,7 @@ func exchangeRole(conn net.Conn, mine byte) error {
 
 func (r *Relay) Offer(ctx context.Context, code string, blob []byte, paired func()) error {
 	for {
-		conn, err := r.connect(ctx, code)
+		conn, err := r.connect(ctx, code, "")
 		if err != nil {
 			return err
 		}
@@ -156,7 +156,7 @@ func sendFramed(conn net.Conn, blob []byte) error {
 
 func (r *Relay) Receive(ctx context.Context, code string) ([]byte, error) {
 	for {
-		conn, err := r.connect(ctx, code)
+		conn, err := r.connect(ctx, code, "")
 		if err != nil {
 			return nil, err
 		}
@@ -213,8 +213,10 @@ type Piping struct {
 
 func (p *Piping) Name() string { return "https" }
 
-func (p *Piping) url(code string) string {
-	rv := rendezvous(code, "piping")
+func (p *Piping) url(code string) string { return p.urlFor(code, "") }
+
+func (p *Piping) urlFor(code, purpose string) string {
+	rv := rendezvous(code, "piping"+purpose)
 	return strings.TrimRight(p.Base, "/") + "/cmnet-" + hex.EncodeToString(rv[:20])
 }
 

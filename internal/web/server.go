@@ -107,6 +107,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// while the user is still on another screen. A failure is not fatal: it is
 	// reported in the UI and retried on the next request.
 	_, _ = s.session()
+	s.resumeFollow() // a guest who followed the host's draft picks it up again
 
 	srv := &http.Server{
 		Handler:           s.routes(),
@@ -162,6 +163,7 @@ func (s *Server) session() (*session.Session, error) {
 	s.mu.Unlock()
 
 	s.startGSIPump(sess)
+	s.followIntoSession()
 	return sess, nil
 }
 
@@ -190,6 +192,7 @@ func (s *Server) reloadSession() error {
 	s.mu.Unlock()
 
 	s.startGSIPump(sess)
+	s.followIntoSession()
 	s.shareRefresh() // a friend who comes next gets the new model / scouting
 	return nil
 }
@@ -260,6 +263,9 @@ func (s *Server) pumpGSI(ctx context.Context, evs <-chan *draft.Snapshot) {
 			s.mu.Unlock()
 			if sess == nil {
 				continue
+			}
+			if sess.Following() {
+				continue // the board follows the host, not this machine's Dota
 			}
 			ring := sess.ApplyGSI(snap)
 			if msg := sess.TakeStatus(); msg != "" {
@@ -377,11 +383,13 @@ type metaDTO struct {
 	OurTeam       string `json:"ourTeam"`
 	FirstPick     string `json:"firstPick"`
 	GSIMode       bool   `json:"gsiMode"`
-	GSISeen       bool   `json:"gsiSeen"`
-	HasMatrices   bool   `json:"hasMatrices"`
-	CanAddEnemy   bool   `json:"canAddEnemy"`
-	CanUndo       bool   `json:"canUndo"`
-	CanRedo       bool   `json:"canRedo"`
+	// Following: the board is the host's live draft (guest), not this Dota's.
+	Following   bool `json:"following"`
+	GSISeen     bool `json:"gsiSeen"`
+	HasMatrices bool `json:"hasMatrices"`
+	CanAddEnemy bool `json:"canAddEnemy"`
+	CanUndo     bool `json:"canUndo"`
+	CanRedo     bool `json:"canRedo"`
 	// Logging reports whether decisions are being recorded (§6.1); LastDecision is
 	// the step a reason would be attached to (-1 when none has been logged yet), so
 	// the UI can name it instead of asking for a reason about nothing. LogError
@@ -482,6 +490,7 @@ func (s *Server) snapshot(ring bool) stateDTO {
 	st.Meta.OurTeam = cfg.OurTeam.String()
 	st.Meta.FirstPick = cfg.FirstPick.String()
 	st.Meta.GSIMode = sess.GSIMode()
+	st.Meta.Following = sess.Following()
 	st.Meta.GSISeen = sess.GSISeen()
 	st.Meta.HasMatrices = sess.HasMatrices()
 	st.Meta.CanAddEnemy = sess.CanAddEnemy()

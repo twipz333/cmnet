@@ -115,10 +115,21 @@ function renderControls(m) {
 
   const src = $('source');
   src.textContent = '';
-  if (m.gsiMode) {
+  if (m.following) {
+    const on = store.state.share?.followState === 'connected';
+    const sp = el('span', on ? 'live' : 'wait');
+    sp.append(el('i', 'dot'), document.createTextNode(on ? 'Драфт ведёт хост' : 'Жду драфт хоста'));
+    src.append(sp);
+  } else if (m.gsiMode) {
     const sp = el('span', m.gsiSeen ? 'live' : 'wait');
     sp.append(el('i', 'dot'), document.createTextNode(m.gsiSeen ? 'Драфт читается из игры' : 'Жду данные из Dota'));
     src.append(sp);
+  }
+  const followers = store.state.share?.followers || 0;
+  if (!store.state.share?.guest && followers > 0) {
+    const f = el('span', 'live');
+    f.append(el('i', 'dot'), document.createTextNode(followers === 1 ? 'Друг видит этот драфт' : `Этот драфт видят друзья: ${followers}`));
+    src.append(f);
   }
   const live = store.state.live;
   if (live && live.clockTime != null && live.gameState && /GAME_IN_PROGRESS|PRE_GAME/.test(live.gameState)) {
@@ -314,7 +325,7 @@ function renderFocus(s) {
   } else {
     title.textContent = isPick ? 'Пик соперника' : 'Бан соперника';
     sub.textContent = m.gsiMode
-      ? 'Ждём их выбор в игре. Самые вероятные варианты:'
+      ? (m.following ? 'Ждём их выбор на доске хоста. Самые вероятные варианты:' : 'Ждём их выбор в игре. Самые вероятные варианты:')
       : 'Отметьте, кого они взяли: нажмите карточку или найдите героя внизу.';
     const preds = (res.enemyPred || []).slice(0, 5);
     preds.forEach((e, i) => cards.append(enemyCard(e, i, !m.gsiMode)));
@@ -546,7 +557,7 @@ function renderPicker(s) {
   const readonly = m.gsiMode || !m.draftReady || !s.step;
   picker.classList.toggle('readonly', readonly);
   $('picker-hint').textContent = m.gsiMode
-    ? 'Доска заполняется из игры'
+    ? (m.following ? 'Доска заполняется у хоста' : 'Доска заполняется из игры')
     : (!s.step ? '' : 'Печатайте в любом месте. Enter берёт первого найденного, 1–5 выбирают карточку, Ctrl+Z отменяет');
 
   const rf = $('role-filter');

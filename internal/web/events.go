@@ -54,6 +54,7 @@ func (h *hub) publish(payload []byte) {
 // broadcast pushes the current state to all listeners. ring marks a state where an
 // objective just entered its alert window, so browsers can sound it once.
 func (s *Server) broadcast(ring bool) {
+	s.publishLive() // following guests see the same board
 	payload, err := json.Marshal(s.snapshot(ring))
 	if err != nil {
 		return
