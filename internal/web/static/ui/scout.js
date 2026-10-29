@@ -4,6 +4,7 @@
 import {
   $, el, store, post, getJSON, button, confirmable, nameOf, portrait, pct, ago, jobName, num,
 } from './core.js';
+import { renderTeams, placePending } from './team.js';
 
 let stats = null;
 let players = null;
@@ -18,6 +19,7 @@ export function enterScout() {
 
 async function loadStats() {
   stats = await getJSON('/api/stats');
+  placePending(stats);
   renderScout();
 }
 
@@ -38,125 +40,9 @@ export function scoutStateChanged(s) {
 export function renderScout() {
   const s = store.state;
   if (!s) return;
-  renderRun(s);
-  renderToday();
+  renderTeams($('scout-teams'), { stats, players, reload: () => { loadStats(); loadPlayers(); }, rerender: renderScout });
   renderPool();
   renderBook();
-}
-
-function renderRun(s) {
-  const host = $('scout-run');
-  host.textContent = '';
-  const sec = el('section', 'doc-sec');
-  sec.append(el('h2', null, 'Кого разведать'));
-  sec.append(el('p', 'muted', 'Вставьте ссылки на профили (Steam, OpenDota, STRATZ) или числовые id через запятую. Достаточно одного открытого профиля соперника: из его матчей поднимется драфт всей команды.'));
-
-  const form = (id, label, placeholder, path, cta) => {
-    const f = el('form', 'inline-form');
-    const lab = el('label', null, label);
-    lab.htmlFor = id;
-    const input = el('input');
-    input.id = id;
-    input.type = 'text';
-    input.placeholder = placeholder;
-    input.autocomplete = 'off';
-    input.spellcheck = false;
-    const go = el('button', 'btn', cta);
-    go.type = 'submit';
-    f.append(lab, input, go);
-    f.onsubmit = async (e) => {
-      e.preventDefault();
-      if (!input.value.trim()) { input.focus(); return; }
-      if (await post(path, { players: input.value })) input.value = '';
-    };
-    return f;
-  };
-  if (s.meta.canScout) sec.append(form('scout-enemies', 'Соперники', 'steamcommunity.com/id/ник, 123456789', '/api/ops/scout', 'Разведать соперников'));
-  if (s.meta.canScoutAllies) sec.append(form('scout-allies', 'Наша команда', 'профили наших игроков', '/api/ops/scout-allies', 'Разведать своих'));
-  if (!s.meta.canScout && !s.meta.canScoutAllies) sec.append(el('p', 'err', 'Разведка недоступна в этой сборке.'));
-
-  const running = (s.ops?.active || []).filter((j) => j.kind === 'scout' || j.kind === 'scout-allies');
-  running.forEach((j) => {
-    const line = el('div', 'job live');
-    line.append(el('b', null, jobName(j.kind)), el('div', 'job-line', j.lastLine || 'начинаю…'));
-    if (j.waitingOn) line.append(el('div', 'job-wait', `ждём ответа: ${j.waitingOn}`));
-    sec.append(line);
-  });
-  host.append(sec);
-}
-
-function renderToday() {
-  const host = $('scout-today');
-  host.textContent = '';
-  const sec = el('section', 'doc-sec');
-  const head = el('div', 'sec-head');
-  head.append(el('h2', null, 'Сегодня'));
-  sec.append(head);
-  if (!stats) { sec.append(el('p', 'muted', 'Загружаю…')); host.append(sec); return; }
-  if (stats.error || !stats.stats) {
-    sec.append(el('p', stats.unavailable ? 'muted' : 'err', stats.unavailable ? 'Снапшот разведки недоступен в этой сборке.' : stats.error));
-    host.append(sec);
-    return;
-  }
-  const st = stats.stats;
-  const cols = el('div', 'two-col');
-  cols.append(playerColumn('Соперники', st.enemyPlayers, false), playerColumn('Наши', st.allyPlayers, true));
-  sec.append(cols);
-
-  const l3 = el('div', 'layer3');
-  l3.append(el('span', null, st.layer3Drafts
-    ? `Драфтов соперника в этом турнире: ${st.layer3Drafts}. Они сильнее всего влияют на предсказание их ходов.`
-    : 'Драфтов соперника в этом турнире пока нет.'));
-  if (st.layer3Drafts) l3.append(confirmable(button('Забыть драфты турнира', 'link-btn danger'), 'Точно забыть?', async () => { await post('/api/stats/clear-layer3'); loadStats(); }));
-  sec.append(l3);
-  host.append(sec);
-}
-
-function playerColumn(title, list, ally) {
-  const box = el('div', 'pcol');
-  const head = el('div', 'sec-head');
-  head.append(el('h3', null, title));
-  if ((list || []).length) {
-    head.append(confirmable(button('Очистить', 'link-btn danger'), 'Очистить всех?', async () => {
-      await post('/api/stats/clear-scout', { ally });
-      loadStats();
-    }));
-  }
-  box.append(head);
-  if (!(list || []).length) {
-    box.append(el('p', 'muted', ally ? 'Своих не разведывали. Это нужно, чтобы советы учитывали ваши комфортные герои.' : 'Соперников не разведывали.'));
-    return box;
-  }
-  box.append(el('p', 'muted small', 'Под ником — любимые герои и сколько игр на каждом за последний месяц.'));
-  const ul = el('ul', 'players');
-  list.forEach((p) => {
-    const li = el('li', 'player');
-    const top = el('div', 'player-top');
-    top.append(el('b', null, p.nickname || `id ${p.accountId}`));
-    if (!p.resolved) top.append(el('span', 'tag warn', 'профиль скрыт'));
-    if (p.smurf && p.smurf.level !== 'low') {
-      const t = el('span', 'tag ' + (p.smurf.level === 'high' ? 'danger' : 'warn'), p.smurf.label || 'возможен смурф');
-      t.title = (p.smurf.reasons || []).join('\n');
-      top.append(t);
-    }
-    top.append(confirmable(button('Убрать', 'link-btn'), 'Убрать?', async () => {
-      await post('/api/stats/remove-player', { accountId: p.accountId, ally });
-      loadStats();
-      loadPlayers();
-    }));
-    li.append(top);
-    const heroes = el('ul', 'phero');
-    (p.topHeroes || []).slice(0, 8).forEach((h) => {
-      const hi = el('li');
-      hi.title = `${h.name || nameOf(h.id)}: ${num(h.games)} игр, побед ${pct(h.winRate)}`;
-      hi.append(portrait(h.id, 'mini'), el('span', null, `${h.games}`));
-      heroes.append(hi);
-    });
-    li.append(heroes);
-    ul.append(li);
-  });
-  box.append(ul);
-  return box;
 }
 
 function renderPool() {
