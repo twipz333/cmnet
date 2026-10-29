@@ -14,6 +14,7 @@ on:
   pull_request:
     paths:
       - 'desktop/**'
+      - 'internal/web/static/**'
       - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
@@ -67,7 +68,6 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           npx electron-builder --win nsis --publish never
-          npx electron-builder --win nsis --publish never --config electron-builder.guest.js
       - name: build and publish release
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: desktop
@@ -83,6 +83,7 @@ jobs:
           path: desktop/dist/*.exe
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: cmnet-guest-setup
           path: desktop/dist-guest/*.exe
