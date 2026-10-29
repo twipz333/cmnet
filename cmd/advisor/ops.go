@@ -1457,20 +1457,26 @@ func refreshProfiles(ctx context.Context, dbPath string, ids []int64, force bool
 		avatarURL := safeSteamAvatarURL(profile.AvatarURL)
 		out[id] = profile.Persona
 		fresh = append(fresh, cache.Player{AccountID: id, Persona: profile.Persona, AvatarURL: avatarURL})
-		// Refresh only if needed; a new URL means a changed Steam avatar. Forced
-		// refresh also repairs a corrupt local image and rechecks an unchanged URL.
-		if as != nil && avatarURL != "" {
-			if force || cached[id].AvatarURL != avatarURL {
-				_ = as.RefreshAvatar(ctx, id, avatarURL)
-			} else {
-				_ = as.FetchAvatar(ctx, id, avatarURL)
-			}
-		}
 	}
 	if len(fresh) > 0 {
 		if w, err := cache.Open(dbPath); err == nil {
 			_ = w.UpsertPlayers(fresh)
 			w.Close()
+		}
+	}
+	// Network avatars are slower and optional. Fetch ALL profile metadata first,
+	// so one stalled CDN never prevents the next player's nickname being checked.
+	for _, profile := range fresh {
+		if as == nil || ctx.Err() != nil {
+			break
+		}
+		if profile.AvatarURL == "" {
+			continue
+		}
+		if force || cached[profile.AccountID].AvatarURL != profile.AvatarURL {
+			_ = as.RefreshAvatar(ctx, profile.AccountID, profile.AvatarURL)
+		} else {
+			_ = as.FetchAvatar(ctx, profile.AccountID, profile.AvatarURL)
 		}
 	}
 	return out, len(fresh)
