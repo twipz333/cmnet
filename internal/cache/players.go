@@ -1,6 +1,9 @@
 package cache
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 // Player is a scouted account's display name. Names are cosmetic only — they
 // never reach the model (§6) — so they are cached locally rather than carried in
@@ -8,6 +11,7 @@ import "time"
 type Player struct {
 	AccountID int64
 	Persona   string
+	AvatarURL string
 	FetchedAt int64 // unix seconds
 }
 
@@ -22,8 +26,9 @@ func (s *Store) UpsertPlayers(players []Player) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(
-		`INSERT INTO players(account_id, persona, fetched_at) VALUES(?, ?, ?)
-		 ON CONFLICT(account_id) DO UPDATE SET persona = excluded.persona, fetched_at = excluded.fetched_at`,
+		`INSERT INTO players(account_id, persona, avatar_url, fetched_at) VALUES(?, ?, ?, ?)
+		 ON CONFLICT(account_id) DO UPDATE SET
+		   persona = excluded.persona, avatar_url = excluded.avatar_url, fetched_at = excluded.fetched_at`,
 	)
 	if err != nil {
 		return err
@@ -36,7 +41,7 @@ func (s *Store) UpsertPlayers(players []Player) error {
 		if at == 0 {
 			at = now
 		}
-		if _, err := stmt.Exec(p.AccountID, p.Persona, at); err != nil {
+		if _, err := stmt.Exec(p.AccountID, p.Persona, p.AvatarURL, at); err != nil {
 			return err
 		}
 	}
@@ -52,7 +57,7 @@ func (s *Store) Players(ids []int64) (map[int64]Player, error) {
 	}
 	// Prepared once and executed per id: the list is a handful of scouted players,
 	// so this stays simpler than building a variadic IN clause.
-	stmt, err := s.rd.Prepare("SELECT account_id, persona, fetched_at FROM players WHERE account_id = ?")
+	stmt, err := s.rd.Prepare("SELECT account_id, persona, avatar_url, fetched_at FROM players WHERE account_id = ?")
 	if err != nil {
 		return nil, err
 	}
@@ -60,11 +65,18 @@ func (s *Store) Players(ids []int64) (map[int64]Player, error) {
 
 	for _, id := range ids {
 		var p Player
-		err := stmt.QueryRow(id).Scan(&p.AccountID, &p.Persona, &p.FetchedAt)
+		err := stmt.QueryRow(id).Scan(&p.AccountID, &p.Persona, &p.AvatarURL, &p.FetchedAt)
 		if err != nil {
 			continue // not cached yet (or unreadable): the caller will fetch it
 		}
 		out[p.AccountID] = p
 	}
 	return out, nil
+}
+
+// migratePlayerAvatars adds avatar metadata without invalidating older cached names.
+func migratePlayerAvatars(tx *sql.Tx) error {
+	return addColumns(tx, "players", []struct{ name, ddl string }{
+		{"avatar_url", "ALTER TABLE players ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''"},
+	})
 }
