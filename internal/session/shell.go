@@ -255,6 +255,7 @@ type KnownPlayer struct {
 	AccountID int64  `json:"accountId"`
 	Persona   string `json:"persona"`
 	AvatarVersion int64 `json:"avatarVersion,omitempty"`
+	ProfileCheckedAt int64 `json:"profileCheckedAt,omitempty"`
 	Role      string `json:"role"`
 	Note      string `json:"note,omitempty"`
 	LastSeen  int64  `json:"lastSeen"`
