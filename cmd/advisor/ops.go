@@ -1947,6 +1947,11 @@ func opStats(snapshotPath, dbPath string) (tui.StatsView, error) {
 		}
 	}
 	names := personaNames(context.Background(), dbPath, ids)
+	profileCache := map[int64]cache.Player{}
+	if st, err := cache.Open(dbPath); err == nil {
+		profileCache, _ = st.Players(ids)
+		st.Close()
+	}
 
 	toPlayers := func(l2 *scout.Layer2) []tui.StatsPlayer {
 		if l2 == nil {
@@ -1958,6 +1963,10 @@ func opStats(snapshotPath, dbPath string) (tui.StatsView, error) {
 				AccountID: p.AccountID,
 				Nickname:  playerLabel(names[p.AccountID], p.AccountID, p.Resolved, p.Nickname),
 				Resolved:  p.Resolved,
+				ScoutStatus: p.Status,
+			}
+			if profile := profileCache[p.AccountID]; profile.AvatarURL != "" {
+				sp.AvatarVersion = profile.FetchedAt
 			}
 			if p.Smurf != nil {
 				sp.Smurf = &tui.StatsSmurf{
