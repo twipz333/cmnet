@@ -64,6 +64,7 @@ public sealed class NativeWindow : Window
     private TextBlock? bookEmptyHint;
     private Grid? teamGrid;
     private string heroCatalogKey = "";
+    private string recommendationKey = "";
     private TextBlock? dataActivity;
     private readonly TextBlock corpusMatches = new();
     private readonly TextBlock corpusDrafts = new();
@@ -786,41 +787,106 @@ public sealed class NativeWindow : Window
 
     private UIElement BuildDraftView()
     {
+        heroCatalogKey = "";
+        recommendationKey = "";
         var frame = new Grid();
-        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(310) });
+        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
         frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var tools = new StackPanel { Margin = new Thickness(0, 0, 18, 0) };
-        Header(tools, "Ход драфта");
-        draftSummary = Text("Подключаем модель…", 15);
-        draftSummary.Margin = new Thickness(0, 0, 0, 16);
-        tools.Children.Add(draftSummary);
-        var buttons = new WrapPanel();
-        buttons.Children.Add(Btn("Отменить", async () => await RunAction("/api/undo"), true));
-        buttons.Children.Add(Btn("Повторить", async () => await RunAction("/api/redo"), true));
-        buttons.Children.Add(Btn("Новый", async () => await RunAction("/api/new-draft"), true));
-        tools.Children.Add(buttons);
-        Header(tools, "Рекомендации");
-        draftRecommendations = new ListBox { Background = soft, Foreground = foreground, MinHeight = 250 };
+        frame.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        frame.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var tools = new StackPanel();
+        tools.Children.Add(Text("MATCH DRAFT  /  02", 10, FontWeights.Bold, accent));
+        var head = Text("Текущий драфт", 23, FontWeights.Bold);
+        head.Margin = new Thickness(0, 8, 0, 7);
+        tools.Children.Add(head);
+        tools.Children.Add(Text("Рекомендации обновляются вместе с пиками и банами.", 12, color: muted));
+        Header(tools, "Состояние");
+        var statusBox = new Border { Background = Hex("#172C3D"), CornerRadius = new CornerRadius(11),
+            BorderBrush = Hex("#38566A"), BorderThickness = new Thickness(1),
+            Padding = new Thickness(15), Margin = new Thickness(0, 0, 0, 12) };
+        draftSummary = Text("Ожидание модели…", 13);
+        statusBox.Child = draftSummary;
+        tools.Children.Add(statusBox);
+
+        var controls = new WrapPanel();
+        var undo = Btn("↶  Назад", async () => await RunAction("/api/undo"), true);
+        undo.Margin = new Thickness(0, 0, 7, 7);
+        controls.Children.Add(undo);
+        var redo = Btn("↷  Вперёд", async () => await RunAction("/api/redo"), true);
+        redo.Margin = new Thickness(0, 0, 7, 7);
+        controls.Children.Add(redo);
+        controls.Children.Add(Btn("Новый драфт", async () => await RunAction("/api/new-draft"), true));
+        tools.Children.Add(controls);
+
+        Header(tools, "Рекомендации модели");
+        tools.Children.Add(Text("Наиболее подходящие герои в текущем состоянии.", 12, color: muted));
+        draftRecommendations = new ListBox { MinHeight = 195, MaxHeight = 370,
+            Margin = new Thickness(0, 13, 0, 0) };
+        VirtualizingStackPanel.SetIsVirtualizing(draftRecommendations, true);
         tools.Children.Add(draftRecommendations);
-        var left = Scroll(tools);
+        var left = Surface(Scroll(tools), new Thickness(0, 0, 10, 0));
         frame.Children.Add(left);
-        var content = new StackPanel();
-        Header(content, "Выбери героя");
-        var search = new TextBox { Padding = new Thickness(10), Margin = new Thickness(0, 0, 0, 10) };
+
+        // Constrain the hero list with a real Grid star row. A ListBox inside
+        // StackPanel was measured at infinite height and did not scroll.
+        var right = new Grid();
+        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        right.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var pickIntro = new StackPanel();
+        pickIntro.Children.Add(Text("HERO SELECTOR", 10, FontWeights.Bold, accent));
+        var pickTitle = Text("Выбрать героя", 23, FontWeights.Bold);
+        pickTitle.Margin = new Thickness(0, 8, 0, 5);
+        pickIntro.Children.Add(pickTitle);
+        pickIntro.Children.Add(Text("Поиск по имени. Недоступные герои скрываются автоматически.", 12, color: muted));
+        pickIntro.Margin = new Thickness(0, 0, 0, 18);
+        right.Children.Add(pickIntro);
+
+        var search = new TextBox { Margin = new Thickness(0, 0, 0, 12),
+            ToolTip = "Быстрый поиск героя" };
         search.TextChanged += (_, _) => UpdateHeroes(search.Text);
-        content.Children.Add(search);
-        heroList = new ListBox { ItemsSource = heroRows, DisplayMemberPath = "Label", Foreground = foreground, Background = soft };
+        Grid.SetRow(search, 1);
+        right.Children.Add(search);
+        heroList = new ListBox { ItemsSource = heroRows, DisplayMemberPath = "Label",
+            Background = Brushes.Transparent, MinHeight = 135 };
         VirtualizingStackPanel.SetIsVirtualizing(heroList, true);
         VirtualizingStackPanel.SetVirtualizationMode(heroList, VirtualizationMode.Recycling);
-        content.Children.Add(heroList);
-        content.Children.Add(Btn("Применить выбранного героя", async () =>
+        ScrollViewer.SetCanContentScroll(heroList, true);
+        Grid.SetRow(heroList, 2);
+        right.Children.Add(heroList);
+        var apply = Btn("✓  Применить выбранного героя", async () =>
         {
             if (heroList.SelectedItem is HeroRow h)
                 await RunAction("/api/apply", new { heroId = h.Id });
-        }));
-        Grid.SetColumn(content, 1);
-        frame.Children.Add(content);
-        return frame;
+        });
+        apply.HorizontalAlignment = HorizontalAlignment.Stretch;
+        apply.Margin = new Thickness(0, 15, 0, 0);
+        Grid.SetRow(apply, 3);
+        right.Children.Add(apply);
+        var rightCard = Surface(right, new Thickness(10, 0, 0, 0));
+        Grid.SetColumn(rightCard, 1);
+        frame.Children.Add(rightCard);
+
+        // On small windows stack the selector beneath the recommendations.
+        // This avoids a squeezed right panel and the browser-style x-scroll.
+        bool compactLayout = false;
+        frame.SizeChanged += (_, _) =>
+        {
+            bool compact = frame.ActualWidth < 800;
+            if (compact == compactLayout) return;
+            compactLayout = compact;
+            frame.ColumnDefinitions[0].Width = compact ? new GridLength(1, GridUnitType.Star) : new GridLength(360);
+            frame.ColumnDefinitions[1].Width = compact ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+            frame.RowDefinitions[0].Height = compact ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+            frame.RowDefinitions[1].Height = compact ? new GridLength(480) : GridLength.Auto;
+            Grid.SetColumn(rightCard, compact ? 0 : 1);
+            Grid.SetRow(rightCard, compact ? 1 : 0);
+            left.Margin = compact ? new Thickness(0, 0, 0, 12) : new Thickness(0, 0, 10, 0);
+            rightCard.Margin = compact ? new Thickness(0) : new Thickness(10, 0, 0, 0);
+        };
+        return Scroll(frame);
     }
 
     private void UpdateDraft()
@@ -834,11 +900,15 @@ public sealed class NativeWindow : Window
                 ? m.At("draftError").S("Модель ещё не обучена. Открой раздел «Данные».")
                 : $"Сторона: {m.At("ourTeam").S()}\nХод: {step.At("team").S("—")} · {step.At("action").S("—")}\nПатч: {m.At("patchTag").S("—")}";
         }
-        if (draftRecommendations != null)
-            draftRecommendations.ItemsSource = state.At("result","recs").Items().Take(6)
-                .Select(x => $"{HeroName(x.At("heroId").I())} · {x.At("score").D():0.000}")
-                .ToList();
-        var key = string.Join("|",state.At("heroes").Items().Select(x=>x.ToJsonString()));
+        var recs = state.At("result","recs").Items().Take(6)
+            .Select(x => $"  {HeroName(x.At("heroId").I())}   ·   {x.At("score").D():P1}").ToList();
+        var recKey = string.Join("|", recs);
+        if (draftRecommendations != null && recKey != recommendationKey)
+        {
+            draftRecommendations.ItemsSource = recs;
+            recommendationKey = recKey;
+        }
+        var key = state.At("heroes")?.ToJsonString() + "|" + state.At("board")?.ToJsonString();
         if (key != heroCatalogKey)
         {
             heroCatalogKey = key;
@@ -857,8 +927,11 @@ public sealed class NativeWindow : Window
             .Distinct().Select(id => new HeroRow { Id = id, Name = HeroName(id) })
             .Where(h => h.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
             .OrderBy(h=>h.Name).ToList();
+        var selected = (heroList?.SelectedItem as HeroRow)?.Id;
         heroRows.Clear();
         foreach (var x in all) heroRows.Add(x);
+        if (selected is int hero)
+            heroList!.SelectedItem = heroRows.FirstOrDefault(x => x.Id == hero);
     }
 
     private UIElement BuildDataView()
