@@ -184,38 +184,58 @@ function renderBook() {
   if (selected.size) bulk.append(button('Снять выбор', 'link-btn', () => { selected.clear(); renderScout(); }));
   sec.append(bulk);
 
-  const table = el('table', 'tbl book');
-  const thead = el('thead');
-  const hr = el('tr');
-  ['', 'Игрок', 'Кто', 'Героев в кэше', 'Видели', 'Профиль проверен', 'Сегодня', ''].forEach((h) => hr.append(el('th', null, h)));
-  thead.append(hr);
-  table.append(thead);
-  const tbody = el('tbody');
+  // Native-app-style cards rather than a wide HTML table. A fixed-width table
+  // caused a second horizontal scrollbar whenever the desktop window narrowed.
+  const cards = el('div', 'book-list');
   list.forEach((p) => {
-    const tr = el('tr');
+    const card = el('article', 'book-entry');
+    if (p.pinned) card.classList.add('pinned');
+
+    const header = el('div', 'book-entry-head');
     const cb = el('input');
     cb.type = 'checkbox';
     cb.checked = selected.has(p.accountId);
     cb.setAttribute('aria-label', `Выбрать ${p.persona || p.accountId}`);
     cb.onchange = () => { if (cb.checked) selected.add(p.accountId); else selected.delete(p.accountId); renderScout(); };
-    const tdc = el('td'); tdc.append(cb);
-    const name = el('td');
-    const identity = el('div', 'book-player');
+    const identity = el('div', 'book-entry-person');
     identity.append(avatar(p.accountId, p.persona || `id ${p.accountId}`, p.avatarVersion));
-    identity.append(el('b', null, p.persona || `id ${p.accountId}`));
-    name.append(identity);
-    if (p.note) name.append(el('div', 'muted', p.note));
-    const today = p.inSnapshot === 'ally' ? 'в нашем составе' : p.inSnapshot === 'enemy' ? 'в составе соперника' : '';
-    const acts = el('td', 'acts');
-    acts.append(button('Проверить профиль', 'link-btn', () => refresh([p.accountId])));
-    acts.append(button(p.pinned ? 'Открепить' : 'Закрепить', 'link-btn', async () => { await post('/api/players/pin', { accountId: p.accountId, pinned: !p.pinned }); loadPlayers(); }));
-    acts.append(confirmable(button('Забыть', 'link-btn danger'), 'Забыть насовсем?', async () => { await post('/api/players/forget', { accountId: p.accountId }); selected.delete(p.accountId); loadPlayers(); }));
-    tr.append(tdc, name, el('td', null, p.role === 'ally' ? 'свой' : p.role === 'enemy' ? 'соперник' : '—'),
-      el('td', 'n', num(p.heroes)), el('td', null, ago(p.lastSeen)), el('td', null, p.profileCheckedAt ? ago(p.profileCheckedAt) : 'ещё нет'), el('td', null, today), acts);
-    if (p.pinned) tr.classList.add('pinned');
-    tbody.append(tr);
+    const label = el('div', 'book-entry-identity');
+    label.append(el('b', null, p.persona || `id ${p.accountId}`));
+    label.append(el('span', 'muted', `Steam ID ${p.accountId}`));
+    identity.append(label);
+    header.append(cb, identity);
+    if (p.pinned) header.append(el('span', 'book-pin', 'Закреплён'));
+    card.append(header);
+
+    const badges = el('div', 'book-entry-badges');
+    badges.append(el('span', 'tag', p.role === 'ally' ? 'Союзник' : p.role === 'enemy' ? 'Соперник' : 'Без роли'));
+    if (p.inSnapshot) badges.append(el('span', 'tag', p.inSnapshot === 'ally' ? 'В нашем составе' : 'У соперников'));
+    if (p.note) badges.append(el('span', 'book-entry-note', p.note));
+    card.append(badges);
+
+    const facts = el('div', 'book-entry-facts');
+    [[`Героев ${num(p.heroes)}`, 'cache'], [`Видели: ${ago(p.lastSeen)}`, 'seen'],
+     [`Профиль: ${p.profileCheckedAt ? ago(p.profileCheckedAt) : 'не проверен'}`, 'profile']].forEach(([value, kind]) => {
+      const item = el('span', 'book-fact', value);
+      item.dataset.kind = kind;
+      facts.append(item);
+    });
+    card.append(facts);
+
+    const acts = el('div', 'book-entry-actions');
+    acts.append(button('Обновить Steam', 'btn quiet small', () => refresh([p.accountId])));
+    acts.append(button(p.pinned ? 'Открепить' : 'Закрепить', 'link-btn', async () => {
+      await post('/api/players/pin', { accountId: p.accountId, pinned: !p.pinned });
+      loadPlayers();
+    }));
+    acts.append(confirmable(button('Забыть', 'link-btn danger'), 'Забыть насовсем?', async () => {
+      await post('/api/players/forget', { accountId: p.accountId });
+      selected.delete(p.accountId);
+      loadPlayers();
+    }));
+    card.append(acts);
+    cards.append(card);
   });
-  table.append(tbody);
-  sec.append(table);
+  sec.append(cards);
   host.append(sec);
 }
