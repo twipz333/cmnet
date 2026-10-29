@@ -649,9 +649,14 @@ public sealed class NativeWindow : Window
         if (page != "Разведка" || state == null) return;
         var version = string.Join("|", new[] { "our", "enemy" }.SelectMany(side =>
             state.At("team",side).Items().Select(id => side + ":" + id.L()))) +
-            "|" + stats?.ToJsonString()?.GetHashCode();
+            "|" + stats?.ToJsonString()?.GetHashCode() +
+            "|" + players?.ToJsonString()?.GetHashCode();
         if (version == scoutVersion) return;
         scoutVersion = version;
+        var ourIds = state.At("team","our").Items().Count(id => id.L() > 0);
+        var enemyIds = state.At("team","enemy").Items().Count(id => id.L() > 0);
+        allyMetric.Text = $"{ourIds} / 5";
+        enemyMetric.Text = $"{enemyIds} / 5";
         foreach (var side in new[] { "our", "enemy" })
         {
             var ids = state.At("team",side).Items().ToArray();
@@ -697,13 +702,34 @@ public sealed class NativeWindow : Window
         var version = players?.ToJsonString() ?? "";
         if (version == playersVersion) return;
         playersVersion = version;
-        var selected = (list.SelectedItem as PlayerRow)?.Id;
-        var entries = players.At("players").Items()
-            .Select(x => new PlayerRow { Id = x.At("accountId").L(), Role = x.At("role").S(), Name = x.At("persona").S("Steam ID"), Pinned = x.At("pinned").B() })
-            .Where(x => x.Id > 0).ToList();
-        list.ItemsSource = entries;
-        list.DisplayMemberPath = "Label";
-        if (selected is long id) list.SelectedItem = entries.FirstOrDefault(x => x.Id == id);
+        knownPlayerRows.Clear();
+        knownPlayerRows.AddRange(players.At("players").Items()
+            .Select(x => new PlayerRow { Id = x.At("accountId").L(), Role = x.At("role").S(),
+                Name = x.At("persona").S("Steam ID"), Pinned = x.At("pinned").B() })
+            .Where(x => x.Id > 0).OrderByDescending(x => x.Pinned).ThenBy(x => x.Name));
+        FilterKnownPlayers();
+    }
+
+    private void FilterKnownPlayers()
+    {
+        if (knownPlayersList == null) return;
+        var selected = (knownPlayersList.SelectedItem as PlayerRow)?.Id;
+        var phrase = knownPlayerFilter.Trim();
+        var rows = knownPlayerRows.Where(p => phrase.Length == 0 ||
+            p.Name.Contains(phrase, StringComparison.CurrentCultureIgnoreCase) ||
+            p.Role.Contains(phrase, StringComparison.CurrentCultureIgnoreCase) ||
+            p.Id.ToString().Contains(phrase, StringComparison.Ordinal)).ToList();
+        knownPlayersList.ItemsSource = rows;
+        knownPlayersList.DisplayMemberPath = "Label";
+        if (selected.HasValue)
+            knownPlayersList.SelectedItem = rows.FirstOrDefault(x => x.Id == selected.Value);
+        if (bookEmptyHint != null)
+        {
+            bookEmptyHint.Text = knownPlayerRows.Count == 0
+                ? "Пока нет игроков. Добавь Steam ID в состав выше."
+                : "По этому запросу никто не найден.";
+            bookEmptyHint.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     private static ListBox? FindListBox(DependencyObject? node)
