@@ -75,6 +75,10 @@ func sharePayload(h homeFlags) func() (share.Payload, error) {
 			}
 		}
 
+		if team, err := os.ReadFile(teamPath(h)); err == nil {
+			p.Files = append(p.Files, share.File{Name: teamFileName, Data: team})
+		}
+
 		// Hero names live in the host's database; the guest has none.
 		if store, err := cache.Open(h.dbPath); err == nil {
 			hs, herr := store.Heroes()
@@ -125,6 +129,11 @@ func applyShared(h homeFlags) func(share.Payload) (string, error) {
 			}
 		} else if err := os.Remove(h.snapshotPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return "", err // the host has no scouting; old scouting would mislead
+		}
+		if team := p.File(teamFileName); len(team) > 0 {
+			if err := writeAtomic(teamPath(h), team); err != nil {
+				return "", err
+			}
 		}
 		if data := p.File(heroesFile); len(data) > 0 {
 			var hs []cache.Hero
@@ -178,6 +187,7 @@ func writeAtomic(path string, data []byte) error {
 
 // shareShell wires sharing into the shell: hosts can share, guests receive.
 func shareShell(cfg *session.ShellConfig, h homeFlags) {
+	teamOps(cfg, h)
 	if cfg.Guest {
 		cfg.ApplyShare = applyShared(h)
 		return

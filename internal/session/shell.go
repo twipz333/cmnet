@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 
 	"cmnet/internal/alerts"
 	"cmnet/internal/cache"
@@ -34,6 +35,13 @@ type ShellConfig struct {
 	Guest        bool
 	SharePayload func() (share.Payload, error)
 	ApplyShare   func(share.Payload) (string, error)
+
+	// GetTeam / SetSeat keep the team sheet: which player sits at which position,
+	// for us and for the opponents. It outlives sessions and is applied to every
+	// new one as seat pins. SetSeat with accountID 0 empties the seat; placing a
+	// player who already has a seat on that side swaps the two.
+	GetTeam func() (TeamSheet, error)
+	SetSeat func(side string, position int, accountID int64) (TeamSheet, error)
 
 	// Long operations. Each returns a human summary or an error; they run off the
 	// UI goroutine and emit progress lines via the progress callback.
@@ -136,6 +144,48 @@ type StatsView struct {
 	HeroPool     []StatsHero   `json:"heroPool"`
 	ItemRules    string        `json:"itemRules"` // raw advice-DSL text (#10)
 	SnapshotPath string        `json:"snapshotPath"`
+}
+
+// TeamSheet is the account at each position 1-5 (index 0 = pos 1), 0 = empty.
+type TeamSheet struct {
+	Our   [5]int64 `json:"our"`
+	Enemy [5]int64 `json:"enemy"`
+}
+
+// Side returns the seats for "our" or "enemy".
+func (t *TeamSheet) Side(side string) (*[5]int64, error) {
+	switch side {
+	case "our", "ally", "allies":
+		return &t.Our, nil
+	case "enemy", "enemies":
+		return &t.Enemy, nil
+	}
+	return nil, fmt.Errorf("side must be our|enemy")
+}
+
+// Seat places accountID at position (1-5) on side. A player already seated on
+// that side swaps places with whoever was at position; 0 empties the seat.
+func (t *TeamSheet) Seat(side string, position int, accountID int64) error {
+	seats, err := t.Side(side)
+	if err != nil {
+		return err
+	}
+	if position < 1 || position > 5 {
+		return fmt.Errorf("position must be 1..5")
+	}
+	i := position - 1
+	if accountID <= 0 {
+		seats[i] = 0
+		return nil
+	}
+	occupant := seats[i]
+	for j := range seats {
+		if j != i && seats[j] == accountID {
+			seats[j] = occupant // swap
+		}
+	}
+	seats[i] = accountID
+	return nil
 }
 
 // StatsSmurf is the scout UI badge for smurf-risk (display only).

@@ -44,7 +44,8 @@ type Server struct {
 
 	remoteToken string // shared secret for /api/remote/*; empty = disabled
 
-	shareSt shareState // host code / guest receive
+	shareSt shareState         // host code / guest receive
+	team    *session.TeamSheet // cached team sheet; nil until a session loads it
 }
 
 // New builds a server over the app's operation callbacks. The draft session is
@@ -153,6 +154,7 @@ func (s *Server) session() (*session.Session, error) {
 		return nil, err
 	}
 	sess := session.New(cfg)
+	s.applyTeam(sess)
 
 	s.mu.Lock()
 	s.sess = sess
@@ -180,6 +182,7 @@ func (s *Server) reloadSession() error {
 		return err
 	}
 	sess := session.New(cfg)
+	s.applyTeam(sess)
 
 	s.mu.Lock()
 	s.sess = sess
@@ -315,6 +318,7 @@ func (s *Server) routes() http.Handler {
 	}
 	s.routeOps(mux)
 	s.routeShare(mux)
+	s.routeTeam(mux)
 	s.routeRemote(mux)
 	return sameSiteOnly(mux)
 }
@@ -363,6 +367,8 @@ type stateDTO struct {
 	Sequence []seqStepDTO `json:"sequence"`
 	// Share is the host/guest panel.
 	Share shareDTO `json:"share"`
+	// Team is who plays which position (us and them), nil when not kept.
+	Team *session.TeamSheet `json:"team"`
 }
 
 type metaDTO struct {
@@ -389,16 +395,16 @@ type metaDTO struct {
 	DraftReady bool   `json:"draftReady"`
 	DraftError string `json:"draftError"`
 	// Which shell operations this build offers, so the UI can disable the rest.
-	CanSync        bool `json:"canSync"`
-	CanTrain       bool `json:"canTrain"`
-	CanScout       bool `json:"canScout"`
-	CanScoutAllies bool `json:"canScoutAllies"`
-	CanStats       bool `json:"canStats"`
-	CanConfig      bool `json:"canConfig"`
+	CanSync          bool `json:"canSync"`
+	CanTrain         bool `json:"canTrain"`
+	CanScout         bool `json:"canScout"`
+	CanScoutAllies   bool `json:"canScoutAllies"`
+	CanStats         bool `json:"canStats"`
+	CanConfig        bool `json:"canConfig"`
 	CanDiscordConfig bool `json:"canDiscordConfig"`
 	CanAlerts        bool `json:"canAlerts"`
-	CanEditPool    bool `json:"canEditPool"`
-	CanEditRules   bool `json:"canEditRules"`
+	CanEditPool      bool `json:"canEditPool"`
+	CanEditRules     bool `json:"canEditRules"`
 }
 
 type boardDTO struct {
@@ -428,19 +434,19 @@ func (s *Server) snapshot(ring bool) stateDTO {
 
 	st := stateDTO{
 		Meta: metaDTO{
-			DraftReady:     sess != nil,
-			DraftError:     sessErr,
-			CanSync:        sh.Sync != nil,
-			CanTrain:       sh.Train != nil,
-			CanScout:       sh.Scout != nil,
-			CanScoutAllies: sh.ScoutAllies != nil,
-			CanStats:       sh.Stats != nil,
-			CanConfig:      sh.GetConfig != nil && sh.SaveConfig != nil,
+			DraftReady:       sess != nil,
+			DraftError:       sessErr,
+			CanSync:          sh.Sync != nil,
+			CanTrain:         sh.Train != nil,
+			CanScout:         sh.Scout != nil,
+			CanScoutAllies:   sh.ScoutAllies != nil,
+			CanStats:         sh.Stats != nil,
+			CanConfig:        sh.GetConfig != nil && sh.SaveConfig != nil,
 			CanDiscordConfig: sh.GetDiscordConfig != nil && sh.SaveDiscordConfig != nil,
 			CanAlerts:        sh.GetAlerts != nil && sh.SaveAlerts != nil,
-			CanEditPool:    sh.SetHeroPool != nil,
-			CanEditRules:   sh.SetItemRules != nil,
-			LastDecision:   -1, // no decision logged yet; 0 is a real step number
+			CanEditPool:      sh.SetHeroPool != nil,
+			CanEditRules:     sh.SetItemRules != nil,
+			LastDecision:     -1, // no decision logged yet; 0 is a real step number
 		},
 		Board:  boardDTO{RadiantPicks: []int{}, RadiantBans: []int{}, DirePicks: []int{}, DireBans: []int{}},
 		Heroes: []session.Hero{},
@@ -450,6 +456,7 @@ func (s *Server) snapshot(ring bool) stateDTO {
 		Auto:   autoStatus(sh.Auto),
 		Ring:   ring,
 		Share:  s.shareView(),
+		Team:   s.teamView(),
 	}
 	if sess == nil {
 		return st
@@ -643,7 +650,6 @@ func (s *Server) doFirstPick(*http.Request) (string, error) {
 	return "first-pick → " + nf.String() + " (draft reset)", nil
 }
 
-
 // handleDeclogReview returns the post-draft survey payload: whether the draft is
 // finished, and which of our steps diverged from the top recommendation.
 func (s *Server) handleDeclogReview(w http.ResponseWriter, r *http.Request) {
@@ -758,7 +764,6 @@ func (s *Server) doOutcomeResolve(*http.Request) (string, error) {
 	// OpenDota agent retired: map.win_team from GSI closes the log when the match ends.
 	return "итог возьмём из GSI (win_team), когда матч закончится", nil
 }
-
 
 // doLineup sets a captain override on one lineup seat (our or enemy).
 func (s *Server) doLineup(r *http.Request) (string, error) {
