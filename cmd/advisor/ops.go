@@ -1672,7 +1672,7 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 	src := scout.NewOpenDotaSource()
 	// One typed ally should recover the rest of the stack from their recent matches,
 	// same idea as enemy scout via layer 3 — otherwise capability sees a one-row roster.
-	allies := scout.ExpandWithTeammates(ctx, src, resolved, o.windowDays, 4, log)
+	allies := scout.ExpandWithTeammates(ctx, src, resolved, o.windowDays, teammatesWanted(o.outPath, resolved), log)
 	if err := ctx.Err(); err != nil { return "", err }
 	if !scoutHadAnswer(allies) {
 		return "", fmt.Errorf("OpenDota returned no ally scouting data; try again later (previous snapshot preserved)")
@@ -1692,6 +1692,28 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 		return "", err
 	}
 	return fmt.Sprintf("snapshot %s: allies %d players", o.outPath, n), nil
+}
+
+// teammatesWanted avoids repeatedly discovering teammates after the user's
+// current five have already been identified. A negative value disables discovery.
+func teammatesWanted(snapshotPath string, resolved []scout.ResolvedPlayer) int {
+	have := map[int64]bool{}
+	for _, r := range resolved {
+		if r.AccountID > 0 {
+			have[r.AccountID] = true
+		}
+	}
+	if snap, err := scout.LoadSnapshot(snapshotPath); err == nil && snap.Allies != nil {
+		for _, p := range snap.Allies.Players {
+			if p.AccountID > 0 {
+				have[p.AccountID] = true
+			}
+		}
+	}
+	if n := 5 - len(have); n > 0 {
+		return n
+	}
+	return -1
 }
 
 // rememberDiscovered files the teammates layer 3 recovered into the address book,
