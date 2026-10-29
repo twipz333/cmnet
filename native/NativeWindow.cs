@@ -20,18 +20,23 @@ namespace Cmnet.Native;
 public sealed class NativeWindow : Window
 {
     private readonly AdvisorCore core = new();
-    private readonly Brush background = Hex("#101925");
-    private readonly Brush panel = Hex("#1C2939");
-    private readonly Brush soft = Hex("#26364A");
-    private readonly Brush border = Hex("#34465E");
-    private readonly Brush foreground = Hex("#E7E8EA");
-    private readonly Brush muted = Hex("#A0B1C9");
-    private readonly Brush accent = Hex("#E7B65A");
-    private readonly Brush good = Hex("#76C9A6");
+    private readonly Brush background = Hex("#0C131E");
+    private readonly Brush panel = Hex("#172232");
+    private readonly Brush soft = Hex("#202E41");
+    private readonly Brush border = Hex("#344458");
+    private readonly Brush foreground = Hex("#EBF1F6");
+    private readonly Brush muted = Hex("#9DAFC2");
+    private readonly Brush accent = Hex("#70D7CB");
+    private readonly Brush gold = Hex("#E9C37C");
+    private readonly Brush good = Hex("#7DCCA9");
 
     private readonly ContentControl body = new();
     private readonly TextBlock status = new();
     private readonly TextBlock heading = new();
+    private readonly TextBlock subtitle = new();
+    private readonly TextBlock connectionBadge = new();
+    private readonly TextBlock allyMetric = new();
+    private readonly TextBlock enemyMetric = new();
     private readonly Dictionary<string, Button> navigation = new();
     private string page = "Разведка";
     private JsonObject? state;
@@ -71,70 +76,147 @@ public sealed class NativeWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = background;
         Foreground = foreground;
-        FontFamily = new FontFamily("Segoe UI");
+        FontFamily = new FontFamily("Segoe UI Variable Text");
         UseLayoutRounding = true;
         SnapsToDevicePixels = true;
 
         var layout = new Grid();
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(78) });
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(40) });
         Content = layout;
 
-        var top = new DockPanel { Margin = new Thickness(20, 16, 20, 14), LastChildFill = true };
-        var brand = Text("cmnet", 28, FontWeights.Bold, accent);
-        brand.Margin = new Thickness(0, 0, 20, 0);
-        DockPanel.SetDock(brand, Dock.Left);
+        // Compact command-center header; keep the Windows frame for native
+        // window snapping, accessibility, focus and platform conventions.
+        var top = new Grid { Background = Hex("#121D2B") };
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(230) });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var brand = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(22, 0, 0, 0) };
+        var emblem = new Border { Width = 42, Height = 42, CornerRadius = new CornerRadius(12),
+            Background = Hex("#254F53"), BorderBrush = Hex("#44857F"), BorderThickness = new Thickness(1) };
+        emblem.Child = Text("◇", 30, FontWeights.SemiBold, accent);
+        ((TextBlock)emblem.Child).HorizontalAlignment = HorizontalAlignment.Center;
+        brand.Children.Add(emblem);
+        var identity = new StackPanel { Margin = new Thickness(12, 3, 0, 0) };
+        identity.Children.Add(Text("CMNET", 19, FontWeights.Bold));
+        identity.Children.Add(Text("DRAFT INTELLIGENCE", 10, FontWeights.SemiBold, muted));
+        brand.Children.Add(identity);
         top.Children.Add(brand);
-        var badge = Text("NATIVE  ·  Windows", 12, FontWeights.SemiBold, muted);
-        badge.VerticalAlignment = VerticalAlignment.Center;
-        DockPanel.SetDock(badge, Dock.Left);
-        top.Children.Add(badge);
-        heading.FontSize = 24;
-        heading.FontWeight = FontWeights.SemiBold;
-        heading.HorizontalAlignment = HorizontalAlignment.Right;
-        heading.VerticalAlignment = VerticalAlignment.Center;
-        top.Children.Add(heading);
+
+        var pageHeading = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(22, 0, 0, 0) };
+        heading.FontSize = 20; heading.FontWeight = FontWeights.SemiBold; heading.Foreground = foreground;
+        subtitle.FontSize = 12; subtitle.Foreground = muted; subtitle.Margin = new Thickness(0, 3, 0, 0);
+        pageHeading.Children.Add(heading);
+        pageHeading.Children.Add(subtitle);
+        Grid.SetColumn(pageHeading, 1);
+        top.Children.Add(pageHeading);
+
+        var connection = new Border { Background = Hex("#1B3040"), BorderBrush = Hex("#315467"),
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(100),
+            Padding = new Thickness(13, 8, 13, 8), Margin = new Thickness(10, 0, 24, 0),
+            VerticalAlignment = VerticalAlignment.Center };
+        connectionBadge.Text = "●  Подключение…";
+        connectionBadge.Foreground = accent;
+        connectionBadge.FontSize = 12;
+        connectionBadge.FontWeight = FontWeights.SemiBold;
+        connection.Child = connectionBadge;
+        Grid.SetColumn(connection, 2);
+        top.Children.Add(connection);
         layout.Children.Add(top);
 
-        var inner = new Grid();
-        inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(192) });
-        inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(inner, 1);
-        layout.Children.Add(inner);
+        var content = new Grid();
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(content, 1);
+        layout.Children.Add(content);
 
-        var sidebar = new StackPanel { Margin = new Thickness(12, 14, 8, 12) };
+        var aside = new Border { Background = Hex("#111B29"), BorderBrush = Hex("#243247"),
+            BorderThickness = new Thickness(0, 0, 1, 0) };
+        var sidebar = new StackPanel { Margin = new Thickness(14, 28, 14, 16) };
+        var sectionLabel = Text("РАБОЧЕЕ ПРОСТРАНСТВО", 10, FontWeights.Bold, muted);
+        sectionLabel.Margin = new Thickness(10, 0, 0, 18);
+        sidebar.Children.Add(sectionLabel);
+        var icons = new Dictionary<string, string>
+        {
+            ["Разведка"] = "◎", ["Драфт"] = "◇", ["Данные"] = "▤",
+            ["Настройки"] = "⚙", ["Друзья"] = "♧"
+        };
         foreach (var name in new[] { "Разведка", "Драфт", "Данные", "Настройки", "Друзья" })
         {
-            var item = Btn(name, async () => await OpenPageAsync(name));
+            var item = Btn($"{icons[name]}   {name}", async () => await OpenPageAsync(name), true);
             item.HorizontalContentAlignment = HorizontalAlignment.Left;
-            item.Margin = new Thickness(0, 0, 0, 9);
-            item.Padding = new Thickness(15, 14, 12, 14);
+            item.Margin = new Thickness(0, 0, 0, 7);
+            item.Padding = new Thickness(15, 13, 12, 13);
+            item.FontSize = 14;
+            item.MinHeight = 46;
+            item.BorderThickness = new Thickness(1);
             navigation[name] = item;
             sidebar.Children.Add(item);
         }
-        var sideScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = sidebar };
-        inner.Children.Add(sideScroll);
+        var divider = new Border { Height = 1, Background = border, Margin = new Thickness(8, 22, 8, 17) };
+        sidebar.Children.Add(divider);
+        var shortcut = Text("БЫСТРЫЕ КЛАВИШИ", 10, FontWeights.Bold, muted);
+        shortcut.Margin = new Thickness(10, 0, 0, 12);
+        sidebar.Children.Add(shortcut);
+        sidebar.Children.Add(Text("Ctrl + 1…5   Разделы", 12, color: muted));
+        sidebar.Children.Add(Text("Ctrl + R      Обновить", 12, color: muted));
+        aside.Child = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = sidebar };
+        content.Children.Add(aside);
 
-        var main = Surface(body, new Thickness(0, 0, 14, 10));
+        var main = Surface(body, new Thickness(12, 13, 17, 11));
+        main.Padding = new Thickness(24, 21, 24, 20);
+        main.CornerRadius = new CornerRadius(18);
         Grid.SetColumn(main, 1);
-        inner.Children.Add(main);
+        content.Children.Add(main);
 
+        var footer = new Grid { Background = Hex("#101A27") };
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         status.Foreground = muted;
-        status.FontSize = 12;
-        status.Text = "Запускаем Go-ядро";
-        toast.Foreground = accent;
-        toast.FontSize = 12;
-        var footer = new DockPanel { Margin = new Thickness(24, 2, 24, 12) };
-        DockPanel.SetDock(status, Dock.Left);
+        status.FontSize = 11;
+        status.Margin = new Thickness(22, 0, 0, 0);
+        status.VerticalAlignment = VerticalAlignment.Center;
+        status.TextTrimming = TextTrimming.CharacterEllipsis;
+        status.Text = "Запускаем Go-ядро…";
         footer.Children.Add(status);
-        toast.HorizontalAlignment = HorizontalAlignment.Right;
+        toast.Foreground = gold;
+        toast.FontSize = 11;
+        toast.Margin = new Thickness(12, 0, 23, 0);
+        toast.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(toast, 1);
         footer.Children.Add(toast);
         Grid.SetRow(footer, 2);
         layout.Children.Add(footer);
 
+        PreviewKeyDown += async (_, e) =>
+        {
+            if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+            var n = e.Key switch
+            {
+                Key.D1 or Key.NumPad1 => 0, Key.D2 or Key.NumPad2 => 1,
+                Key.D3 or Key.NumPad3 => 2, Key.D4 or Key.NumPad4 => 3,
+                Key.D5 or Key.NumPad5 => 4, _ => -1
+            };
+            var pages = new[] { "Разведка", "Драфт", "Данные", "Настройки", "Друзья" };
+            if (n >= 0) { e.Handled = true; await OpenPageAsync(pages[n]); }
+            else if (e.Key == Key.R)
+            {
+                e.Handled = true;
+                if (page == "Разведка") await LoadScoutAsync();
+                else if (page == "Данные") await LoadDataAsync();
+                else if (page == "Настройки") await LoadSettingsAsync();
+            }
+        };
+
         core.StateReceived += snapshot => Dispatcher.BeginInvoke(() => ApplyState(snapshot));
-        core.ConnectionChanged += message => Dispatcher.BeginInvoke(() => status.Text = message);
+        core.ConnectionChanged += message => Dispatcher.BeginInvoke(() =>
+        {
+            connectionBadge.Text = message == "Go-ядро подключено" ? "●  Локально · онлайн" : "●  " + message;
+            connectionBadge.Foreground = message == "Go-ядро подключено" ? good : gold;
+        });
         Loaded += async (_, _) => await BootAsync(initialDataDirectory);
         Closed += (_, _) => core.Stop();
         RenderPage();
@@ -148,9 +230,10 @@ public sealed class NativeWindow : Window
     {
         var b = new Button
         {
-            Content = label, Cursor = Cursors.Hand, Padding = new Thickness(12, 9, 12, 9),
-            Background = subtle ? soft : panel, Foreground = foreground,
-            BorderBrush = border, BorderThickness = new Thickness(1), MinHeight = 36
+            Content = label, Cursor = Cursors.Hand, Padding = new Thickness(14, 10, 14, 10),
+            Background = subtle ? soft : Hex("#24555D"), Foreground = foreground,
+            BorderBrush = subtle ? border : Hex("#397D81"),
+            BorderThickness = new Thickness(1), MinHeight = 38
         };
         b.Click += async (_, _) =>
         {
@@ -164,7 +247,7 @@ public sealed class NativeWindow : Window
     private Border Surface(UIElement child, Thickness margin)
         => new() { Background = panel, CornerRadius = new CornerRadius(14),
             BorderBrush = border, BorderThickness = new Thickness(1),
-            Margin = margin, Padding = new Thickness(18), Child = child };
+            Margin = margin, Padding = new Thickness(20), Child = child };
     private StackPanel Stack(params UIElement[] children)
     {
         var s = new StackPanel();
@@ -179,8 +262,8 @@ public sealed class NativeWindow : Window
     };
     private void Header(StackPanel host, string label)
     {
-        var h = Text(label, 20, FontWeights.SemiBold);
-        h.Margin = new Thickness(0, 5, 0, 13);
+        var h = Text(label, 18, FontWeights.SemiBold);
+        h.Margin = new Thickness(0, 8, 0, 15);
         host.Children.Add(h);
     }
     private static JsonNode? Obj(JsonNode? node, params string[] keys) => node.At(keys);
@@ -224,10 +307,21 @@ public sealed class NativeWindow : Window
     private void RenderPage()
     {
         heading.Text = page;
+        subtitle.Text = page switch
+        {
+            "Разведка" => "Команды, игроки и информация о противниках",
+            "Драфт" => "Предложения модели и управление выбором героев",
+            "Данные" => "Корпус матчей и обучение модели",
+            "Настройки" => "Параметры движка и интеграции",
+            _ => "Совместная работа и приглашения"
+        };
         foreach (var item in navigation)
         {
-            item.Value.Background = item.Key == page ? Hex("#364862") : panel;
-            item.Value.BorderBrush = item.Key == page ? accent : border;
+            bool active = item.Key == page;
+            item.Value.Background = active ? Hex("#284551") : Hex("#111B29");
+            item.Value.BorderBrush = active ? Hex("#538B88") : Hex("#111B29");
+            item.Value.Foreground = active ? accent : foreground;
+            item.Value.FontWeight = active ? FontWeights.Bold : FontWeights.Medium;
         }
         body.Content = page switch
         {
