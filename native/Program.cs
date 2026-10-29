@@ -160,9 +160,20 @@ public sealed class AdvisorCore : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    // Window shutdown must kill the child synchronously: an async fire-and-forget
+    // cleanup can be abandoned when the WPF process exits.
+    public void Stop()
     {
         streamCancellation?.Cancel();
+        if (child is { HasExited: false })
+        {
+            try { child.Kill(entireProcessTree: true); } catch (Exception) { }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Stop();
         if (streamTask != null)
         {
             try { await streamTask.WaitAsync(TimeSpan.FromSeconds(2)); } catch (Exception) { }
