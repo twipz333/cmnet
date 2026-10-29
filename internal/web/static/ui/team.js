@@ -13,6 +13,20 @@ const SIDES = {
 const ROLE_HINT = { 1: 'лёгкая линия', 2: 'центр', 3: 'сложная линия', 4: 'роумер', 5: 'полная поддержка' };
 
 let rerender = () => {};
+// Group clicks on several roster positions into one network request per side.
+const scoutBatch = { our: new Set(), enemy: new Set() };
+const scoutTimers = {};
+function queueScout(side, ids) {
+  if (!store.state?.meta?.[SIDES[side].can]) return;
+  ids.filter(Boolean).forEach((id) => scoutBatch[side].add(id));
+  clearTimeout(scoutTimers[side]);
+  scoutTimers[side] = setTimeout(() => {
+    const pending = [...scoutBatch[side]];
+    scoutBatch[side].clear();
+    if (pending.length) post(SIDES[side].scoutPath, { players: pending.join(',') });
+  }, 650);
+}
+
 let choosing = null; // {side, pos}: the free card whose player list is open
 let picked = null; // {side, accountId}: chosen on the bench, waiting for a card
 const pending = {}; // side -> {pos, before:Set}: a profile link being scouted for a seat
@@ -212,7 +226,7 @@ function seatCard(side, pos, acct, byId, book, canEdit, s, ctx) {
   });
   if (p?.topHeroes?.length) card.append(heroes);
   else if (!p && s.meta[SIDES[side].can]) {
-    card.append(button('Разведать', 'btn quiet small', () => post(SIDES[side].scoutPath, { players: String(acct) })));
+    card.append(button('Разведать', 'btn quiet small', () => queueScout(side, [acct])));
   }
 
   if (canEdit) {
@@ -254,7 +268,7 @@ function chooser(side, pos, byId, book, s, ctx) {
     const li = el('li');
     const b = button('', 'choose-btn', async () => {
       await seat(side, pos, c.id);
-      if (!byId.has(c.id) && s.meta[SIDES[side].can]) post(SIDES[side].scoutPath, { players: String(c.id) });
+      if (!byId.has(c.id)) queueScout(side, [c.id]);
     });
     b.append(avatar(c.id, c.name, c.avatarVersion), el('span', 'choose-name', c.name), el('span', 'choose-note', c.note));
     li.append(b);
@@ -280,6 +294,8 @@ function chooser(side, pos, byId, book, s, ctx) {
       if (!ref) { input.focus(); return; }
       if (/^\d+$/.test(ref) && Number(ref) > 0 && Number(ref) < 2 ** 32) {
         await seat(side, pos, Number(ref)); // a bare account id: seat it now
+        queueScout(side, [Number(ref)]);
+        return;
       } else {
         pending[side] = { pos, before: new Set([...byId.keys()]) };
         choosing = null;
