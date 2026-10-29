@@ -37,9 +37,16 @@ func BuildLayer2(ctx context.Context, src Source, players []ResolvedPlayer, wind
 			break
 		}
 		pa := PlayerAffinity{AccountID: p.AccountID, Nickname: p.Nickname, Resolved: p.Resolved, Discovered: p.Discovered}
+		if !p.Resolved {
+			pa.Status = "unresolved"
+		}
 		if p.Resolved {
 			if heroes, err := src.PlayerHeroes(ctx, p.AccountID, windowDays); err == nil {
 				pa.Heroes = heroAffinities(heroes)
+				pa.Status = "ok"
+				if len(pa.Heroes) == 0 {
+					pa.Status = "no_stats"
+				}
 				careerGames := 0
 				if career, err := src.PlayerHeroes(ctx, p.AccountID, 0); err == nil {
 					careerGames = sumHeroGames(career)
@@ -52,7 +59,9 @@ func BuildLayer2(ctx context.Context, src Source, players []ResolvedPlayer, wind
 				progress(fmt.Sprintf("layer 2: player %d/%d (account %d) — %d heroes",
 					i+1, len(players), p.AccountID, len(pa.Heroes)))
 			} else {
-				pa.Resolved = false // fetch failed -> treat as unresolved
+				// The account ID was successfully resolved; an API failure is not
+				// proof that the Steam account is missing or private.
+				pa.Status = "error"
 				progress(fmt.Sprintf("layer 2: player %d/%d (account %d) — fetch failed: %v",
 					i+1, len(players), p.AccountID, err))
 			}
