@@ -56,6 +56,8 @@ public sealed class NativeWindow : Window
     private string heroCatalogKey = "";
     private TextBlock? dataActivity;
     private TextBlock? shareStatus;
+    private StackPanel? configHost;
+    private readonly List<ConfigField> configEditors = new();
     private readonly TextBlock toast = new();
 
     public NativeWindow()
@@ -625,33 +627,118 @@ public sealed class NativeWindow : Window
     }
     private UIElement BuildSettingsView()
     {
+        configEditors.Clear();
         var host = new StackPanel();
         Header(host, "Настройки Go-ядра");
-        host.Children.Add(Text("Используются данные существующего cmnet; новую базу не создаём и не переносим.",13,color:muted));
-        var dir = Text(core.DataDirectory, 13, color:accent);
-        dir.Margin = new Thickness(0,12,0,14);
+        host.Children.Add(Text("Редактирование config.yaml через API Go-ядра. Изменённые поля автоматически включаются.", 13, color: muted));
+        var dir = Text(core.DataDirectory, 13, color: accent);
+        dir.Margin = new Thickness(0, 12, 0, 14);
         host.Children.Add(dir);
-        host.Children.Add(Btn("Открыть папку данных", () =>
+        var buttons = new WrapPanel();
+        buttons.Children.Add(Btn("Открыть папку данных", () =>
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{core.DataDirectory}\"") { UseShellExecute=true });
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{core.DataDirectory}\"") { UseShellExecute = true });
             return Task.CompletedTask;
         }, true));
-        var details = new TextBlock { Name="ConfigSummary", Margin = new Thickness(0,20,0,0),
-            Foreground=foreground, TextWrapping=TextWrapping.Wrap, FontFamily=new FontFamily("Consolas") };
-        host.Children.Add(details);
+        buttons.Children.Add(Btn("Сохранить настройки", SaveSettingsAsync));
+        buttons.Children.Add(Btn("Отменить изменения", LoadSettingsAsync, true));
+        host.Children.Add(buttons);
+        configHost = new StackPanel { Margin = new Thickness(0, 22, 0, 0) };
+        host.Children.Add(configHost);
         return Scroll(host);
     }
+
     private async Task LoadSettingsAsync()
     {
-        if (core.BaseUri == null || page != "Настройки") return;
+        if (core.BaseUri == null || page != "Настройки" || configHost == null) return;
         try
         {
             var cfg = await core.GetAsync("/api/config");
-            var text = cfg.At("config")?.ToJsonString(new System.Text.Json.JsonSerializerOptions{WriteIndented=true}) ?? "Конфигурация недоступна";
-            var t = FindNamedText(body.Content as DependencyObject,"ConfigSummary");
-            if (t!=null) t.Text = text.Length>9000 ? text[..9000]+"…" : text;
+            configEditors.Clear();
+            configHost.Children.Clear();
+            var value = cfg.At("config");
+            if (value == null) { configHost.Children.Add(Text(cfg.At("error").S("Конфигурация недоступна"), 15, color: accent)); return; }
+            foreach (var section in value.At("sections").Items())
+            {
+                var name = section.At("name").S();
+                var box = new StackPanel { Margin = new Thickness(0, 0, 0, 20) };
+                Header(box, section.At("title").S(name));
+                foreach (var field in section.At("fields").Items())
+                {
+                    var key = field.At("key").S();
+                    if (key.StartsWith("alert-", StringComparison.Ordinal)) continue;
+                    var type = field.At("type").S();
+                    var editor = new ConfigField { Section = name, Key = key, Type = type };
+                    var row = new Grid { Margin = new Thickness(0, 6, 0, 6) };
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    var enabled = new CheckBox { IsChecked = field.At("set").B(), VerticalAlignment = VerticalAlignment.Center,
+                        ToolTip = "Записать значение в config.yaml" };
+                    editor.Enabled = enabled;
+                    row.Children.Add(enabled);
+                    var label = Text(key, 13);
+                    Grid.SetColumn(label, 1); row.Children.Add(label);
+                    FrameworkElement control;
+                    if (type == "bool")
+                    {
+                        var checkbox = new CheckBox { IsChecked = field.At("value").B(), VerticalAlignment = VerticalAlignment.Center };
+                        checkbox.Checked += (_, _) => enabled.IsChecked = true;
+                        checkbox.Unchecked += (_, _) => enabled.IsChecked = true;
+                        editor.Control = checkbox;
+                        control = checkbox;
+                    }
+                    else
+                    {
+                        var input = new TextBox { Text = field.At("value").S(), Padding = new Thickness(7),
+                            ToolTip = field.At("help").S(), MinWidth = 130 };
+                        input.TextChanged += (_, _) => enabled.IsChecked = true;
+                        editor.Control = input;
+                        control = input;
+                    }
+                    Grid.SetColumn(control, 2); row.Children.Add(control);
+                    box.Children.Add(row);
+                    configEditors.Add(editor);
+                }
+                if (box.Children.Count > 1) configHost.Children.Add(Surface(box, new Thickness(0, 0, 0, 12)));
+            }
         }
-        catch (Exception ex) { toast.Text = ex.Message; }
+        catch (Exception ex) { toast.Text = "Настройки: " + ex.Message; }
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        var sections = configEditors.GroupBy(x => x.Section).Select(g => new
+        {
+            name = g.Key,
+            fields = g.Select(f => new
+            {
+                key = f.Key,
+                set = f.Enabled?.IsChecked == true,
+                value = f.Value()
+            }).ToArray()
+        }).ToArray();
+        await RunAction("/api/config/save", new { sections });
+        await LoadSettingsAsync();
+        toast.Text = "Настройки сохранены. Для части изменений требуется перезапуск.";
+    }
+
+    private sealed class ConfigField
+    {
+        public string Section { get; init; } = "";
+        public string Key { get; init; } = "";
+        public string Type { get; init; } = "";
+        public CheckBox? Enabled { get; set; }
+        public FrameworkElement? Control { get; set; }
+        public object Value()
+        {
+            if (Control is CheckBox c) return c.IsChecked == true;
+            var input = (Control as TextBox)?.Text ?? "";
+            if (Type == "int") return int.TryParse(input, out var n) ? n : 0;
+            if (Type == "float") return double.TryParse(input, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0d;
+            return input;
+        }
     }
 
     private UIElement BuildShareView()
