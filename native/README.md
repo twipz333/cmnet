@@ -1,5 +1,7 @@
 # cmnet Native Desktop (Windows, Preview)
 
+> Product target and release acceptance: [PRODUCT-BAR](../docs/PRODUCT-BAR.md). This preview must not be described as a finished native release.
+
 This is a **true WPF Windows UI**: Windows Presentation Foundation renders controls
 through Windows graphics, with no HTML renderer, Chromium, Tauri or WebView2.
 
@@ -11,7 +13,7 @@ User data remains in the **same** cmnet folder used by Electron (`desktop.json`
 
 ## Build / run
 
-On Windows with the .NET 8 SDK and Go 1.26:
+On Windows with the .NET 10 SDK and Go 1.26 (for building; end users need neither SDK):
 
 ```powershell
 $env:CGO_ENABLED = '0'
