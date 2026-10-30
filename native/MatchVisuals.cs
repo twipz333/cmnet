@@ -34,15 +34,6 @@ public sealed partial class NativeWindow
         var direBans = state.At("board", "direBans").Items()
             .Select(x => x.I()).Where(x => x > 0).ToArray();
 
-        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 5),
-            LastChildFill = true };
-        var badge = Pill("LIVE BOARD", Hex("#163B3B"), accent);
-        DockPanel.SetDock(badge, Dock.Right);
-        header.Children.Add(badge);
-        header.Children.Add(Text("ПИКИ И БАНЫ  /  CAPTAINS MODE", 10,
-            FontWeights.Bold, muted));
-        draftBoardHost.Children.Add(header);
-
         var teams = new Grid();
         teams.ColumnDefinitions.Add(new ColumnDefinition {
             Width = new GridLength(1, GridUnitType.Star) });
@@ -75,7 +66,7 @@ public sealed partial class NativeWindow
         {
             var heroId = i < picks.Length ? picks[i] : 0;
             var box = new Border {
-                Background = Hex("#101D2B"),
+                Background = (Brush)FindResource("CanvasBrush"),
                 BorderBrush = heroId > 0 ? color : border,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
@@ -86,7 +77,12 @@ public sealed partial class NativeWindow
             if (heroId > 0)
             {
                 var frame = new Grid();
-                frame.Children.Add(HeroPortrait(heroId, 50, 35));
+                var pickPortrait = HeroPortrait(heroId, 50, 35);
+                pickPortrait.Width = double.NaN;
+                if (pickPortrait is Grid portraitGrid)
+                    foreach (var image in portraitGrid.Children.OfType<Image>()) image.Width = double.NaN;
+                pickPortrait.HorizontalAlignment = HorizontalAlignment.Stretch;
+                frame.Children.Add(pickPortrait);
                 box.Child = frame;
                 box.ToolTip = HeroName(heroId);
             }
@@ -122,8 +118,8 @@ public sealed partial class NativeWindow
         host.Children.Add(banStrip);
         return new Border {
             Child = host,
-            Background = Hex("#122235"),
-            BorderBrush = Hex("#304155"),
+            Background = (Brush)FindResource("PanelBrush"),
+            BorderBrush = (Brush)FindResource("BorderBrush"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(9, 8, 6, 8)
@@ -132,12 +128,12 @@ public sealed partial class NativeWindow
 
     private void RefreshScoutSignals()
     {
-        if (scoutSignalHost == null || page != "Разведка" || state == null) return;
+        if (scoutSignalHost == null || page != "Разведка" || state == null || stats == null) return;
         var ids = state.At("team", "enemy").Items().Select(x => x.L()).Take(5).ToArray();
         var reports = stats.At("stats", "enemyPlayers").Items().ToArray();
         var key = string.Join("|", ids) + "|" +
-            string.Join("|", reports.Select(p => p.ToJsonString())) + "|" +
-            players?.ToJsonString() + "|" + selectedScoutSide + ":" + selectedScoutId;
+            string.Join("|", reports.Select(p => p?.ToJsonString() ?? "")) + "|" +
+            (players?.ToJsonString() ?? "") + "|" + compactScout + "|" + selectedScoutSide + ":" + selectedScoutId;
         if (key == scoutSignalKey) return;
         scoutSignalKey = key;
 
@@ -159,7 +155,9 @@ public sealed partial class NativeWindow
         if (scoutFailureCount != null) scoutFailureCount.Text = errors.ToString();
 
         scoutSignalHost.Children.Clear();
-        var cards = new UniformGrid { Rows = 1, Columns = 5 };
+        var cards = new Grid { Name = "OpponentCardGrid" };
+        for (int column = 0; column < 5; column++)
+            cards.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         for (int i = 0; i < 5; i++)
         {
             var id = i < ids.Length ? ids[i] : 0L;
@@ -167,18 +165,18 @@ public sealed partial class NativeWindow
                 reports.FirstOrDefault(p => p.At("accountId").L() == id);
             var source = id == 0 ? "empty" :
                 report?.At("scoutStatus").S("pending") ?? "pending";
-            bool valid = source == "ok";
+            
             bool selected = id > 0 && selectedScoutId == id &&
                 selectedScoutSide == "enemy";
             var tone = source switch {
                 "ok" => good,
-                "error" => Hex("#EF7D88"),
+                "error" => (Brush)FindResource("ErrorBrush"),
                 "no_stats" or "stale" or "unresolved" => gold,
                 _ => muted
             };
             var statusLabel = source switch {
                 "ok" => "ГОТОВО",
-                "no_stats" => "СКРЫТО",
+                "no_stats" => "НЕТ СТАТИСТИКИ",
                 "stale" => "УСТАРЕЛО",
                 "error" => "ОШИБКА",
                 "unresolved" => "НЕ ОПОЗНАН",
@@ -187,15 +185,19 @@ public sealed partial class NativeWindow
             };
             var content = new StackPanel();
             var statusRow = new DockPanel { LastChildFill = true };
-            var seat = Text("POS " + (i + 1), 10, FontWeights.Bold, muted);
+            var seat = Text("#" + (i + 1), 10, FontWeights.Bold, muted);
             DockPanel.SetDock(seat, Dock.Right);
             statusRow.Children.Add(seat);
-            statusRow.Children.Add(Text("● " + statusLabel, 10, FontWeights.Bold, tone));
+            var statusText = Text("● " + statusLabel, 9, FontWeights.SemiBold, tone);
+            statusText.TextWrapping = TextWrapping.NoWrap;
+            statusText.TextTrimming = TextTrimming.CharacterEllipsis;
+            statusText.ToolTip = statusLabel;
+            statusRow.Children.Add(statusText);
             content.Children.Add(statusRow);
 
             var portrait = new Grid { Width = 42, Height = 42, Margin = new Thickness(0, 8, 0, 7) };
             portrait.Children.Add(new Border {
-                Background = Hex("#263E53"), CornerRadius = new CornerRadius(21),
+                Background = (Brush)FindResource("RaisedBrush"), CornerRadius = new CornerRadius(21),
                 Child = new TextBlock {
                     Text = id == 0 ? "?" :
                         (PlayerName(id).Length > 0 ? PlayerName(id).Substring(0, 1).ToUpperInvariant() : "?"),
@@ -219,21 +221,23 @@ public sealed partial class NativeWindow
                 portrait.Children.Add(image);
             }
             portrait.HorizontalAlignment = HorizontalAlignment.Center;
+            portrait.Visibility = compactScout ? Visibility.Collapsed : Visibility.Visible;
             content.Children.Add(portrait);
 
             var name = Text(id == 0 ? "Место пусто" : PlayerName(id),
                 13, FontWeights.Bold, foreground);
+            name.Margin = new Thickness(0, compactScout ? 4 : 0, 0, 0);
             name.TextAlignment = TextAlignment.Center;
             name.TextWrapping = TextWrapping.NoWrap;
             name.TextTrimming = TextTrimming.CharacterEllipsis;
-            name.MaxWidth = 150;
+            name.ToolTip = name.Text;
             content.Children.Add(name);
 
             var strong = report?.At("topHeroes").Items().Take(2).ToArray() ??
                 Array.Empty<System.Text.Json.Nodes.JsonNode?>();
-            var heroList = new StackPanel { Orientation = Orientation.Horizontal,
+            var heroList = new StackPanel { Orientation = Orientation.Horizontal, MinHeight = 26,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 7, 0, 4) };
+                Margin = new Thickness(0, compactScout ? 4 : 7, 0, 4) };
             foreach (var hero in strong)
             {
                 var heroId = hero.At("id").I();
@@ -246,11 +250,21 @@ public sealed partial class NativeWindow
             if (heroList.Children.Count == 0)
                 heroList.Children.Add(Text("Нет героев в выборке", 10, color: muted));
             content.Children.Add(heroList);
+            var top = strong.FirstOrDefault();
+            var observed = top == null ? "Статистика недоступна" :
+                $"{top.At("games").I()} игр · {top.At("winRate").D():P0} побед";
+            var summary = Text(observed, 10, color: muted);
+            summary.TextAlignment = TextAlignment.Center;
+            summary.TextTrimming = TextTrimming.CharacterEllipsis;
+            summary.TextWrapping = TextWrapping.NoWrap;
+            summary.ToolTip = "Статистика первого известного героя: " + observed;
+            content.Children.Add(summary);
 
             var hint = Text(id > 0 ? "Подробнее  ›" : "Назначить в составах",
                 10, FontWeights.SemiBold, id > 0 ? accent : muted);
             hint.HorizontalAlignment = HorizontalAlignment.Center;
             hint.Margin = new Thickness(0, 5, 0, 0);
+            hint.Visibility = compactScout ? Visibility.Collapsed : Visibility.Visible;
             content.Children.Add(hint);
             var account = id;
             var button = Btn("", async () =>
@@ -260,15 +274,16 @@ public sealed partial class NativeWindow
             }, true);
             button.Content = content;
             button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            button.VerticalContentAlignment = VerticalAlignment.Top;
             button.MinWidth = 0;
-            button.Padding = new Thickness(7, 9, 7, 10);
-            button.Margin = new Thickness(0, 0, 6, 0);
-            button.Background = selected ? Hex("#1D4149") : Hex("#172838");
+            button.Padding = new Thickness(7, compactScout ? 6 : 9, 7, compactScout ? 6 : 10);
+            button.Margin = new Thickness(0, 0, i == 4 ? 0 : 6, 0);
+            button.Background = selected ? (Brush)FindResource("SelectedBrush") : (Brush)FindResource("PanelBrush");
             button.BorderBrush = selected ? accent : border;
             button.ToolTip = id > 0 ? "Профиль Steam account ID: " + id :
                 "Добавить игрока можно в «Управление составами»";
             button.IsEnabled = id > 0;
-            cards.Children.Add(button);
+            Grid.SetColumn(button, i); cards.Children.Add(button);
         }
         scoutSignalHost.Children.Add(cards);
         if (tacticalInsights == null) return;
@@ -291,7 +306,13 @@ public sealed partial class NativeWindow
             "Без подтверждённых данных: " + (found - ready) +
             ". Не считай отсутствие статистики слабостью игрока.",
             muted);
-        var notice = Text("CMNET не выводит риск, рейтинг или уверенность без достоверной метрики.",
+        var overlaps = visible.SelectMany(p => p!.At("topHeroes").Items()
+                .Select(h => h.At("id").I()).Where(id => id > 0).Distinct())
+            .GroupBy(id => id).Where(g => g.Count() > 1).OrderByDescending(g => g.Count())
+            .Select(g => HeroName(g.Key) + " · " + g.Count() + " игроков").Take(3).ToArray();
+        TacticalInsightRow("↔", "Пересечения пулов",
+            overlaps.Length == 0 ? "В доступной выборке общие герои не найдены" : string.Join(", ", overlaps), accent);
+        var notice = Text("Статистика ограничена доступной выборкой источника.",
             11, color: muted);
         notice.Margin = new Thickness(0, 12, 0, 0);
         tacticalInsights.Children.Add(notice);

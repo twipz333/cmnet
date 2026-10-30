@@ -66,3 +66,10 @@ bin/
 decisions.jsonl
 alerts.yaml
 tmp-*
+
+# Native build and local visual QA
+native/obj/
+native/out/
+.artifacts/
+native/ui-snapshots/
+native/qa-audit/
