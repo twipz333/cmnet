@@ -254,15 +254,15 @@ public sealed partial class NativeWindow
         root.Children.Add(TacticalPanel(draftBoardHost, new Thickness(0, 0, 0, 10), true));
 
         var workspace = new Grid();
-        workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(222) });
+        workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(169) });
         workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(228) });
+        workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(195) });
         for (int i = 0; i < 3; i++)
             workspace.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var recommendations = new StackPanel();
         recommendations.Children.Add(Text("RECOMMENDED", 10, FontWeights.Bold, accent));
-        var recTitle = Text("Рекомендации", 16, FontWeights.Bold);
+        var recTitle = Text("Рекомендации", 15, FontWeights.Bold);
         recTitle.Margin = new Thickness(0, 6, 0, 6);
         recommendations.Children.Add(recTitle);
         recommendations.Children.Add(Text("Оценки модели · без выдуманных процентов",
@@ -292,7 +292,7 @@ public sealed partial class NativeWindow
         filterHeading.Children.Add(heroResultsCount);
         var poolTitle = new StackPanel();
         poolTitle.Children.Add(Text("HERO POOL", 10, FontWeights.Bold, accent));
-        var mainLabel = Text("Каталог героев", 16, FontWeights.Bold);
+        var mainLabel = Text("Каталог героев", 15, FontWeights.Bold);
         mainLabel.Margin = new Thickness(0, 6, 0, 0);
         poolTitle.Children.Add(mainLabel);
         filterHeading.Children.Add(poolTitle);
@@ -355,7 +355,7 @@ public sealed partial class NativeWindow
 
         workspace.SizeChanged += (_, _) =>
         {
-            bool compact = workspace.ActualWidth < 960;
+            bool compact = workspace.ActualWidth < 690;
             if (compact)
             {
                 workspace.ColumnDefinitions[0].Width = new GridLength(0);
@@ -390,7 +390,7 @@ public sealed partial class NativeWindow
     {
         var stack = new StackPanel();
         stack.Children.Add(HeroPortrait(id, 67, 42));
-        var title = Text(HeroName(id), 10, FontWeights.SemiBold);
+        var title = Text(HeroName(id), 9, FontWeights.SemiBold);
         title.Width = 67;
         title.TextTrimming = TextTrimming.CharacterEllipsis;
         title.TextWrapping = TextWrapping.NoWrap;
@@ -446,7 +446,7 @@ public sealed partial class NativeWindow
         }
 
         var selected = selectedHeroId;
-        tacticalSelection.Children.Add(HeroPortrait(selected, 176, 100));
+        tacticalSelection.Children.Add(HeroPortrait(selected, 157, 91));
         var heroName = Text(HeroName(selected), 16, FontWeights.Bold);
         heroName.Margin = new Thickness(0, 10, 0, 7);
         tacticalSelection.Children.Add(heroName);

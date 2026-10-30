@@ -197,7 +197,8 @@ public sealed partial class NativeWindow
             portrait.Children.Add(new Border {
                 Background = Hex("#263E53"), CornerRadius = new CornerRadius(21),
                 Child = new TextBlock {
-                    Text = id == 0 ? "?" : (i + 1).ToString(),
+                    Text = id == 0 ? "?" :
+                        (PlayerName(id).Length > 0 ? PlayerName(id).Substring(0, 1).ToUpperInvariant() : "?"),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     Foreground = muted, FontSize = 17, FontWeight = FontWeights.Bold

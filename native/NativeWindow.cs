@@ -119,7 +119,7 @@ public sealed partial class NativeWindow : Window
         Content = layout;
 
         var top = new Grid { Background = Hex("#101927") };
-        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(168) });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(148) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -180,7 +180,7 @@ public sealed partial class NativeWindow : Window
         layout.Children.Add(top);
 
         var content = new Grid();
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(168) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(148) });
         content.ColumnDefinitions.Add(new ColumnDefinition {
             Width = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(content, 1);
@@ -244,9 +244,8 @@ public sealed partial class NativeWindow : Window
             Margin = new Thickness(10, 13, 10, 11)
         });
         var tip = new StackPanel();
-        tip.Children.Add(Text("БЫСТРЫЙ ДОСТУП", 10, FontWeights.Bold, accent));
-        var tipText = Text("Ctrl + 1…5    разделы\nCtrl + F       поиск героев\nCtrl + R       обновить данные",
-            11, color: muted);
+        tip.Children.Add(Text("ЛОКАЛЬНЫЙ КЛИЕНТ", 9, FontWeights.Bold, accent));
+        var tipText = Text("Без облачного сервера\nCtrl + 1…5 · разделы", 10, color: muted);
         tipText.Margin = new Thickness(0, 10, 0, 0);
         tip.Children.Add(tipText);
         sidebar.Children.Add(new Border {
@@ -334,6 +333,7 @@ public sealed partial class NativeWindow : Window
     }
 
     private static Brush Hex(string code) => (Brush)new BrushConverter().ConvertFromString(code)!;
+    private static Color HexColor(string code) => (Color)ColorConverter.ConvertFromString(code)!;
     private TextBlock Text(string value, double size = 14, FontWeight? weight = null, Brush? color = null)
         => new() { Text = value, FontSize = size, FontWeight = weight ?? FontWeights.Normal,
             Foreground = color ?? foreground, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
@@ -970,10 +970,17 @@ public sealed partial class NativeWindow : Window
     private FrameworkElement HeroPortrait(int id, double width, double height)
     {
         var host = new Grid { Width = width, Height = height, ClipToBounds = true };
+        var name = HeroName(id);
+        var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var monogram = words.Length > 1
+            ? string.Concat(words.Take(2).Select(w => w.Substring(0, 1)))
+            : name.Substring(0, Math.Min(2, name.Length));
         var fallback = new Border
         {
-            Background = Hex("#20384A"),
-            Child = Text(id.ToString(), 11, FontWeights.Bold, muted)
+            Background = new LinearGradientBrush(HexColor("#29465A"),
+                HexColor("#142534"), 35),
+            Child = Text(monogram.ToUpperInvariant(), Math.Min(19, height * 0.35),
+                FontWeights.Bold, Hex("#9CBBC8"))
         };
         ((TextBlock)fallback.Child).HorizontalAlignment = HorizontalAlignment.Center;
         host.Children.Add(fallback);
