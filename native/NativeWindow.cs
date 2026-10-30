@@ -21,14 +21,14 @@ public sealed partial class NativeWindow : Window
 {
     private readonly AdvisorCore core = new();
     private readonly HeroArtwork artwork;
-    private readonly Brush background = Hex("#0B111B");
-    private readonly Brush panel = Hex("#151F2E");
+    private readonly Brush background = Hex("#0B1117");
+    private readonly Brush panel = Hex("#121A23");
     private readonly Brush soft = Hex("#203044");
-    private readonly Brush border = Hex("#2B3D51");
+    private readonly Brush border = Hex("#263849");
     private readonly Brush foreground = Hex("#F1F5F9");
     private readonly Brush muted = Hex("#A0B0C3");
-    private readonly Brush accent = Hex("#59E0D2");
-    private readonly Brush gold = Hex("#F1BD76");
+    private readonly Brush accent = Hex("#30D9C4");
+    private readonly Brush gold = Hex("#F3B562");
     private readonly Brush good = Hex("#7BD9A5");
 
     private readonly ContentControl body = new();
@@ -1025,40 +1025,37 @@ public sealed partial class NativeWindow : Window
 
     private UIElement RecommendationRow(int id, double score, int rank)
     {
-        // Recommendation scores are model ranks, not calibrated win odds.
-        var row = new Grid { MinHeight = 56 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(31) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
+        var row = new Grid { MinHeight = 44 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(49) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var number = Text(rank.ToString("D2"), 13, FontWeights.Bold, rank == 1 ? accent : muted);
-        row.Children.Add(number);
-        var picture = HeroPortrait(id, 66, 44);
-        Grid.SetColumn(picture, 1);
-        row.Children.Add(picture);
-        var identity = new StackPanel { Margin = new Thickness(6, 3, 0, 0) };
-        var name = Text(HeroName(id), 13, FontWeights.SemiBold);
-        name.TextTrimming = TextTrimming.CharacterEllipsis;
+        var order = Text(rank.ToString("D2"), 11, FontWeights.Bold,
+            rank == 1 ? accent : muted);
+        row.Children.Add(order);
+        var portrait = HeroPortrait(id, 44, 30);
+        Grid.SetColumn(portrait, 1);
+        row.Children.Add(portrait);
+        var content = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        var name = Text(HeroName(id), 12, FontWeights.SemiBold);
         name.TextWrapping = TextWrapping.NoWrap;
-        identity.Children.Add(name);
-        identity.Children.Add(Text("РЕКОМЕНДАЦИЯ МОДЕЛИ", 9, FontWeights.SemiBold, muted));
-        Grid.SetColumn(identity, 2);
-        row.Children.Add(identity);
-        var value = Text(score.ToString("0.000"), 13, FontWeights.Bold, accent);
-        value.Margin = new Thickness(8, 0, 0, 0);
-        Grid.SetColumn(value, 3);
-        row.Children.Add(value);
-        var select = Btn("", async () =>
+        name.TextTrimming = TextTrimming.CharacterEllipsis;
+        content.Children.Add(name);
+        content.Children.Add(Text("Оценка " + score.ToString("0.000"), 10,
+            FontWeights.SemiBold, accent));
+        Grid.SetColumn(content, 2);
+        row.Children.Add(content);
+        var button = Btn("", async () =>
         {
             SelectTacticalHero(id);
             await Task.CompletedTask;
         }, true);
-        select.Content = row;
-        select.Padding = new Thickness(8, 7, 10, 7);
-        select.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        select.ToolTip = "Нажми, чтобы выбрать " + HeroName(id);
-        select.Margin = new Thickness(0, 0, 0, 4);
-        return select;
+        button.Content = row;
+        button.Padding = new Thickness(5, 8, 5, 8);
+        button.Margin = new Thickness(0, 0, 0, 7);
+        button.ToolTip = "Выбрать " + HeroName(id) +
+            " · оценка модели " + score.ToString("0.000");
+        button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        return button;
     }
 
     private UIElement BuildDraftView() => BuildTacticalDraftView();
