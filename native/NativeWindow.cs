@@ -20,6 +20,7 @@ namespace Cmnet.Native;
 public sealed class NativeWindow : Window
 {
     private readonly AdvisorCore core = new();
+    private readonly HeroArtwork artwork;
     private readonly Brush background = Hex("#0C131E");
     private readonly Brush panel = Hex("#172232");
     private readonly Brush soft = Hex("#202E41");
@@ -61,6 +62,14 @@ public sealed class NativeWindow : Window
     private ListBox? draftRecommendations;
     private readonly ObservableCollection<HeroRow> heroRows = new();
     private ListBox? heroList;
+    private WrapPanel? heroGallery;
+    private TextBlock? selectedHeroHint;
+    private int selectedHeroId;
+    private string heroSearchText = "";
+    private StackPanel? scoutDetails;
+    private WrapPanel? scoutedPlayers;
+    private long selectedScoutId;
+    private string selectedScoutSide = "enemy";
     private ListBox? knownPlayersList;
     private readonly List<PlayerRow> knownPlayerRows = new();
     private string knownPlayerFilter = "";
@@ -80,6 +89,7 @@ public sealed class NativeWindow : Window
 
     public NativeWindow(string? initialDataDirectory = null)
     {
+        artwork = new HeroArtwork(() => core.DataDirectory);
         Title = "cmnet · Native Preview";
         Width = 1370;
         Height = 870;
@@ -812,6 +822,87 @@ public sealed class NativeWindow : Window
         host.Children.Add(clear);
         dialog.Content = host;
         dialog.ShowDialog();
+    }
+
+    private string HeroInternalName(int id)
+        => state.At("heroes").Items().FirstOrDefault(h => h.At("id").I() == id).At("name").S();
+
+    private UIElement HeroPortrait(int id, double width, double height)
+    {
+        var host = new Grid { Width = width, Height = height, ClipToBounds = true };
+        var fallback = new Border
+        {
+            Background = Hex("#20384A"),
+            Child = Text(id.ToString(), 11, FontWeights.Bold, muted)
+        };
+        ((TextBlock)fallback.Child).HorizontalAlignment = HorizontalAlignment.Center;
+        host.Children.Add(fallback);
+        var picture = new Image { Stretch = Stretch.UniformToFill, Width = width, Height = height };
+        host.Children.Add(picture);
+        artwork.Bind(picture, id, HeroInternalName(id));
+        return host;
+    }
+
+    private UIElement DraftHeroTile(int id)
+    {
+        var tile = new StackPanel();
+        tile.Children.Add(HeroPortrait(id, 118, 68));
+        var label = Text(HeroName(id), 11, FontWeights.SemiBold);
+        label.TextTrimming = TextTrimming.CharacterEllipsis;
+        label.TextWrapping = TextWrapping.NoWrap;
+        label.Width = 118;
+        label.Margin = new Thickness(0, 6, 0, 0);
+        tile.Children.Add(label);
+        var choose = Btn("", async () =>
+        {
+            selectedHeroId = id;
+            if (selectedHeroHint != null) selectedHeroHint.Text = "Выбран: " + HeroName(id);
+            HighlightDraftSelection();
+            await Task.CompletedTask;
+        }, true);
+        choose.Content = tile;
+        choose.Padding = new Thickness(4);
+        choose.Width = 130;
+        choose.Height = 108;
+        choose.Margin = new Thickness(0, 0, 8, 8);
+        choose.Tag = id;
+        choose.ToolTip = HeroName(id);
+        choose.Background = id == selectedHeroId ? Hex("#2B5A5E") : soft;
+        choose.BorderBrush = id == selectedHeroId ? accent : border;
+        return choose;
+    }
+
+    private void HighlightDraftSelection()
+    {
+        if (heroGallery == null) return;
+        foreach (var button in heroGallery.Children.OfType<Button>())
+        {
+            bool selected = button.Tag is int id && id == selectedHeroId;
+            button.Background = selected ? Hex("#2B5A5E") : soft;
+            button.BorderBrush = selected ? accent : border;
+        }
+    }
+
+    private UIElement RecommendationRow(int id, double score, int rank)
+    {
+        var row = new Grid { MinHeight = 56 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.Children.Add(Text(rank.ToString("D2"), 12, FontWeights.SemiBold, muted));
+        var image = HeroPortrait(id, 70, 42);
+        Grid.SetColumn(image, 1);
+        row.Children.Add(image);
+        var name = Text(HeroName(id), 13, FontWeights.SemiBold);
+        name.Margin = new Thickness(7, 0, 0, 0);
+        Grid.SetColumn(name, 2);
+        row.Children.Add(name);
+        var value = Text(score.ToString("P1"), 13, FontWeights.SemiBold, accent);
+        value.Margin = new Thickness(10, 0, 0, 0);
+        Grid.SetColumn(value, 3);
+        row.Children.Add(value);
+        return row;
     }
 
     private UIElement BuildDraftView()
