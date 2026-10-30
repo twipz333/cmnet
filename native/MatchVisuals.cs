@@ -34,7 +34,7 @@ public sealed partial class NativeWindow
         var direBans = state.At("board", "direBans").Items()
             .Select(x => x.I()).Where(x => x > 0).ToArray();
 
-        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 9),
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 5),
             LastChildFill = true };
         var badge = Pill("LIVE BOARD", Hex("#163B3B"), accent);
         DockPanel.SetDock(badge, Dock.Right);
@@ -70,7 +70,7 @@ public sealed partial class NativeWindow
         host.Children.Add(line);
 
         var slots = new UniformGrid { Rows = 1, Columns = 5,
-            Margin = new Thickness(0, 10, 0, 0) };
+            Margin = new Thickness(0, 7, 0, 0) };
         for (int i = 0; i < 5; i++)
         {
             var heroId = i < picks.Length ? picks[i] : 0;
@@ -80,13 +80,13 @@ public sealed partial class NativeWindow
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Margin = new Thickness(0, 0, 5, 0),
-                Height = 40,
+                Height = 35,
                 ClipToBounds = true
             };
             if (heroId > 0)
             {
                 var frame = new Grid();
-                frame.Children.Add(HeroPortrait(heroId, 52, 40));
+                frame.Children.Add(HeroPortrait(heroId, 50, 35));
                 box.Child = frame;
                 box.ToolTip = HeroName(heroId);
             }
@@ -101,10 +101,10 @@ public sealed partial class NativeWindow
             slots.Children.Add(box);
         }
         host.Children.Add(slots);
-        var banStrip = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
+        var banStrip = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         foreach (var heroId in bans.Take(7))
         {
-            var portrait = HeroPortrait(heroId, 35, 22);
+            var portrait = HeroPortrait(heroId, 30, 18);
             portrait.Opacity = 0.58;
             portrait.ToolTip = "Бан: " + HeroName(heroId);
             var frame = new Border {
@@ -126,7 +126,7 @@ public sealed partial class NativeWindow
             BorderBrush = Hex("#304155"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(12, 11, 7, 12)
+            Padding = new Thickness(9, 8, 6, 8)
         };
     }
 

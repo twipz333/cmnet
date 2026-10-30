@@ -329,17 +329,8 @@ public sealed partial class NativeWindow
         selection.Children.Add(Text("SELECTED HERO", 10, FontWeights.Bold, accent));
         tacticalSelection = new StackPanel { Margin = new Thickness(0, 12, 0, 13) };
         selection.Children.Add(tacticalSelection);
-        var actionTitle = Text("ТЕКУЩИЙ ХОД", 10, FontWeights.Bold, muted);
-        actionTitle.Margin = new Thickness(0, 6, 0, 7);
-        selection.Children.Add(actionTitle);
-        var stateBox = new Border { Background = Hex("#102B3B"), BorderBrush = border,
-            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7),
-            Padding = new Thickness(11, 10, 11, 10) };
-        draftSummary = Text("Ожидание модели…", 12);
-        stateBox.Child = draftSummary;
-        selection.Children.Add(stateBox);
         selectedHeroHint = Text("Герой не выбран", 11, FontWeights.SemiBold, muted);
-        selectedHeroHint.Margin = new Thickness(0, 13, 0, 9);
+        selectedHeroHint.Margin = new Thickness(0, 9, 0, 8);
         selection.Children.Add(selectedHeroHint);
         applyDraftButton = Btn("Применить героя  →", async () =>
         {
@@ -349,6 +340,17 @@ public sealed partial class NativeWindow
         applyDraftButton.IsEnabled = false;
         applyDraftButton.HorizontalContentAlignment = HorizontalAlignment.Center;
         selection.Children.Add(applyDraftButton);
+        var actionTitle = Text("ТЕКУЩИЙ ХОД", 10, FontWeights.Bold, muted);
+        actionTitle.Margin = new Thickness(0, 15, 0, 8);
+        selection.Children.Add(actionTitle);
+        var stateBox = new Border {
+            Background = Hex("#102B3B"), BorderBrush = border,
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7),
+            Padding = new Thickness(10, 9, 10, 9)
+        };
+        draftSummary = Text("Ожидание модели…", 12);
+        stateBox.Child = draftSummary;
+        selection.Children.Add(stateBox);
         var right = TacticalPanel(selection, new Thickness(8, 0, 0, 0));
         Grid.SetColumn(right, 2);
         workspace.Children.Add(right);
@@ -389,9 +391,9 @@ public sealed partial class NativeWindow
     private UIElement TacticalHeroTile(int id)
     {
         var stack = new StackPanel();
-        stack.Children.Add(HeroPortrait(id, 67, 42));
+        stack.Children.Add(HeroPortrait(id, 50, 32));
         var title = Text(HeroName(id), 9, FontWeights.SemiBold);
-        title.Width = 67;
+        title.Width = 50;
         title.TextTrimming = TextTrimming.CharacterEllipsis;
         title.TextWrapping = TextWrapping.NoWrap;
         title.Margin = new Thickness(0, 3, 0, 0);
@@ -404,10 +406,10 @@ public sealed partial class NativeWindow
         button.Content = stack;
         button.Tag = id;
         button.ToolTip = "Выбрать " + HeroName(id);
-        button.Width = 77;
-        button.Height = 73;
-        button.Padding = new Thickness(3);
-        button.Margin = new Thickness(0, 0, 5, 5);
+        button.Width = 58;
+        button.Height = 60;
+        button.Padding = new Thickness(2);
+        button.Margin = new Thickness(0, 0, 3, 4);
         button.Background = id == selectedHeroId ? Hex("#1B5858") : Hex("#172738");
         button.BorderBrush = id == selectedHeroId ? accent : border;
         return button;
