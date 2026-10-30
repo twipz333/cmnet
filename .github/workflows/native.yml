@@ -73,12 +73,18 @@ jobs:
           & native/out/Cmnet.Native.exe --capture-ui native/ui-snapshots
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($file in @('scout.png', 'draft.png')) {
-            if (-not (Test-Path "native/ui-snapshots/$file")) { throw "Missing visual $file" }
+            $candidate = Get-Item "native/ui-snapshots/$file" -ErrorAction Stop
+            if ($candidate.PSIsContainer -or $candidate.Length -lt 2048) {
+              throw "Invalid screenshot $file"
+            }
+            Write-Host "$($candidate.Name) $($candidate.Length) bytes attributes=$($candidate.Attributes)"
           }
+          Get-ChildItem native/ui-snapshots -Force | Format-Table Name, Length, Attributes
       - uses: actions/upload-artifact@v4
         with:
           name: cmnet-wpf-3b-screenshots
-          path: native/ui-snapshots/*.png
+          path: native/ui-snapshots/
+          include-hidden-files: true
           if-no-files-found: error
       - name: Zip native preview with Go sidecar
         shell: pwsh
