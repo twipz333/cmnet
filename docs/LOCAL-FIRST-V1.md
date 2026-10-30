@@ -34,3 +34,23 @@ native/out/Cmnet.Native.exe --smoke-ui
 ```
 
 In addition to CI, a Windows release requires an actual match smoke test, Electron-to-WPF data migration and rollback trial, installer signature verification and UI DPI 100/125/150% checks. A green compile does not prove those release gates.
+
+## Persistent manual session
+
+A manual captain draft is written to the local `draft_sessions` table after
+successful commands, with a monotonic revision and the exact model bundle version.
+At start, a checkpoint replays only when the current bundle version matches.
+An invalid replay does not change the live board. This replay does not claim
+to reconstruct GSI-only live game state, and does not re-emit past decision logs.
+
+Source observations are stored in `source_observations` by actual scout results
+and served immediately by `GET /api/v1/intelligence/observation?accountId=...`.
+A failed OpenDota request is reported as an error, not a private profile.
+The additive endpoint is defined in [OpenAPI v1](api/openapi-v1.yaml).
+
+## Retry contract
+
+Native POSTs carry a random `Idempotency-Key`. Duplicate commands with the
+same route and body are accepted without re-execution during one Go process;
+different payloads sharing a key receive HTTP 409. The 512-key in-memory
+receipt window does **not** guarantee cross-process exactly-once execution.
