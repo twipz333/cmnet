@@ -22,6 +22,28 @@ func newStore(t *testing.T) *cache.Store {
 	return st
 }
 
+// runQueue starts q.Run in the background and registers cleanup that cancels and
+// waits for Run to return before the store Close (registered earlier) runs.
+// Without the wait, Cancel returns immediately while workers still hold the
+// SQLite file, and Windows TempDir RemoveAll flakes.
+func runQueue(t *testing.T, q *Queue) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		q.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Errorf("queue Run did not exit after cancel")
+		}
+	})
+}
+
 // blocker is a handler that reports when it started and waits to be released.
 type blocker struct {
 	started chan struct{}
@@ -74,10 +96,7 @@ func TestDisjointResourcesRunConcurrently(t *testing.T) {
 	syncB, scoutB := newBlocker(), newBlocker()
 	q.Register(Spec{Kind: "sync", Resources: []Resource{ResSyncWatermarks}, Handler: syncB.handle})
 	q.Register(Spec{Kind: "scout", Resources: []Resource{ResSnapshot}, Handler: scoutB.handle})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go q.Run(ctx)
+	runQueue(t, q)
 
 	if _, err := q.Enqueue("sync", PriorityBackground, "", false); err != nil {
 		t.Fatalf("enqueue sync: %v", err)
@@ -100,10 +119,7 @@ func TestSharedResourceSerialises(t *testing.T) {
 	first, second := newBlocker(), newBlocker()
 	q.Register(Spec{Kind: "sync", Resources: []Resource{ResSyncWatermarks}, Handler: first.handle})
 	q.Register(Spec{Kind: "backfill", Resources: []Resource{ResSyncWatermarks}, Handler: second.handle})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go q.Run(ctx)
+	runQueue(t, q)
 
 	q.Enqueue("sync", PriorityBackground, "", false)
 	q.Enqueue("backfill", PriorityBackground, "", false)
@@ -200,7 +216,7 @@ func TestRetryThenFail(t *testing.T) {
 	var calls atomic.Int32
 	done := make(chan struct{})
 	q.Register(Spec{
-		Kind:        "flaky",
+		Kind: "flaky",
 		Handler: func(ctx context.Context, j cache.Job, log Log) (string, error) {
 			if calls.Add(1) >= 2 {
 				select {
@@ -214,17 +230,14 @@ func TestRetryThenFail(t *testing.T) {
 		MaxAttempts: 2,
 		RetryDelay:  10 * time.Millisecond,
 	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go q.Run(ctx)
+	runQueue(t, q)
 	id, err := q.Enqueue("flaky", PriorityBackground, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, done, 5*time.Second, "the second attempt")
 
-	final, err := q.Wait(ctx, id)
+	final, err := q.Wait(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,10 +258,7 @@ func TestCancelRunningJob(t *testing.T) {
 	q := New(newStore(t), Options{Workers: 1})
 	b := newBlocker()
 	q.Register(Spec{Kind: "sync", Resources: []Resource{ResSyncWatermarks}, Handler: b.handle})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go q.Run(ctx)
+	runQueue(t, q)
 
 	id, err := q.Enqueue("sync", PriorityManual, "", false)
 	if err != nil {
@@ -258,7 +268,7 @@ func TestCancelRunningJob(t *testing.T) {
 	if err := q.Cancel(id); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	final, err := q.Wait(ctx, id)
+	final, err := q.Wait(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,16 +299,13 @@ func TestJobLogPersistsAndPaginates(t *testing.T) {
 		log(cache.LogWarn, "phase", "careful")
 		return "ok", nil
 	}})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go q.Run(ctx)
+	runQueue(t, q)
 
 	id, err := q.Enqueue("chatty", PriorityManual, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.Wait(ctx, id); err != nil {
+	if _, err := q.Wait(context.Background(), id); err != nil {
 		t.Fatal(err)
 	}
 
@@ -366,9 +373,7 @@ func TestHoldBackgroundPausesAndResumes(t *testing.T) {
 			return "", ctx.Err()
 		}
 	}})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go q.Run(ctx)
+	runQueue(t, q)
 
 	id, err := q.Enqueue("sync", PriorityBackground, "", false)
 	if err != nil {

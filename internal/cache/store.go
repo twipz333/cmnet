@@ -51,13 +51,13 @@ func Open(path string) (*Store, error) {
 	// modernc serializes writes; a single connection avoids "database is locked".
 	db.SetMaxOpenConns(1)
 	if err := applySchema(db); err != nil {
-		db.Close()
+		_ = releaseDB(db)
 		return nil, err
 	}
 
 	rd, err := sql.Open("sqlite", dsnFor(path))
 	if err != nil {
-		db.Close()
+		_ = releaseDB(db)
 		return nil, fmt.Errorf("open sqlite reader %q: %w", path, err)
 	}
 	rd.SetMaxOpenConns(maxReaders)
@@ -382,13 +382,42 @@ func addColumns(tx *sql.Tx, table string, cols []struct{ name, ddl string }) err
 }
 
 // Close closes both pools.
+//
+// On Windows a plain sql.DB.Close leaves WAL/-shm handles held long enough that
+// t.TempDir's RemoveAll fails with "directory is not empty" even when the test
+// itself passed. Readers are closed first so the writer can truncate the WAL and
+// leave a single file; runtime opens still use WAL via dsnFor — this only
+// affects the shutdown path.
 func (s *Store) Close() error {
-	rerr := s.rd.Close()
-	werr := s.db.Close()
+	if s == nil {
+		return nil
+	}
+	// Readers hold -shm locks; drop them before the writer can leave DELETE mode.
+	// Do not nil the *sql.DB fields: late callers (e.g. a web progress pump still
+	// ticking after cancel) must see a closed-DB error, not a nil dereference.
+	rerr := releaseDB(s.rd)
+	var werr error
+	if s.db != nil {
+		_, _ = s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+		_, _ = s.db.Exec(`PRAGMA journal_mode=DELETE`)
+		werr = releaseDB(s.db)
+	}
 	if werr != nil {
 		return werr
 	}
 	return rerr
+}
+
+// releaseDB drains a pool and closes it. Idle connections can keep an OS file
+// lock on Windows after Close returns unless MaxOpen/Idle are forced to zero
+// first; modernc's WAL mode makes that visible as TempDir cleanup flakes.
+func releaseDB(db *sql.DB) error {
+	if db == nil {
+		return nil
+	}
+	db.SetMaxOpenConns(0)
+	db.SetMaxIdleConns(0)
+	return db.Close()
 }
 
 func isNoRows(err error) bool { return err == sql.ErrNoRows }

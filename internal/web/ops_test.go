@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,8 @@ func newQueueServer(t *testing.T) (*Server, *jobs.Queue, chan struct{}) {
 
 	q := jobs.New(st, jobs.Options{Workers: 2})
 	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
 	handler := func(ctx context.Context, j cache.Job, log jobs.Log) (string, error) {
 		log(cache.LogInfo, "collect", "working")
 		select {
@@ -37,9 +40,23 @@ func newQueueServer(t *testing.T) (*Server, *jobs.Queue, chan struct{}) {
 	}
 	q.Register(jobs.Spec{Kind: jobs.KindSync, Resources: []jobs.Resource{jobs.ResSyncWatermarks}, Handler: handler})
 
+	// Unblock handlers, then cancel and wait for Run before store Close:
+	// otherwise workers still hold the SQLite file when TempDir RemoveAll runs.
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go q.Run(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		q.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		unblock()
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Errorf("queue Run did not exit after cancel")
+		}
+	})
 
 	s := New(session.ShellConfig{Jobs: q}, "127.0.0.1:0")
 	return s, q, release
@@ -64,8 +81,7 @@ func waitRunning(t *testing.T, q *jobs.Queue, d time.Duration) cache.Job {
 // quiet: a browser that connects mid-run has no idea when it began, and without
 // the quiet timer a slow phase and a dead connection look identical.
 func TestJobsViewReportsLiveness(t *testing.T) {
-	s, q, release := newQueueServer(t)
-	defer close(release)
+	s, q, _ := newQueueServer(t)
 
 	if _, err := s.startSync(nil); err != nil {
 		t.Fatalf("start sync: %v", err)
@@ -96,8 +112,7 @@ func TestJobsViewReportsLiveness(t *testing.T) {
 // is the point of the wave — collection keeps running while the user does
 // something else, and incompatible work is separated by resource, not refused.
 func TestSecondRequestIsQueuedNotRejected(t *testing.T) {
-	s, q, release := newQueueServer(t)
-	defer close(release)
+	s, q, _ := newQueueServer(t)
 
 	if _, err := s.startSync(nil); err != nil {
 		t.Fatalf("first sync: %v", err)
@@ -112,8 +127,7 @@ func TestSecondRequestIsQueuedNotRejected(t *testing.T) {
 // A job's log is paged from the database, so its history survives the page being
 // reloaded — the old in-memory []string did not.
 func TestJobLogEndpointPages(t *testing.T) {
-	s, q, release := newQueueServer(t)
-	defer close(release)
+	s, q, _ := newQueueServer(t)
 
 	if _, err := s.startSync(nil); err != nil {
 		t.Fatalf("start: %v", err)

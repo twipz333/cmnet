@@ -123,7 +123,7 @@ func (s *Store) Backup(ctx context.Context, destination string) error {
 	// Verify the snapshot before reporting success to the migration UI.
 	db,err := sql.Open("sqlite",dsnFor(destination))
 	if err != nil { return err }
-	defer db.Close()
+	defer func() { _ = releaseDB(db) }()
 	var integrity string
 	if err := db.QueryRowContext(ctx,"PRAGMA integrity_check").Scan(&integrity); err != nil { return err }
 	if integrity != "ok" { return fmt.Errorf("backup integrity check failed: %s",integrity) }
