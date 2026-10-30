@@ -1106,7 +1106,7 @@ public sealed partial class NativeWindow : Window
     private string HeroInternalName(int id)
         => state.At("heroes").Items().FirstOrDefault(h => h.At("id").I() == id).At("name").S();
 
-    private UIElement HeroPortrait(int id, double width, double height)
+    private FrameworkElement HeroPortrait(int id, double width, double height)
     {
         var host = new Grid { Width = width, Height = height, ClipToBounds = true };
         var fallback = new Border
