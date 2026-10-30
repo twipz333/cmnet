@@ -1,6 +1,6 @@
 # CMNET — binding instructions for all coding agents
 
-Read this file first, then [docs/PRODUCT-BAR.md](docs/PRODUCT-BAR.md), [docs/DELIVERY-BOARD.md](docs/DELIVERY-BOARD.md), and [docs/ORCA-PLAYBOOK.md](docs/ORCA-PLAYBOOK.md).
+Read this file first, then [docs/PRODUCT-BAR.md](docs/PRODUCT-BAR.md), [docs/DELIVERY-BOARD.md](docs/DELIVERY-BOARD.md), [docs/ORCA-PLAYBOOK.md](docs/ORCA-PLAYBOOK.md), and [docs/ORCA-CONTINUOUS-LOOP.md](docs/ORCA-CONTINUOUS-LOOP.md).
 
 ## Product over implementation
 CMNET is a polished, local-first Dota 2 Windows desktop product for a captain and friends **before, during, and after a match**, not a prototype or admin dashboard. The release target is a self-contained **native WPF / .NET 10 frontend + existing Go engine**. The Electron build remains the supported migration source until parity is proven. Do not start a third frontend or rewrite the recommendation engine without evidence.
