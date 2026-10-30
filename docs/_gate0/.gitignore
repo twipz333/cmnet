@@ -17,3 +17,16 @@ local-capture/*
 !local-capture/scout-1920x1080-layout100.png
 !local-capture/scout-empty.png
 !local-capture/scout-error.png
+
+# Gate 1 Scout 3B WIP captures — keep evidence sample, drop full DPI matrix.
+scout-3b-wip/*
+!scout-3b-wip/NOTES.md
+!scout-3b-wip/checks.txt
+!scout-3b-wip/geometry.json
+!scout-3b-wip/scout.png
+!scout-3b-wip/scout-1920x1080-layout100.png
+!scout-3b-wip/scout-empty.png
+!scout-3b-wip/scout-loading.png
+!scout-3b-wip/scout-error.png
+!scout-3b-wip/draft.png
+!scout-3b-wip/draft-1920x1080-layout100.png

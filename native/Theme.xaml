@@ -1,21 +1,21 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <!-- Semantic palette: all native screens share these resources. -->
+  <!-- Minimal Tactical 3B tokens (docs/_gate0/3b-reference/SIGN-OFF.md). -->
   <SolidColorBrush x:Key="CanvasBrush" Color="#0B1117"/>
-  <SolidColorBrush x:Key="SidebarBrush" Color="#0D1926"/>
+  <SolidColorBrush x:Key="SidebarBrush" Color="#0D141C"/>
   <SolidColorBrush x:Key="PanelBrush" Color="#121A23"/>
-  <SolidColorBrush x:Key="RaisedBrush" Color="#17212B"/>
+  <SolidColorBrush x:Key="RaisedBrush" Color="#172128"/>
   <SolidColorBrush x:Key="BorderBrush" Color="#263849"/>
-  <SolidColorBrush x:Key="TextBrush" Color="#F1F5F9"/>
-  <SolidColorBrush x:Key="MutedBrush" Color="#A0B0C3"/>
-  <SolidColorBrush x:Key="AccentBrush" Color="#30D9C4"/>
-  <SolidColorBrush x:Key="SuccessBrush" Color="#7BD9A5"/>
+  <SolidColorBrush x:Key="TextBrush" Color="#F3F7FB"/>
+  <SolidColorBrush x:Key="MutedBrush" Color="#8FA0B3"/>
+  <SolidColorBrush x:Key="AccentBrush" Color="#3DD9C4"/>
+  <SolidColorBrush x:Key="SuccessBrush" Color="#67D9B8"/>
   <SolidColorBrush x:Key="WarningBrush" Color="#F3B562"/>
-  <SolidColorBrush x:Key="ErrorBrush" Color="#EF7D88"/>
+  <SolidColorBrush x:Key="ErrorBrush" Color="#F06A6A"/>
   <SolidColorBrush x:Key="AnalyticsBrush" Color="#7EA7FF"/>
-  <SolidColorBrush x:Key="SelectedBrush" Color="#19433F"/>
-  <SolidColorBrush x:Key="HoverBrush" Color="#223542"/>
-  <SolidColorBrush x:Key="PrimaryBrush" Color="#24555D"/>
+  <SolidColorBrush x:Key="SelectedBrush" Color="#15403C"/>
+  <SolidColorBrush x:Key="HoverBrush" Color="#1A2430"/>
+  <SolidColorBrush x:Key="PrimaryBrush" Color="#24665E"/>
   <Thickness x:Key="PanelPadding">10</Thickness>
   <Thickness x:Key="ControlPadding">10,6</Thickness>
   <CornerRadius x:Key="ControlRadius">4</CornerRadius>
