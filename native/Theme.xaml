@@ -1,11 +1,11 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <!-- cmnet native: a coherent, accessible dark desktop theme. No browser UI. -->
-  <SolidColorBrush x:Key="CanvasBrush" Color="#0B111B"/>
-  <SolidColorBrush x:Key="PanelBrush" Color="#151F2E"/>
+  <SolidColorBrush x:Key="CanvasBrush" Color="#0B1117"/>
+  <SolidColorBrush x:Key="PanelBrush" Color="#121A23"/>
   <SolidColorBrush x:Key="RaisedBrush" Color="#203044"/>
   <SolidColorBrush x:Key="BorderBrush" Color="#2B3D51"/>
-  <SolidColorBrush x:Key="AccentBrush" Color="#59E0D2"/>
+  <SolidColorBrush x:Key="AccentBrush" Color="#30D9C4"/>
   <SolidColorBrush x:Key="MutedBrush" Color="#A0B0C3"/>
   <SolidColorBrush x:Key="TextBrush" Color="#F1F5F9"/>
 
@@ -38,7 +38,7 @@
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
               <Setter TargetName="Frame" Property="Background" Value="#285C61"/>
-              <Setter TargetName="Frame" Property="BorderBrush" Value="#59E0D2"/>
+              <Setter TargetName="Frame" Property="BorderBrush" Value="#30D9C4"/>
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
               <Setter TargetName="Frame" Property="Background" Value="#1C494D"/>
@@ -59,7 +59,7 @@
   <Style TargetType="{x:Type TextBox}">
     <Setter Property="Background" Value="#101D2A"/>
     <Setter Property="Foreground" Value="#F1F5F9"/>
-    <Setter Property="CaretBrush" Value="#59E0D2"/>
+    <Setter Property="CaretBrush" Value="#30D9C4"/>
     <Setter Property="SelectionBrush" Value="#307D79"/>
     <Setter Property="BorderBrush" Value="#30475B"/>
     <Setter Property="BorderThickness" Value="1"/>
@@ -83,7 +83,7 @@
               <Setter TargetName="Frame" Property="BorderBrush" Value="#65829A"/>
             </Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="Frame" Property="BorderBrush" Value="#59E0D2"/>
+              <Setter TargetName="Frame" Property="BorderBrush" Value="#30D9C4"/>
               <Setter TargetName="Frame" Property="BorderThickness" Value="2"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
@@ -137,7 +137,7 @@
             </Trigger>
             <Trigger Property="IsSelected" Value="True">
               <Setter TargetName="Frame" Property="Background" Value="#1A4444"/>
-              <Setter TargetName="Frame" Property="BorderBrush" Value="#59E0D2"/>
+              <Setter TargetName="Frame" Property="BorderBrush" Value="#30D9C4"/>
               <Setter Property="Foreground" Value="#FFFFFF"/>
             </Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True">
@@ -172,8 +172,8 @@
           </Grid>
           <ControlTemplate.Triggers>
             <Trigger Property="IsChecked" Value="True">
-              <Setter TargetName="CheckFrame" Property="Background" Value="#59E0D2"/>
-              <Setter TargetName="CheckFrame" Property="BorderBrush" Value="#59E0D2"/>
+              <Setter TargetName="CheckFrame" Property="Background" Value="#30D9C4"/>
+              <Setter TargetName="CheckFrame" Property="BorderBrush" Value="#30D9C4"/>
               <Setter TargetName="Tick" Property="Visibility" Value="Visible"/>
             </Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True">
@@ -225,7 +225,7 @@
                       <Border x:Name="Grip" CornerRadius="4" Background="#53748C"/>
                       <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                          <Setter TargetName="Grip" Property="Background" Value="#59E0D2"/>
+                          <Setter TargetName="Grip" Property="Background" Value="#30D9C4"/>
                         </Trigger>
                         <Trigger Property="IsDragging" Value="True">
                           <Setter TargetName="Grip" Property="Background" Value="#83EADB"/>
