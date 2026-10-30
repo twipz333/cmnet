@@ -16,6 +16,10 @@ func TestCheckpointPersistsAcrossRestart(t *testing.T) {
  defer store.Close()
  old:=testServer(t)
  old.localCache=store
+ // Synthetic test bundles are unversioned; persistence requires a stable model identity.
+ seeded:=old.sess.Config()
+ seeded.BundleVersion="checkpoint-fixture-v1"
+ old.sess=session.New(seeded)
  if err:=old.sess.Apply(1);err!=nil {t.Fatal(err)}
  if err:=old.saveCheckpoint();err!=nil {t.Fatal(err)}
  saved,found,err:=store.LatestDraftCheckpoint(context.Background())
