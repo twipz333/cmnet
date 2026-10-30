@@ -17,7 +17,7 @@ namespace Cmnet.Native;
 
 // WPF draws genuine Windows controls, not HTML. In particular the Scout
 // roster and scrolling lists are retained between SSE updates.
-public sealed class NativeWindow : Window
+public sealed partial class NativeWindow : Window
 {
     private readonly AdvisorCore core = new();
     private readonly HeroArtwork artwork;
@@ -91,9 +91,9 @@ public sealed class NativeWindow : Window
     public NativeWindow(string? initialDataDirectory = null)
     {
         artwork = new HeroArtwork(() => core.DataDirectory);
-        Title = "cmnet · Native Preview";
-        Width = 1370;
-        Height = 870;
+        Title = "CMNET · Match Intelligence";
+        Width = 1450;
+        Height = 920;
         MinWidth = 890;
         MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -158,7 +158,7 @@ public sealed class NativeWindow : Window
         var aside = new Border { Background = Hex("#111B29"), BorderBrush = Hex("#243247"),
             BorderThickness = new Thickness(0, 0, 1, 0) };
         var sidebar = new StackPanel { Margin = new Thickness(14, 28, 14, 16) };
-        var sectionLabel = Text("РАБОЧЕЕ ПРОСТРАНСТВО", 10, FontWeights.Bold, muted);
+        var sectionLabel = Text("MATCH OPERATIONS", 10, FontWeights.Bold, accent);
         sectionLabel.Margin = new Thickness(10, 0, 0, 18);
         sidebar.Children.Add(sectionLabel);
         var icons = new Dictionary<string, string>
@@ -590,11 +590,11 @@ public sealed class NativeWindow : Window
             BorderThickness = new Thickness(1)
         };
         var intro = new StackPanel();
-        intro.Children.Add(Text("MATCH PREPARATION  /  01", 10, FontWeights.Bold, accent));
-        var title = Text("Узнай соперника до первого пика", 25, FontWeights.Bold);
+        intro.Children.Add(Text("CMNET  /  OPPONENT INTELLIGENCE", 10, FontWeights.Bold, accent));
+        var title = Text("Твой матч начинается здесь", 27, FontWeights.Bold);
         title.Margin = new Thickness(0, 9, 0, 8);
         intro.Children.Add(title);
-        intro.Children.Add(Text("Команды, герои, статистика и активные задания — в одном рабочем пространстве.",
+        intro.Children.Add(Text("Составы, профильные герои и прозрачный статус источников перед драфтом.",
             13, color: Hex("#C2D3DA")));
         var metrics = new WrapPanel { Margin = new Thickness(0, 18, 0, 0) };
         metrics.Children.Add(MetricTile("Союзники", allyMetric, accent));
@@ -627,6 +627,10 @@ public sealed class NativeWindow : Window
         };
         teamGrid = grid;
         host.Children.Add(grid);
+
+        scoutSignalKey = "";
+        scoutSignalHost = new StackPanel();
+        host.Children.Add(Surface(scoutSignalHost, new Thickness(0, 15, 0, 14)));
 
         Header(host, "Разведанные игроки");
         host.Children.Add(Text("Выбери профиль, чтобы посмотреть сильных героев, количество игр и винрейт.",
@@ -759,6 +763,7 @@ public sealed class NativeWindow : Window
                 }
             }
         }
+        RefreshScoutSignals();
     }
 
     private void ShowScoutDetails(string side, long id)
@@ -999,11 +1004,11 @@ public sealed class NativeWindow : Window
     private UIElement DraftHeroTile(int id)
     {
         var tile = new StackPanel();
-        tile.Children.Add(HeroPortrait(id, 118, 68));
+        tile.Children.Add(HeroPortrait(id, 126, 74));
         var label = Text(HeroName(id), 11, FontWeights.SemiBold);
         label.TextTrimming = TextTrimming.CharacterEllipsis;
         label.TextWrapping = TextWrapping.NoWrap;
-        label.Width = 118;
+        label.Width = 126;
         label.Margin = new Thickness(0, 6, 0, 0);
         tile.Children.Add(label);
         var choose = Btn("", async () =>
@@ -1015,8 +1020,8 @@ public sealed class NativeWindow : Window
         }, true);
         choose.Content = tile;
         choose.Padding = new Thickness(4);
-        choose.Width = 130;
-        choose.Height = 108;
+        choose.Width = 138;
+        choose.Height = 116;
         choose.Margin = new Thickness(0, 0, 8, 8);
         choose.Tag = id;
         choose.ToolTip = HeroName(id);
@@ -1038,24 +1043,43 @@ public sealed class NativeWindow : Window
 
     private UIElement RecommendationRow(int id, double score, int rank)
     {
+        // Recommendation scores are model ranks, not calibrated win odds.
         var row = new Grid { MinHeight = 56 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(31) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.Children.Add(Text(rank.ToString("D2"), 12, FontWeights.SemiBold, muted));
-        var image = HeroPortrait(id, 70, 42);
-        Grid.SetColumn(image, 1);
-        row.Children.Add(image);
+        var number = Text(rank.ToString("D2"), 13, FontWeights.Bold, rank == 1 ? accent : muted);
+        row.Children.Add(number);
+        var picture = HeroPortrait(id, 66, 44);
+        Grid.SetColumn(picture, 1);
+        row.Children.Add(picture);
+        var identity = new StackPanel { Margin = new Thickness(6, 3, 0, 0) };
         var name = Text(HeroName(id), 13, FontWeights.SemiBold);
-        name.Margin = new Thickness(7, 0, 0, 0);
-        Grid.SetColumn(name, 2);
-        row.Children.Add(name);
-        var value = Text(score.ToString("P1"), 13, FontWeights.SemiBold, accent);
-        value.Margin = new Thickness(10, 0, 0, 0);
+        name.TextTrimming = TextTrimming.CharacterEllipsis;
+        name.TextWrapping = TextWrapping.NoWrap;
+        identity.Children.Add(name);
+        identity.Children.Add(Text("РЕКОМЕНДАЦИЯ МОДЕЛИ", 9, FontWeights.SemiBold, muted));
+        Grid.SetColumn(identity, 2);
+        row.Children.Add(identity);
+        var value = Text(score.ToString("0.000"), 13, FontWeights.Bold, accent);
+        value.Margin = new Thickness(8, 0, 0, 0);
         Grid.SetColumn(value, 3);
         row.Children.Add(value);
-        return row;
+        var select = Btn("", async () =>
+        {
+            selectedHeroId = id;
+            if (selectedHeroHint != null)
+                selectedHeroHint.Text = "Выбран из рекомендаций: " + HeroName(id);
+            HighlightDraftSelection();
+            await Task.CompletedTask;
+        }, true);
+        select.Content = row;
+        select.Padding = new Thickness(8, 7, 10, 7);
+        select.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        select.ToolTip = "Нажми, чтобы выбрать " + HeroName(id);
+        select.Margin = new Thickness(0, 0, 0, 4);
+        return select;
     }
 
     private UIElement BuildDraftView()
@@ -1069,11 +1093,11 @@ public sealed class NativeWindow : Window
         frame.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var tools = new StackPanel();
-        tools.Children.Add(Text("MATCH DRAFT  /  02", 10, FontWeights.Bold, accent));
-        var head = Text("Текущий драфт", 23, FontWeights.Bold);
+        tools.Children.Add(Text("CMNET  /  DRAFT LAB", 10, FontWeights.Bold, accent));
+        var head = Text("Драфт-ассистент", 24, FontWeights.Bold);
         head.Margin = new Thickness(0, 8, 0, 7);
         tools.Children.Add(head);
-        tools.Children.Add(Text("Рекомендации обновляются вместе с пиками и банами.", 12, color: muted));
+        tools.Children.Add(Text("Сохраняет ход драфта. Подбирает героев по текущей модели.", 12, color: muted));
         Header(tools, "Состояние");
         var statusBox = new Border { Background = Hex("#172C3D"), CornerRadius = new CornerRadius(11),
             BorderBrush = Hex("#38566A"), BorderThickness = new Thickness(1),
@@ -1093,7 +1117,7 @@ public sealed class NativeWindow : Window
         tools.Children.Add(controls);
 
         Header(tools, "Рекомендации модели");
-        tools.Children.Add(Text("Наиболее подходящие герои в текущем состоянии.", 12, color: muted));
+        tools.Children.Add(Text("Ранжирование модели, не вероятность победы.", 12, color: muted));
         draftRecommendations = new ListBox { MinHeight = 195, MaxHeight = 370,
             Margin = new Thickness(0, 13, 0, 0) };
         VirtualizingStackPanel.SetIsVirtualizing(draftRecommendations, true);
@@ -1104,6 +1128,7 @@ public sealed class NativeWindow : Window
         // Constrain the hero list with a real Grid star row. A ListBox inside
         // StackPanel was measured at infinite height and did not scroll.
         var right = new Grid();
+        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         right.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -1117,6 +1142,11 @@ public sealed class NativeWindow : Window
         pickIntro.Margin = new Thickness(0, 0, 0, 18);
         right.Children.Add(pickIntro);
 
+        draftBoardKey = "";
+        draftBoardHost = new StackPanel { Margin = new Thickness(0, 0, 0, 17) };
+        Grid.SetRow(draftBoardHost, 1);
+        right.Children.Add(draftBoardHost);
+
         var search = new TextBox { Margin = new Thickness(0, 0, 0, 12),
             ToolTip = "Быстрый поиск героя" };
         search.TextChanged += (_, _) =>
@@ -1124,7 +1154,7 @@ public sealed class NativeWindow : Window
             heroSearchText = search.Text;
             UpdateHeroes(heroSearchText);
         };
-        Grid.SetRow(search, 1);
+        Grid.SetRow(search, 2);
         right.Children.Add(search);
         // A compact portrait gallery is the primary Dota interaction, not a
         // text-only ListBox. The vertical ScrollViewer belongs to this region
@@ -1133,7 +1163,7 @@ public sealed class NativeWindow : Window
         var galleryViewport = Scroll(heroGallery);
         galleryViewport.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         galleryViewport.MinHeight = 135;
-        Grid.SetRow(galleryViewport, 2);
+        Grid.SetRow(galleryViewport, 3);
         right.Children.Add(galleryViewport);
         var selectionBar = new Grid { Margin = new Thickness(0, 14, 0, 0) };
         selectionBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -1147,7 +1177,7 @@ public sealed class NativeWindow : Window
         });
         Grid.SetColumn(apply, 1);
         selectionBar.Children.Add(apply);
-        Grid.SetRow(selectionBar, 3);
+        Grid.SetRow(selectionBar, 4);
         right.Children.Add(selectionBar);
         var rightCard = Surface(right, new Thickness(10, 0, 0, 0));
         Grid.SetColumn(rightCard, 1);
@@ -1196,6 +1226,7 @@ public sealed class NativeWindow : Window
                 : $"Сторона: {m.At("ourTeam").S()}\nХод: {step.At("team").S("—")} · {step.At("action").S("—")}\nПатч: {m.At("patchTag").S("—")}" +
                   (state.At("modelUpdatePending").B() ? "\nНовая модель активируется в следующем драфте" : "");
         }
+        RefreshDraftBoard();
         var recs = state.At("result","recs").Items().Take(6)
             .Select(x => (id: x.At("heroId").I(), score: x.At("score").D()))
             .Where(x => x.id > 0).ToList();
