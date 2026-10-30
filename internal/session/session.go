@@ -273,6 +273,14 @@ func (s *Session) AvailableHeroes() []Hero {
 	return out
 }
 
+// DraftInProgress protects bundle lifetime independently from front-end activity.
+func (s *Session) DraftInProgress() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.gsiMode { return s.gsiSeen }
+	return s.drafts != nil && s.drafts.Cursor > 0
+}
+
 // errManualOnly is returned by mutating operations under GSI mode, where the board
 // is authoritative and must not be edited by hand.
 var errManualOnly = fmt.Errorf("draft is driven by GSI; manual edits are disabled")

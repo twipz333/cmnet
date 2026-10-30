@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"os"
@@ -1594,6 +1595,10 @@ func editSnapshot(path string, apply func(*scout.OpponentSnapshot) error) error 
 // opScout resolves enemy players, fetches layers 2-3, and merges them into the
 // snapshot (preserving allies/hero-pool already there).
 func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (string, error) {
+	// The entire interactive operation (identity, affinity and event search)
+	// shares ONE deadline, rather than additive per-stage timeouts.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	if log == nil {
 		log = discard
 	}
@@ -1607,7 +1612,10 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 	if err != nil {
 		return "", err
 	}
-	if err := ctx.Err(); err != nil { return "", err }
+	// Preserve useful partial evidence on deadline expiry; only explicit job
+	// cancellation must discard the result.
+	if errors.Is(ctx.Err(), context.Canceled) { return "", ctx.Err() }
+	recordScoutEvidence(o.dbPath, fresh.Layer2, "enemy", log)
 	if !scoutHadAnswer(fresh.Layer2) && fresh.Layer3 == nil {
 		return "", fmt.Errorf("OpenDota returned no player scouting data; try again later (previous snapshot preserved)")
 	}
@@ -1662,6 +1670,8 @@ func hasResolvedPlayer(players []scout.ResolvedPlayer) bool {
 // opScoutAllies fetches our own team's hero affinity (#3) and merges it into the
 // snapshot as the ally layer, preserving enemy layers and the hero pool.
 func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFunc) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	if log == nil {
 		log = discard
 	}
@@ -1673,7 +1683,8 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 	// One typed ally should recover the rest of the stack from their recent matches,
 	// same idea as enemy scout via layer 3 — otherwise capability sees a one-row roster.
 	allies := scout.ExpandWithTeammates(ctx, src, resolved, o.windowDays, teammatesWanted(o.outPath, resolved), log)
-	if err := ctx.Err(); err != nil { return "", err }
+	if errors.Is(ctx.Err(), context.Canceled) { return "", ctx.Err() }
+	recordScoutEvidence(o.dbPath, allies, "ally", log)
 	if !scoutHadAnswer(allies) {
 		return "", fmt.Errorf("OpenDota returned no ally scouting data; try again later (previous snapshot preserved)")
 	}

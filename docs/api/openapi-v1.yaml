@@ -1,0 +1,264 @@
+openapi: 3.1.0
+info:
+  title: CMNET local core IPC
+  version: 1.0.0
+  description: |
+    Authenticated local IPC for the WPF client. API v1 is an additive alias
+    over existing Electron /api routes. The Go server only binds to loopback;
+    a WPF child receives a per-process CMNET_IPC_TOKEN (Bearer). Standalone
+    legacy Electron sessions remain tokenless until their migration.
+    Commands are serialized and duplicate Idempotency-Key values within the
+    same Go process do not execute twice. Cross-process exactly-once semantics
+    are not guaranteed. Domain errors in legacy mutation handlers are returned
+    as a human-readable state.status field with HTTP 200.
+servers:
+  - url: http://127.0.0.1:{port}
+    variables:
+      port:
+        default: '54000'
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/state:
+    get:
+      operationId: getState
+      summary: Current complete local snapshot
+      responses:
+        '200':
+          description: Current state; revision is monotonic per sessionId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/State'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/events:
+    get:
+      operationId: streamState
+      summary: Full state snapshots via Server-Sent Events
+      description: >
+        Reconnect with a GET of /api/v1/state. The client ignores revisions
+        less than or equal to its last applied revision for the same sessionId.
+      responses:
+        '200':
+          description: SSE frames formatted as data followed by serialized State
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/intelligence/observation:
+    get:
+      operationId: getObservation
+      summary: Latest cache-first evidence for a Steam account
+      parameters:
+        - in: query
+          name: accountId
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - in: query
+          name: provider
+          required: false
+          schema:
+            type: string
+            enum: [opendota]
+            default: opendota
+      responses:
+        '200':
+          description: Cached source status, including unavailable if unknown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Observation'
+        '400':
+          description: Invalid account or provider
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Cache unavailable
+  /api/v1/apply:
+    post:
+      operationId: applyHero
+      summary: Apply the next pick or ban to the manual draft
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [heroId]
+              properties:
+                heroId:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          $ref: '#/components/responses/UpdatedState'
+        '400':
+          description: Invalid idempotency key or excessively large request
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Idempotency key reused with another payload or route
+  /api/v1/undo:
+    post:
+      operationId: undoDraft
+      summary: Undo a manual action
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          $ref: '#/components/responses/UpdatedState'
+  /api/v1/redo:
+    post:
+      operationId: redoDraft
+      summary: Redo an undone manual action
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          $ref: '#/components/responses/UpdatedState'
+  /api/v1/new-draft:
+    post:
+      operationId: startNewDraft
+      summary: Begin another manual draft and activate any staged model
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          $ref: '#/components/responses/UpdatedState'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: random per-process 256-bit token
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >
+        Unique printable ASCII key (8-128 chars) for at-most-once execution
+        within the current Go process. Reuse only for retries of the exact
+        same command. The native client generates a new random key per action.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+  responses:
+    UpdatedState:
+      description: Full state after the serialized mutation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/State'
+    Unauthorized:
+      description: Missing or incorrect native IPC Bearer token
+    Forbidden:
+      description: Invalid Host, Origin, or cross-site request
+  schemas:
+    Board:
+      type: object
+      required: [radiantPicks, radiantBans, direPicks, direBans]
+      properties:
+        radiantPicks:
+          type: array
+          items: { type: integer }
+        radiantBans:
+          type: array
+          items: { type: integer }
+        direPicks:
+          type: array
+          items: { type: integer }
+        direBans:
+          type: array
+          items: { type: integer }
+      additionalProperties: false
+    Hero:
+      type: object
+      required: [id, name, localized]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string }
+        localized: { type: string }
+      additionalProperties: false
+    Meta:
+      type: object
+      required: [bundleVersion, draftReady, canUndo, canRedo]
+      properties:
+        bundleVersion: { type: string }
+        patchTag: { type: string }
+        ourTeam: { type: string }
+        firstPick: { type: string }
+        draftReady: { type: boolean }
+        draftError: { type: string }
+        canUndo: { type: boolean }
+        canRedo: { type: boolean }
+        gsiMode: { type: boolean }
+        gsiSeen: { type: boolean }
+      additionalProperties: true
+    Step:
+      type: [object, 'null']
+      properties:
+        team: { type: string }
+        action: { type: string }
+        isOurs: { type: boolean }
+      additionalProperties: false
+    State:
+      type: object
+      required: [schemaVersion, sessionId, revision, modelUpdatePending, meta, board, result, heroes, names, ops]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        sessionId:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+        revision:
+          type: integer
+          minimum: 0
+        modelUpdatePending: { type: boolean }
+        meta: { $ref: '#/components/schemas/Meta' }
+        board: { $ref: '#/components/schemas/Board' }
+        step: { $ref: '#/components/schemas/Step' }
+        result:
+          type: object
+          additionalProperties: true
+          description: Legacy recommender output, unchanged by IPC v1
+        heroes:
+          type: array
+          items: { $ref: '#/components/schemas/Hero' }
+        names:
+          type: object
+          additionalProperties: { type: string }
+        ops:
+          type: object
+          additionalProperties: true
+        status: { type: string }
+      additionalProperties: true
+    Observation:
+      type: object
+      required: [schemaVersion, accountId, provider, status, observedAt, evidence]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        accountId: { type: integer, minimum: 1 }
+        provider: { type: string, enum: [opendota] }
+        status:
+          type: string
+          enum: [fresh, stale, loading, partial, private, rate_limited, unavailable, error]
+        observedAt:
+          type: [integer, 'null']
+          description: Source observation time in Unix seconds
+        ageSeconds: { type: integer, minimum: 0 }
+        evidence:
+          type: [object, 'null']
+          additionalProperties: true
+      additionalProperties: true

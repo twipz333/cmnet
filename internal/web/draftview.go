@@ -140,5 +140,23 @@ func (s *Server) doNewDraft(*http.Request) (string, error) {
 	if err := sess.NewDraft(); err != nil {
 		return "", err
 	}
+	s.mu.Lock()
+	pending := s.pendingCfg
+	s.pendingCfg = nil
+	s.draftID = newSessionID()
+	s.draftRevision = 0
+	s.mu.Unlock()
+	if pending != nil {
+		pending.OurTeam, pending.FirstPick = sess.OurTeam(), sess.FirstPick()
+		fresh := session.New(*pending)
+		s.applyTeam(fresh)
+		s.mu.Lock()
+		s.sess = fresh
+		s.mu.Unlock()
+		s.startGSIPump(fresh)
+		s.followIntoSession()
+		s.shareRefresh()
+		return "new draft · updated model activated", nil
+	}
 	return "new draft", nil
 }

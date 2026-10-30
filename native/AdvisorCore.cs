@@ -1,0 +1,218 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Cmnet.Native;
+
+// Reuses EXACTLY the existing Go state API and existing cmnet data folder.
+// There is no WebView2, Chromium or browser embedding in this process.
+public sealed class AdvisorCore : IAsyncDisposable
+{
+    // SSE is long-lived; never put a global 15-second timeout on the client.
+    // Individual requests have explicit cancellation budgets below.
+    private readonly HttpClient http = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private Process? child;
+    private string? ipcToken;
+    private CancellationTokenSource? streamCancellation;
+    private Task? streamTask;
+    public Uri? BaseUri { get; private set; }
+    public event Action<JsonObject>? StateReceived;
+    public event Action<string>? ConnectionChanged;
+
+    public string DataDirectory { get; private set; } = FindDataDirectory();
+
+    public static string FindDataDirectory()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        foreach (var dir in new[] { "cmnet", "cmnet-desktop" })
+        {
+            var root = Path.Combine(appData, dir);
+            var settingsPath = Path.Combine(root, "desktop.json");
+            if (File.Exists(settingsPath))
+            {
+                try
+                {
+                    var json = JsonNode.Parse(File.ReadAllText(settingsPath));
+                    var selected = json?["dataDir"]?.GetValue<string>();
+                    if (!string.IsNullOrWhiteSpace(selected) && Directory.Exists(selected))
+                        return selected;
+                }
+                catch (Exception) { /* Bad settings must not lose a valid data folder. */ }
+            }
+            var data = Path.Combine(root, "data");
+            if (File.Exists(Path.Combine(data, "cmnet.db")) || File.Exists(Path.Combine(data, "bundle.json")))
+                return data;
+        }
+        return Path.Combine(appData, "cmnet", "data");
+    }
+
+    public async Task StartAsync(string? dataDirectory = null)
+    {
+        if (child is { HasExited: false })
+            throw new InvalidOperationException("Go core is already running");
+        DataDirectory = dataDirectory ?? DataDirectory;
+        Directory.CreateDirectory(DataDirectory);
+        var executable = Path.Combine(AppContext.BaseDirectory, "advisor.exe");
+        if (!File.Exists(executable))
+            throw new FileNotFoundException("Missing advisor.exe next to Cmnet.Native.exe. Install the complete native build.", executable);
+        int port;
+        using (var listener = new TcpListener(IPAddress.Loopback, 0))
+        {
+            listener.Start();
+            port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+        BaseUri = new Uri($"http://127.0.0.1:{port}/");
+        // Random per-run bearer token is inherited only by the child.
+        ipcToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ipcToken);
+        var start = new ProcessStartInfo(executable)
+        {
+            Arguments = $"--web-addr 127.0.0.1:{port} --open=false --discord=false",
+            WorkingDirectory = DataDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        start.Environment["CMNET_IPC_TOKEN"] = ipcToken;
+        // Native preview must never send the team's data to public sharing relays.
+        start.Environment["CMNET_LOCAL_ONLY"] = "1";
+        child = Process.Start(start) ?? throw new InvalidOperationException("Cannot start advisor.exe");
+        ConnectionChanged?.Invoke("Запуск локального Go-ядра…");
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+        while (!deadline.IsCancellationRequested)
+        {
+            if (child.HasExited)
+                throw new InvalidOperationException($"advisor.exe exited: {child.ExitCode}");
+            try
+            {
+                using var resp = await http.GetAsync(new Uri(BaseUri, "api/v1/state"), deadline.Token);
+                resp.EnsureSuccessStatusCode();
+                break;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                try { await Task.Delay(250, deadline.Token); } catch (OperationCanceledException) { break; }
+            }
+        }
+        if (deadline.IsCancellationRequested)
+            throw new TimeoutException("Go core did not answer within 35 seconds");
+        streamCancellation = new CancellationTokenSource();
+        streamTask = Task.Run(() => ReadEventsAsync(streamCancellation.Token));
+    }
+
+    public async Task<JsonObject> GetAsync(string path, CancellationToken ct = default)
+    {
+        var uri = new Uri(BaseUri ?? throw new InvalidOperationException("Core is not ready"), path.TrimStart('/'));
+        using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // Corpus/stats may be slow while SQLite is writing; give them time to
+        // complete without hanging indefinitely. The old global 15s timeout
+        // was also killing the long-lived SSE connection.
+        requestTimeout.CancelAfter(TimeSpan.FromSeconds(45));
+        try
+        {
+            using var response = await http.GetAsync(uri, requestTimeout.Token);
+            response.EnsureSuccessStatusCode();
+            return JsonNode.Parse(await response.Content.ReadAsStringAsync(requestTimeout.Token)) as JsonObject
+                ?? new JsonObject();
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Go-ядро не ответило на {uri.AbsolutePath} за 45 секунд.");
+        }
+    }
+
+    public async Task<string> PostAsync(string path, object request, CancellationToken ct = default)
+    {
+        var uri = new Uri(BaseUri ?? throw new InvalidOperationException("Core is not ready"), path.TrimStart('/'));
+        using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        requestTimeout.CancelAfter(TimeSpan.FromSeconds(45));
+        try
+        {
+            var json = JsonSerializer.Serialize(request);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            // Stable request identity for at-most-once execution in this core process.
+            using var req = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
+            req.Headers.TryAddWithoutValidation("Idempotency-Key", Guid.NewGuid().ToString("N"));
+            using var resp = await http.SendAsync(req, requestTimeout.Token);
+            var body = await resp.Content.ReadAsStringAsync(requestTimeout.Token);
+            if (!resp.IsSuccessStatusCode)
+                throw new HttpRequestException($"{(int)resp.StatusCode}: {body}");
+            // The Go API returns the entire current state on POST.
+            try
+            {
+                var node = JsonNode.Parse(body) as JsonObject;
+                if (node?.ContainsKey("meta") == true) StateReceived?.Invoke(node);
+            }
+            catch (JsonException) { /* Some endpoints return an acknowledgment only. */ }
+            return body;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Операция {uri.AbsolutePath} не завершилась за 45 секунд.");
+        }
+    }
+
+    private async Task ReadEventsAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, new Uri(BaseUri!, "api/v1/events"));
+                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+                resp.EnsureSuccessStatusCode();
+                ConnectionChanged?.Invoke("Go-ядро подключено");
+                await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+                using var reader = new StreamReader(stream);
+                while (!ct.IsCancellationRequested)
+                {
+                    var line = await reader.ReadLineAsync(ct);
+                    if (line is null) break;
+                    if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
+                    if (JsonNode.Parse(line.AsSpan(6).ToString()) is JsonObject state)
+                        StateReceived?.Invoke(state);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            catch (Exception ex) { ConnectionChanged?.Invoke("Соединение потеряно: " + ex.Message); }
+            try { await Task.Delay(1250, ct); } catch (OperationCanceledException) { break; }
+        }
+    }
+
+    // Window shutdown must kill the child synchronously: an async fire-and-forget
+    // cleanup can be abandoned when the WPF process exits.
+    public void Stop()
+    {
+        streamCancellation?.Cancel();
+        if (child is { HasExited: false })
+        {
+            try { child.Kill(entireProcessTree: true); } catch (Exception) { }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Stop();
+        if (streamTask != null)
+        {
+            try { await streamTask.WaitAsync(TimeSpan.FromSeconds(2)); } catch (Exception) { }
+        }
+        streamCancellation?.Dispose();
+        if (child is { HasExited: false })
+        {
+            try { child.Kill(entireProcessTree: true); } catch (Exception) { }
+            try { await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); } catch (Exception) { }
+        }
+        child?.Dispose();
+        http.Dispose();
+    }
+}

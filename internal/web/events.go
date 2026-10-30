@@ -55,6 +55,9 @@ func (h *hub) publish(payload []byte) {
 // objective just entered its alert window, so browsers can sound it once.
 func (s *Server) broadcast(ring bool) {
 	s.publishLive() // following guests see the same board
+	s.mu.Lock()
+	s.revision++
+	s.mu.Unlock()
 	payload, err := json.Marshal(s.snapshot(ring))
 	if err != nil {
 		return

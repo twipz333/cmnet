@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 
 	// Aliased: this package already has an embed.FS called assets for the static UI.
 	assetstore "cmnet/internal/assets"
+	"cmnet/internal/cache"
 	"cmnet/internal/draft"
 	"cmnet/internal/objectives"
 	"cmnet/internal/recommender"
@@ -34,6 +36,17 @@ type Server struct {
 	mu       sync.Mutex
 	sess     *session.Session // built lazily from shell.BuildScan; nil until then
 	sessErr  string           // why the last build failed, for the status bar
+	pendingCfg *session.Config // model swaps only between drafts
+	revision uint64            // monotonic event revision
+	sessionID string           // per-process session identity
+	ipcToken string            // per-child native bearer secret
+	localOnly bool             // native edition forbids public-relay sharing
+	commandMu sync.Mutex      // serializes manual state changes + idempotency
+	receipts map[string][32]byte
+	receiptOrder []string
+	localCache *cache.Store    // local durable draft checkpoints
+	draftID string            // changes only when the captain starts a new manual draft
+	draftRevision uint64      // persisted board ordering, independent of SSE progress
 	status   string           // last human-readable outcome
 	gsiOnce  sync.Once
 	baseCtx  context.Context // server lifetime, for the GSI pump
@@ -52,7 +65,7 @@ type Server struct {
 // built on demand (and rebuilt after train/scout), so the UI still comes up when
 // no bundle exists yet — the user can go straight to Train.
 func New(shell session.ShellConfig, addr string) *Server {
-	s := &Server{shell: shell, addr: addr, hub: newHub()}
+	s := &Server{shell: shell, addr: addr, hub: newHub(), revision: 1, sessionID: newSessionID(), ipcToken: ipcTokenFromEnv(), draftID: newSessionID(), localOnly: os.Getenv("CMNET_LOCAL_ONLY") == "1"}
 	if shell.Auto != nil {
 		// A bundle trained in the background is of no use while the server keeps
 		// serving the one it loaded at startup. Rebuilding the session picks it up,
@@ -97,7 +110,21 @@ func (s *Server) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", s.addr, err)
 	}
+	// Never accidentally expose the local desktop API to a LAN.
+	if tcp, ok := ln.Addr().(*net.TCPAddr); !ok || !tcp.IP.IsLoopback() {
+		_ = ln.Close()
+		return fmt.Errorf("non-loopback web listener refused: %s", s.addr)
+	}
 	s.addr = ln.Addr().String()
+	if s.shell.CachePath != "" {
+		store, err := cache.Open(s.shell.CachePath)
+		if err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("open local checkpoint cache: %w", err)
+		}
+		s.localCache = store
+		defer store.Close()
+	}
 
 	s.mu.Lock()
 	s.baseCtx = ctx
@@ -107,10 +134,11 @@ func (s *Server) Run(ctx context.Context) error {
 	// while the user is still on another screen. A failure is not fatal: it is
 	// reported in the UI and retried on the next request.
 	_, _ = s.session()
+	s.restoreCheckpoint(ctx)
 	s.resumeFollow() // a guest who followed the host's draft picks it up again
 
 	srv := &http.Server{
-		Handler:           s.routes(),
+		Handler:           s.secureRoutes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
@@ -167,33 +195,43 @@ func (s *Server) session() (*session.Session, error) {
 	return sess, nil
 }
 
-// reloadSession rebuilds the draft session so a freshly trained bundle or a new
-// opponent snapshot takes effect without restarting the binary.
+// reloadSession freezes an active match's model even if training finishes.
+// The candidate model is installed only when the captain starts the next draft.
 func (s *Server) reloadSession() error {
 	s.mu.Lock()
 	build := s.shell.BuildScan
 	s.mu.Unlock()
-	if build == nil {
-		return nil // nothing to reload in session-only mode
-	}
+	if build == nil { return nil }
 	cfg, err := build()
 	if err != nil {
-		s.mu.Lock()
-		s.sessErr = err.Error()
-		s.mu.Unlock()
+		s.mu.Lock(); s.sessErr = err.Error(); s.mu.Unlock()
 		return err
 	}
-	sess := session.New(cfg)
-	s.applyTeam(sess)
-
 	s.mu.Lock()
-	s.sess = sess
+	if s.sess != nil && s.sess.DraftInProgress() {
+		s.pendingCfg = &cfg
+		s.sessErr = ""
+		s.mu.Unlock()
+		return nil
+	}
+	s.mu.Unlock()
+	fresh := session.New(cfg)
+	s.applyTeam(fresh)
+	s.mu.Lock()
+	// Building the new config can race with the first captain pick.
+	if s.sess != nil && s.sess.DraftInProgress() {
+		s.pendingCfg = &cfg
+		s.sessErr = ""
+		s.mu.Unlock()
+		return nil
+	}
+	s.sess = fresh
+	s.pendingCfg = nil
 	s.sessErr = ""
 	s.mu.Unlock()
-
-	s.startGSIPump(sess)
+	s.startGSIPump(fresh)
 	s.followIntoSession()
-	s.shareRefresh() // a friend who comes next gets the new model / scouting
+	s.shareRefresh()
 	return nil
 }
 
@@ -268,6 +306,7 @@ func (s *Server) pumpGSI(ctx context.Context, evs <-chan *draft.Snapshot) {
 				continue // the board follows the host, not this machine's Dota
 			}
 			ring := sess.ApplyGSI(snap)
+			if s.shell.Auto != nil { s.shell.Auto.TouchDraft() } // GSI event, not a GET heartbeat
 			if msg := sess.TakeStatus(); msg != "" {
 				s.setStatus(msg)
 			}
@@ -312,6 +351,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/reload", s.mutate(s.doReload))
 	mux.HandleFunc("/api/new-draft", s.mutate(s.doNewDraft))
 	mux.HandleFunc("/api/catalog", s.handleCatalog)
+	mux.HandleFunc("/api/intelligence/observation", s.handleIntelligenceObservation)
 	// Cached images, served from disk. The page must never reference a CDN: it is
 	// opened from a local server and has to work with no network at all, which is
 	// also how a laptop behaves on a Battle Cup night more often than one would
@@ -326,6 +366,17 @@ func (s *Server) routes() http.Handler {
 	s.routeShare(mux)
 	s.routeTeam(mux)
 	s.routeRemote(mux)
+	// Explicit v1 alias while the Electron wire contract remains supported.
+	mux.Handle("/api/v1/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Strip only the version, never the /api prefix. The same handlers and
+		// schemas serve legacy Electron and native clients during migration.
+		forward := r.Clone(r.Context())
+		u := *r.URL
+		u.Path = "/api" + strings.TrimPrefix(r.URL.Path, "/api/v1")
+		u.RawPath = ""
+		forward.URL = &u
+		mux.ServeHTTP(w, forward)
+	}))
 	return sameSiteOnly(mux)
 }
 
@@ -353,6 +404,10 @@ func sameSiteOnly(next http.Handler) http.Handler {
 // stateDTO is the whole UI state in one object. Result is embedded verbatim, so a
 // new core field reaches the browser without touching this file.
 type stateDTO struct {
+	SchemaVersion int `json:"schemaVersion"`
+	SessionID string `json:"sessionId"`
+	Revision uint64 `json:"revision"`
+	ModelUpdatePending bool `json:"modelUpdatePending"`
 	Meta   metaDTO            `json:"meta"`
 	Board  boardDTO           `json:"board"`
 	Step   *stepDTO           `json:"step"`
@@ -438,9 +493,11 @@ type stepDTO struct {
 func (s *Server) snapshot(ring bool) stateDTO {
 	s.mu.Lock()
 	sess, sessErr, status, sh := s.sess, s.sessErr, s.status, s.shell
+	revision, sessionID, pending := s.revision, s.sessionID, s.pendingCfg != nil
 	s.mu.Unlock()
 
 	st := stateDTO{
+		SchemaVersion: 1, SessionID: sessionID, Revision: revision, ModelUpdatePending: pending,
 		Meta: metaDTO{
 			DraftReady:       sess != nil,
 			DraftError:       sessErr,
@@ -510,13 +567,6 @@ func (s *Server) snapshot(ring bool) stateDTO {
 		DirePicks:    nonNil(view.Picks(draft.Dire)),
 		DireBans:     nonNil(view.Bans(draft.Dire)),
 	}
-	// Hold back the background retrain while a draft is on the board: applying a new
-	// bundle rebuilds the session, and a rebuilt session is an empty board. A frame
-	// is built on every poll, so this beats often enough to stay true throughout a
-	// draft and expires by itself once the browser stops asking.
-	if sh.Auto != nil && !st.Board.empty() {
-		sh.Auto.TouchDraft()
-	}
 	st.Result = sess.Result()
 	st.Heroes = sess.AvailableHeroes()
 	st.Names = names
@@ -567,11 +617,27 @@ func (s *Server) mutate(fn func(*http.Request) (string, error)) http.HandlerFunc
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		s.commandMu.Lock()
+		defer s.commandMu.Unlock()
+		seenKey, fingerprint, duplicate, valid := s.checkIdempotency(w, r)
+		if !valid { return }
+		if duplicate {
+			writeJSON(w, http.StatusOK, s.snapshot(false))
+			return
+		}
 		msg, err := fn(r)
+		if seenKey != "" { s.rememberIdempotency(seenKey, fingerprint) }
 		if err != nil {
 			s.setStatus(err.Error())
 		} else {
 			s.setStatus(msg)
+		}
+		if err == nil && s.shell.Auto != nil { s.shell.Auto.TouchDraft() }
+		if err == nil {
+			if saveErr := s.saveCheckpoint(); saveErr != nil {
+				err = fmt.Errorf("draft changed but could not save checkpoint: %w", saveErr)
+				s.setStatus(err.Error())
+			}
 		}
 		s.broadcast(false)
 		writeJSON(w, http.StatusOK, s.snapshot(false))

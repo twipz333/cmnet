@@ -27,6 +27,7 @@ type CorpusStats = cache.CorpusStats
 // operations: the browser UI must offer everything the terminal one does.
 type ShellConfig struct {
 	GSI   bool
+	CachePath string // local SQLite checkpoint/provenance store; empty for stand-alone tests
 	Token bool // whether a STRATZ token was provided (enables sync)
 
 	// Guest marks the guest app: it never collects or trains, and gets its model

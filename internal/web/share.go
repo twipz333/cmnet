@@ -17,6 +17,7 @@ import (
 // shareDTO is the sharing panel: the host's open code, or the guest's last
 // receive. Guest reports which app this is, so the page shows the right one.
 type shareDTO struct {
+	LocalOnly bool `json:"localOnly"`
 	Guest     bool              `json:"guest"`
 	CanHost   bool              `json:"canHost"`
 	Host      *share.HostStatus `json:"host,omitempty"`
@@ -105,7 +106,7 @@ func (s *Server) shareView() shareDTO {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.loadLocked()
-	out := shareDTO{Guest: s.shell.Guest, CanHost: s.shell.SharePayload != nil,
+	out := shareDTO{LocalOnly: s.localOnly, Guest: s.shell.Guest, CanHost: s.shell.SharePayload != nil && !s.localOnly,
 		Receiving: st.receiving, Error: st.err, Live: st.hostPrefs.Live}
 	if s.shell.Guest {
 		out.LastCode = st.memo.Code
@@ -157,6 +158,9 @@ func (s *Server) sharePayload() (share.Payload, error) {
 }
 
 func (s *Server) shareStart(r *http.Request) (string, error) {
+	if s.localOnly {
+		return "", errors.New("public-relay sharing disabled in local-only mode")
+	}
 	if s.shell.SharePayload == nil {
 		return "", errors.New("в гостевой версии раздавать нельзя")
 	}
@@ -193,6 +197,7 @@ func (s *Server) shareStart(r *http.Request) (string, error) {
 
 // shareMode turns the live draft on or off, also while a code is open.
 func (s *Server) shareMode(r *http.Request) (string, error) {
+	if s.localOnly { return "", errors.New("public-relay live mode disabled in local-only mode") }
 	var req struct {
 		Live bool `json:"live"`
 	}
@@ -300,6 +305,9 @@ func (s *Server) shareRefresh() {
 const receiveTimeout = 2 * time.Minute
 
 func (s *Server) shareReceive(r *http.Request) (string, error) {
+	if s.localOnly {
+		return "", errors.New("public-relay receiving disabled in local-only mode")
+	}
 	if s.shell.ApplyShare == nil {
 		return "", errors.New("получать от хоста умеет только гостевая версия")
 	}
@@ -399,7 +407,7 @@ func (s *Server) shareFollow(r *http.Request) (string, error) {
 
 // resumeFollow restarts following on app start when the guest left it on.
 func (s *Server) resumeFollow() {
-	if !s.shell.Guest {
+	if s.localOnly || !s.shell.Guest {
 		return
 	}
 	st := &s.shareSt
@@ -424,6 +432,7 @@ func (s *Server) setFollowState(state, via string) {
 }
 
 func (s *Server) startFollow(code string) {
+	if s.localOnly { return } // prevents automatic relay reconnection
 	st := &s.shareSt
 	st.mu.Lock()
 	if st.followCancel != nil {
