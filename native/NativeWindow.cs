@@ -20,6 +20,7 @@ namespace Cmnet.Native;
 public sealed class NativeWindow : Window
 {
     private readonly AdvisorCore core = new();
+    private readonly HeroArtwork artwork;
     private readonly Brush background = Hex("#0C131E");
     private readonly Brush panel = Hex("#172232");
     private readonly Brush soft = Hex("#202E41");
@@ -61,6 +62,14 @@ public sealed class NativeWindow : Window
     private ListBox? draftRecommendations;
     private readonly ObservableCollection<HeroRow> heroRows = new();
     private ListBox? heroList;
+    private WrapPanel? heroGallery;
+    private TextBlock? selectedHeroHint;
+    private int selectedHeroId;
+    private string heroSearchText = "";
+    private StackPanel? scoutDetails;
+    private WrapPanel? scoutedPlayers;
+    private long selectedScoutId;
+    private string selectedScoutSide = "enemy";
     private ListBox? knownPlayersList;
     private readonly List<PlayerRow> knownPlayerRows = new();
     private string knownPlayerFilter = "";
@@ -80,6 +89,7 @@ public sealed class NativeWindow : Window
 
     public NativeWindow(string? initialDataDirectory = null)
     {
+        artwork = new HeroArtwork(() => core.DataDirectory);
         Title = "cmnet · Native Preview";
         Width = 1370;
         Height = 870;
@@ -402,8 +412,9 @@ public sealed class NativeWindow : Window
     private async Task RunAction(string endpoint, object? payload = null)
     {
         if (core.BaseUri == null) return;
-        await core.PostAsync(endpoint, payload ?? new { });
-        toast.Text = "Команда отправлена";
+        var response = await core.PostAsync(endpoint, payload ?? new { });
+        var message = System.Text.Json.Nodes.JsonNode.Parse(response).At("status").S();
+        toast.Text = string.IsNullOrWhiteSpace(message) ? "Операция отправлена" : message;
         if (page == "Разведка") await LoadScoutAsync();
     }
 
@@ -506,13 +517,24 @@ public sealed class NativeWindow : Window
             Grid.SetColumn(identity, 2);
             row.Children.Add(identity);
 
-            var choose = Btn("Изменить", async () => await EditSeatAsync(side, position), true);
+            var actions = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(7, 0, 0, 0) };
+            var details = Btn("Статистика", async () =>
+            {
+                var ids = state.At("team", side).Items().ToArray();
+                var id = position <= ids.Length ? ids[position - 1]?.L() ?? 0 : 0;
+                if (id > 0) ShowScoutDetails(side, id);
+                await Task.CompletedTask;
+            }, true);
+            details.FontSize = 11;
+            details.Padding = new Thickness(7, 4, 7, 4);
+            details.Margin = new Thickness(0, 0, 0, 4);
+            actions.Children.Add(details);
+            var choose = Btn("Заменить", async () => await EditSeatAsync(side, position), true);
             choose.FontSize = 11;
-            choose.Padding = new Thickness(10, 6, 10, 6);
-            choose.Margin = new Thickness(7, 0, 0, 0);
-            choose.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(choose, 3);
-            row.Children.Add(choose);
+            choose.Padding = new Thickness(7, 4, 7, 4);
+            actions.Children.Add(choose);
+            Grid.SetColumn(actions, 3);
+            row.Children.Add(actions);
 
             host.Children.Add(new Border { Child = row, Background = Hex("#1D2B3A"),
                 BorderBrush = Hex("#324457"), BorderThickness = new Thickness(1),
@@ -603,6 +625,14 @@ public sealed class NativeWindow : Window
         teamGrid = grid;
         host.Children.Add(grid);
 
+        Header(host, "Разведанные игроки");
+        host.Children.Add(Text("Выбери профиль, чтобы посмотреть сильных героев, количество игр и винрейт.",
+            12, color: muted));
+        scoutedPlayers = new WrapPanel { Margin = new Thickness(0, 12, 0, 14) };
+        host.Children.Add(scoutedPlayers);
+        scoutDetails = new StackPanel();
+        host.Children.Add(Surface(scoutDetails, new Thickness(0, 0, 0, 16)));
+
         Header(host, "Ход разведки");
         var active = new Border { Background = Hex("#142535"), CornerRadius = new CornerRadius(11),
             BorderBrush = Hex("#315065"), BorderThickness = new Thickness(1),
@@ -661,6 +691,8 @@ public sealed class NativeWindow : Window
             {
                 UpdateScoutRoster();
                 UpdateKnownPlayers();
+                RenderScoutedPlayers();
+                RenderScoutDetails();
             }
         }
         catch (Exception ex)
@@ -724,6 +756,134 @@ public sealed class NativeWindow : Window
                 }
             }
         }
+    }
+
+    private void ShowScoutDetails(string side, long id)
+    {
+        if (id <= 0) return;
+        selectedScoutSide = side;
+        selectedScoutId = id;
+        RenderScoutedPlayers();
+        RenderScoutDetails();
+    }
+
+    private void RenderScoutedPlayers()
+    {
+        if (page != "Разведка" || scoutedPlayers == null) return;
+        scoutedPlayers.Children.Clear();
+        foreach (var side in new[] { "our", "enemy" })
+        {
+            var rows = stats.At("stats", side == "our" ? "allyPlayers" : "enemyPlayers").Items().ToArray();
+            foreach (var p in rows.Take(20))
+            {
+                var id = p.At("accountId").L();
+                if (id <= 0) continue;
+                var resolvedSide = side;
+                var caption = p.At("nickname").S();
+                if (string.IsNullOrWhiteSpace(caption)) caption = PlayerName(id);
+                var label = (side == "our" ? "● " : "◆ ") + caption;
+                var btn = Btn(label, async () =>
+                {
+                    ShowScoutDetails(resolvedSide, id);
+                    await Task.CompletedTask;
+                }, true);
+                btn.Margin = new Thickness(0, 0, 8, 8);
+                btn.Background = selectedScoutSide == side && selectedScoutId == id
+                    ? Hex("#31565C") : soft;
+                scoutedPlayers.Children.Add(btn);
+                if (selectedScoutId == 0)
+                {
+                    selectedScoutSide = side;
+                    selectedScoutId = id;
+                }
+            }
+        }
+        if (scoutedPlayers.Children.Count == 0)
+            scoutedPlayers.Children.Add(Text("Пока никого не разведали. Добавь Steam ID или обнови состав выше.",
+                13, color: muted));
+    }
+
+    private void RenderScoutDetails()
+    {
+        if (page != "Разведка" || scoutDetails == null) return;
+        scoutDetails.Children.Clear();
+        if (selectedScoutId <= 0)
+        {
+            scoutDetails.Children.Add(Text("Нет выбранного игрока", 17, FontWeights.SemiBold));
+            scoutDetails.Children.Add(Text("Здесь появятся герои, количество игр, винрейт и статус источника.",
+                12, color: muted));
+            return;
+        }
+        var side = selectedScoutSide;
+        var entry = stats.At("stats", side == "our" ? "allyPlayers" : "enemyPlayers")
+            .Items().FirstOrDefault(p => p.At("accountId").L() == selectedScoutId);
+        var head = new DockPanel { LastChildFill = true };
+        var rescout = Btn("↻  Повторить разведку", async () =>
+        {
+            await RunAction(side == "our" ? "/api/ops/scout-allies" : "/api/ops/scout",
+                new { players = selectedScoutId.ToString() });
+        });
+        DockPanel.SetDock(rescout, Dock.Right);
+        head.Children.Add(rescout);
+        var title = new StackPanel();
+        title.Children.Add(Text(side == "our" ? "НАШ ИГРОК" : "ПРОТИВНИК", 10, FontWeights.Bold,
+            side == "our" ? accent : gold));
+        title.Children.Add(Text(PlayerName(selectedScoutId), 20, FontWeights.Bold));
+        title.Children.Add(Text("Steam account: " + selectedScoutId, 11, color: muted));
+        head.Children.Add(title);
+        scoutDetails.Children.Add(head);
+
+        if (entry == null)
+        {
+            var missing = Text("Данные героя ещё не загружены. Проверь публичность профиля или запусти разведку.",
+                13, color: muted);
+            missing.Margin = new Thickness(0, 17, 0, 0);
+            scoutDetails.Children.Add(missing);
+            return;
+        }
+        var current = entry.At("scoutStatus").S("unknown");
+        var friendly = current switch
+        {
+            "ok" => "Данные получены",
+            "no_stats" => "Нет публичной статистики",
+            "error" => "Ошибка запроса — сохранены старые данные",
+            "stale" => "Данные могут быть устаревшими",
+            "unresolved" => "Steam ID не определён",
+            _ => "Статус: " + current
+        };
+        var status = Text(friendly, 12, FontWeights.SemiBold, current == "ok" ? good : gold);
+        status.Margin = new Thickness(0, 14, 0, 14);
+        scoutDetails.Children.Add(status);
+
+        var heroes = entry.At("topHeroes").Items().Take(8).ToArray();
+        if (heroes.Length == 0)
+        {
+            scoutDetails.Children.Add(Text("Нет статистики по героям для этого аккаунта.", 13, color: muted));
+            return;
+        }
+        var gallery = new WrapPanel();
+        foreach (var hero in heroes)
+        {
+            var id = hero.At("id").I();
+            if (id <= 0) continue;
+            var item = new StackPanel();
+            item.Children.Add(HeroPortrait(id, 130, 75));
+            var name = Text(HeroName(id), 12, FontWeights.SemiBold);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            name.TextWrapping = TextWrapping.NoWrap;
+            name.Width = 130;
+            name.Margin = new Thickness(0, 7, 0, 0);
+            item.Children.Add(name);
+            item.Children.Add(Text($"{hero.At("games").I()} игр · {hero.At("winRate").D():P0} побед",
+                11, color: muted));
+            var affinity = hero.At("aff").D();
+            if (affinity != 0) item.Children.Add(Text($"Комфорт: {affinity:0.00}", 11, color: accent));
+            gallery.Children.Add(new Border { Child = item, Background = Hex("#203044"),
+                BorderBrush = border, BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10), Padding = new Thickness(10),
+                Margin = new Thickness(0, 0, 10, 10) });
+        }
+        scoutDetails.Children.Add(gallery);
     }
 
     private void UpdateKnownPlayers()
@@ -814,6 +974,87 @@ public sealed class NativeWindow : Window
         dialog.ShowDialog();
     }
 
+    private string HeroInternalName(int id)
+        => state.At("heroes").Items().FirstOrDefault(h => h.At("id").I() == id).At("name").S();
+
+    private UIElement HeroPortrait(int id, double width, double height)
+    {
+        var host = new Grid { Width = width, Height = height, ClipToBounds = true };
+        var fallback = new Border
+        {
+            Background = Hex("#20384A"),
+            Child = Text(id.ToString(), 11, FontWeights.Bold, muted)
+        };
+        ((TextBlock)fallback.Child).HorizontalAlignment = HorizontalAlignment.Center;
+        host.Children.Add(fallback);
+        var picture = new Image { Stretch = Stretch.UniformToFill, Width = width, Height = height };
+        host.Children.Add(picture);
+        artwork.Bind(picture, id, HeroInternalName(id));
+        return host;
+    }
+
+    private UIElement DraftHeroTile(int id)
+    {
+        var tile = new StackPanel();
+        tile.Children.Add(HeroPortrait(id, 118, 68));
+        var label = Text(HeroName(id), 11, FontWeights.SemiBold);
+        label.TextTrimming = TextTrimming.CharacterEllipsis;
+        label.TextWrapping = TextWrapping.NoWrap;
+        label.Width = 118;
+        label.Margin = new Thickness(0, 6, 0, 0);
+        tile.Children.Add(label);
+        var choose = Btn("", async () =>
+        {
+            selectedHeroId = id;
+            if (selectedHeroHint != null) selectedHeroHint.Text = "Выбран: " + HeroName(id);
+            HighlightDraftSelection();
+            await Task.CompletedTask;
+        }, true);
+        choose.Content = tile;
+        choose.Padding = new Thickness(4);
+        choose.Width = 130;
+        choose.Height = 108;
+        choose.Margin = new Thickness(0, 0, 8, 8);
+        choose.Tag = id;
+        choose.ToolTip = HeroName(id);
+        choose.Background = id == selectedHeroId ? Hex("#2B5A5E") : soft;
+        choose.BorderBrush = id == selectedHeroId ? accent : border;
+        return choose;
+    }
+
+    private void HighlightDraftSelection()
+    {
+        if (heroGallery == null) return;
+        foreach (var button in heroGallery.Children.OfType<Button>())
+        {
+            bool selected = button.Tag is int id && id == selectedHeroId;
+            button.Background = selected ? Hex("#2B5A5E") : soft;
+            button.BorderBrush = selected ? accent : border;
+        }
+    }
+
+    private UIElement RecommendationRow(int id, double score, int rank)
+    {
+        var row = new Grid { MinHeight = 56 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.Children.Add(Text(rank.ToString("D2"), 12, FontWeights.SemiBold, muted));
+        var image = HeroPortrait(id, 70, 42);
+        Grid.SetColumn(image, 1);
+        row.Children.Add(image);
+        var name = Text(HeroName(id), 13, FontWeights.SemiBold);
+        name.Margin = new Thickness(7, 0, 0, 0);
+        Grid.SetColumn(name, 2);
+        row.Children.Add(name);
+        var value = Text(score.ToString("P1"), 13, FontWeights.SemiBold, accent);
+        value.Margin = new Thickness(10, 0, 0, 0);
+        Grid.SetColumn(value, 3);
+        row.Children.Add(value);
+        return row;
+    }
+
     private UIElement BuildDraftView()
     {
         heroCatalogKey = "";
@@ -875,25 +1116,36 @@ public sealed class NativeWindow : Window
 
         var search = new TextBox { Margin = new Thickness(0, 0, 0, 12),
             ToolTip = "Быстрый поиск героя" };
-        search.TextChanged += (_, _) => UpdateHeroes(search.Text);
+        search.TextChanged += (_, _) =>
+        {
+            heroSearchText = search.Text;
+            UpdateHeroes(heroSearchText);
+        };
         Grid.SetRow(search, 1);
         right.Children.Add(search);
-        heroList = new ListBox { ItemsSource = heroRows, DisplayMemberPath = "Label",
-            Background = Brushes.Transparent, MinHeight = 135, MaxHeight = 400 };
-        VirtualizingStackPanel.SetIsVirtualizing(heroList, true);
-        VirtualizingStackPanel.SetVirtualizationMode(heroList, VirtualizationMode.Recycling);
-        ScrollViewer.SetCanContentScroll(heroList, true);
-        Grid.SetRow(heroList, 2);
-        right.Children.Add(heroList);
-        var apply = Btn("✓  Применить выбранного героя", async () =>
+        // A compact portrait gallery is the primary Dota interaction, not a
+        // text-only ListBox. The vertical ScrollViewer belongs to this region
+        // and not to the full desktop page.
+        heroGallery = new WrapPanel { Orientation = Orientation.Horizontal };
+        var galleryViewport = Scroll(heroGallery);
+        galleryViewport.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        galleryViewport.MinHeight = 135;
+        Grid.SetRow(galleryViewport, 2);
+        right.Children.Add(galleryViewport);
+        var selectionBar = new Grid { Margin = new Thickness(0, 14, 0, 0) };
+        selectionBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        selectionBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        selectedHeroHint = Text("Выбери героя на сетке", 13, FontWeights.SemiBold, muted);
+        selectionBar.Children.Add(selectedHeroHint);
+        var apply = Btn("✓  Применить", async () =>
         {
-            if (heroList.SelectedItem is HeroRow h)
-                await RunAction("/api/apply", new { heroId = h.Id });
+            if (selectedHeroId > 0)
+                await RunAction("/api/apply", new { heroId = selectedHeroId });
         });
-        apply.HorizontalAlignment = HorizontalAlignment.Stretch;
-        apply.Margin = new Thickness(0, 15, 0, 0);
-        Grid.SetRow(apply, 3);
-        right.Children.Add(apply);
+        Grid.SetColumn(apply, 1);
+        selectionBar.Children.Add(apply);
+        Grid.SetRow(selectionBar, 3);
+        right.Children.Add(selectionBar);
         var rightCard = Surface(right, new Thickness(10, 0, 0, 0));
         Grid.SetColumn(rightCard, 1);
         frame.Children.Add(rightCard);
@@ -941,18 +1193,21 @@ public sealed class NativeWindow : Window
                 : $"Сторона: {m.At("ourTeam").S()}\nХод: {step.At("team").S("—")} · {step.At("action").S("—")}\nПатч: {m.At("patchTag").S("—")}";
         }
         var recs = state.At("result","recs").Items().Take(6)
-            .Select(x => $"  {HeroName(x.At("heroId").I())}   ·   {x.At("score").D():P1}").ToList();
-        var recKey = string.Join("|", recs);
+            .Select(x => (id: x.At("heroId").I(), score: x.At("score").D()))
+            .Where(x => x.id > 0).ToList();
+        var recKey = string.Join("|", recs.Select(x => x.id + ":" + x.score));
         if (draftRecommendations != null && recKey != recommendationKey)
         {
-            draftRecommendations.ItemsSource = recs;
+            draftRecommendations.Items.Clear();
+            for (int i = 0; i < recs.Count; i++)
+                draftRecommendations.Items.Add(RecommendationRow(recs[i].id, recs[i].score, i + 1));
             recommendationKey = recKey;
         }
         var key = state.At("heroes")?.ToJsonString() + "|" + state.At("board")?.ToJsonString();
         if (key != heroCatalogKey)
         {
             heroCatalogKey = key;
-            UpdateHeroes("");
+            UpdateHeroes(heroSearchText);
         }
     }
 
@@ -967,11 +1222,17 @@ public sealed class NativeWindow : Window
             .Distinct().Select(id => new HeroRow { Id = id, Name = HeroName(id) })
             .Where(h => h.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
             .OrderBy(h=>h.Name).ToList();
-        var selected = (heroList?.SelectedItem as HeroRow)?.Id;
         heroRows.Clear();
         foreach (var x in all) heroRows.Add(x);
-        if (selected is int hero)
-            heroList!.SelectedItem = heroRows.FirstOrDefault(x => x.Id == hero);
+        if (heroGallery == null) return;
+        heroGallery.Children.Clear();
+        if (all.Count == 0)
+        {
+            heroGallery.Children.Add(Text("Нет подходящих героев", 13, color: muted));
+            return;
+        }
+        foreach (var h in all)
+            heroGallery.Children.Add(DraftHeroTile(h.Id));
     }
 
     private UIElement BuildDataView()
