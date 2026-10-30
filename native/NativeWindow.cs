@@ -412,8 +412,9 @@ public sealed class NativeWindow : Window
     private async Task RunAction(string endpoint, object? payload = null)
     {
         if (core.BaseUri == null) return;
-        await core.PostAsync(endpoint, payload ?? new { });
-        toast.Text = "Команда отправлена";
+        var response = await core.PostAsync(endpoint, payload ?? new { });
+        var message = System.Text.Json.Nodes.JsonNode.Parse(response).At("status").S();
+        toast.Text = string.IsNullOrWhiteSpace(message) ? "Операция отправлена" : message;
         if (page == "Разведка") await LoadScoutAsync();
     }
 
@@ -762,6 +763,7 @@ public sealed class NativeWindow : Window
         if (id <= 0) return;
         selectedScoutSide = side;
         selectedScoutId = id;
+        RenderScoutedPlayers();
         RenderScoutDetails();
     }
 
