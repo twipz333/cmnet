@@ -101,6 +101,25 @@ public sealed partial class NativeWindow
             slots.Children.Add(box);
         }
         host.Children.Add(slots);
+        var banStrip = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
+        foreach (var heroId in bans.Take(7))
+        {
+            var portrait = HeroPortrait(heroId, 35, 22);
+            portrait.Opacity = 0.58;
+            portrait.ToolTip = "Бан: " + HeroName(heroId);
+            var frame = new Border {
+                Child = portrait,
+                Margin = new Thickness(0, 0, 5, 0),
+                BorderBrush = border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(3),
+                ClipToBounds = true
+            };
+            banStrip.Children.Add(frame);
+        }
+        if (bans.Length == 0)
+            banStrip.Children.Add(Text("Баны пока не выбраны", 10, color: muted));
+        host.Children.Add(banStrip);
         return new Border {
             Child = host,
             Background = Hex("#122235"),
@@ -187,6 +206,20 @@ public sealed partial class NativeWindow
             small.TextTrimming = TextTrimming.CharacterEllipsis;
             small.TextWrapping = TextWrapping.NoWrap;
             card.Children.Add(small);
+            if (heroId > 0)
+            {
+                var portrait = HeroPortrait(heroId, 135, 76);
+                portrait.Margin = new Thickness(0, 10, 0, 1);
+                card.Children.Add(portrait);
+            }
+            else
+            {
+                card.Children.Add(new Border {
+                    Height = 3, Background = Hex("#31465A"),
+                    CornerRadius = new CornerRadius(2),
+                    Margin = new Thickness(0, 12, 0, 0)
+                });
+            }
 
             var tile = new Border {
                 Child = card,
