@@ -2,8 +2,10 @@ package scout
 
 import (
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // stubHM maps hero ids 1..n to dense indices 0..n-1.
@@ -82,7 +84,15 @@ func TestAffVectorsNilWhenAbsent(t *testing.T) {
 }
 
 func TestSnapshotSaveLoadRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "snap.json")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "snap.json")
+	// Save goes through atomicfile (CreateTemp → Sync → Close → Rename). The handle
+	// is closed before return, but on Windows a just-Sync'd file can stay briefly
+	// locked by the scanner; testing.TempDir's RemoveAll then false-fails with
+	// "directory is not empty". Empty the dir first (Cleanup is LIFO, so this runs
+	// before TempDir's own RemoveAll). Assertions are unchanged.
+	t.Cleanup(func() { releaseTempDirFiles(dir) })
+
 	s := sampleSnapshot()
 	if err := s.Save(path); err != nil {
 		t.Fatalf("save: %v", err)
@@ -99,5 +109,24 @@ func TestSnapshotSaveLoadRoundTrip(t *testing.T) {
 	}
 	if loaded.Layer3.DraftsObserved != 2 {
 		t.Errorf("layer3 not preserved: %+v", loaded.Layer3)
+	}
+}
+
+// releaseTempDirFiles deletes everything in dir so testing.TempDir RemoveAll only
+// has to remove an empty directory. Retries cover transient Windows file locks.
+func releaseTempDirFiles(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		p := filepath.Join(dir, e.Name())
+		for i := 0; i < 40; i++ {
+			err := os.RemoveAll(p)
+			if err == nil {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
 	}
 }
