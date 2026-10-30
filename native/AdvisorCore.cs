@@ -83,6 +83,8 @@ public sealed class AdvisorCore : IAsyncDisposable
             CreateNoWindow = true,
         };
         start.Environment["CMNET_IPC_TOKEN"] = ipcToken;
+        // Native preview must never send the team's data to public sharing relays.
+        start.Environment["CMNET_LOCAL_ONLY"] = "1";
         child = Process.Start(start) ?? throw new InvalidOperationException("Cannot start advisor.exe");
         ConnectionChanged?.Invoke("Запуск локального Go-ядра…");
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(35));

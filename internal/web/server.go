@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +40,7 @@ type Server struct {
 	revision uint64            // monotonic event revision
 	sessionID string           // per-process session identity
 	ipcToken string            // per-child native bearer secret
+	localOnly bool             // native edition forbids public-relay sharing
 	commandMu sync.Mutex      // serializes manual state changes + idempotency
 	receipts map[string][32]byte
 	receiptOrder []string
@@ -63,7 +65,7 @@ type Server struct {
 // built on demand (and rebuilt after train/scout), so the UI still comes up when
 // no bundle exists yet — the user can go straight to Train.
 func New(shell session.ShellConfig, addr string) *Server {
-	s := &Server{shell: shell, addr: addr, hub: newHub(), revision: 1, sessionID: newSessionID(), ipcToken: ipcTokenFromEnv(), draftID: newSessionID()}
+	s := &Server{shell: shell, addr: addr, hub: newHub(), revision: 1, sessionID: newSessionID(), ipcToken: ipcTokenFromEnv(), draftID: newSessionID(), localOnly: os.Getenv("CMNET_LOCAL_ONLY") == "1"}
 	if shell.Auto != nil {
 		// A bundle trained in the background is of no use while the server keeps
 		// serving the one it loaded at startup. Rebuilding the session picks it up,

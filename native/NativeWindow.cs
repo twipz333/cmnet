@@ -1492,6 +1492,8 @@ public sealed class NativeWindow : Window
         publish.Children.Add(Text("Сгенерируй код комнаты и покажи союзникам актуальный драфт.", 13, color: muted));
         var publishActions = new WrapPanel { Margin = new Thickness(0, 18, 0, 0) };
         var open = Btn("Открыть сессию", async () => await RunAction("/api/share/start"));
+        open.IsEnabled = false;
+        open.ToolTip = "Публичные relay отключены в локальной версии. LAN sharing пока не реализован.";
         open.Margin = new Thickness(0, 0, 8, 8);
         publishActions.Children.Add(open);
         publishActions.Children.Add(Btn("Завершить", async () => await RunAction("/api/share/stop"), true));
@@ -1508,8 +1510,11 @@ public sealed class NativeWindow : Window
         var codeInput = new TextBox { Margin = new Thickness(0, 16, 0, 9),
             ToolTip = "Код комнаты", MaxLength = 24 };
         join.Children.Add(codeInput);
-        join.Children.Add(Btn("Получить драфт", async () =>
-            await RunAction("/api/share/receive", new { code = codeInput.Text.Trim() })));
+        var receive = Btn("Получить драфт", async () =>
+            await RunAction("/api/share/receive", new { code = codeInput.Text.Trim() }));
+        receive.IsEnabled = false;
+        receive.ToolTip = "Публичные relay отключены в локальной версии.";
+        join.Children.Add(receive);
         var joinCard = Surface(join, new Thickness(9, 0, 0, 0));
         Grid.SetColumn(joinCard, 1);
         cards.Children.Add(joinCard);
@@ -1528,7 +1533,7 @@ public sealed class NativeWindow : Window
         };
         host.Children.Add(cards);
 
-        var footnote = Text("Работает через локальное Go-ядро. Без внешнего браузера и отдельного входа.", 12, color: muted);
+        var footnote = Text("Локальный режим: публичные relay отключены. Для обмена файлами используйте защищённый ручной канал; live LAN пока недоступен.", 12, color: muted);
         footnote.Margin = new Thickness(0, 19, 0, 0);
         host.Children.Add(footnote);
         return Scroll(host);

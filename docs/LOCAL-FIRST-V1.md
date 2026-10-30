@@ -54,3 +54,14 @@ Native POSTs carry a random `Idempotency-Key`. Duplicate commands with the
 same route and body are accepted without re-execution during one Go process;
 different payloads sharing a key receive HTTP 409. The 512-key in-memory
 receipt window does **not** guarantee cross-process exactly-once execution.
+
+## Local-only collaboration boundary
+
+Native WPF starts advisor.exe with `CMNET_LOCAL_ONLY=1`: legacy
+`/api/share/start`, receive, follow, automatic follow restoration and live
+relay mode are blocked. The native Friends screen reflects the disabled
+actions rather than accidentally invoking magic-wormhole or ppng.io. This is
+a fail-closed boundary, **not** a finished LAN sharing implementation.
+The older standalone Electron release retains legacy public relay sharing
+during its migration window; do not use it when strict no-relay operation
+is required.
