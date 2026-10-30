@@ -316,6 +316,7 @@ public sealed class NativeWindow : Window
         {
             RenderPage(name);
         }
+        if (page != name) return; // construction failed; keep current view
         if (name == "Разведка") await LoadScoutAsync();
         else if (name == "Данные") await LoadDataAsync();
         else if (name == "Настройки") await LoadSettingsAsync();
@@ -662,7 +663,11 @@ public sealed class NativeWindow : Window
                 UpdateKnownPlayers();
             }
         }
-        catch (Exception ex) { toast.Text = "Список: " + ex.Message; }
+        catch (Exception ex)
+        {
+            if (page == "Разведка")
+                toast.Text = ex is TimeoutException ? "Steam-статистика временно занята." : "Список: " + ex.Message;
+        }
         finally { loadingScout = false; }
     }
 
@@ -1032,6 +1037,7 @@ public sealed class NativeWindow : Window
                 toast.Text = result.At("error").S("Корпус пока недоступен");
                 return;
             }
+            if (page != "Данные") return; // stale response after navigation
             corpusMatches.Text = corpus.At("matches").L().ToString("N0");
             corpusDrafts.Text = corpus.At("cmDrafts").L().ToString("N0");
             corpusCoverage.Text = corpus.At("withPositions").L().ToString("N0");
@@ -1042,7 +1048,17 @@ public sealed class NativeWindow : Window
                     .Select((h, i) => $"{i + 1:D2}    {h.At("name").S("Герой")}    ·    {h.At("count").L():N0} пиков")
                     .ToList();
         }
-        catch (Exception ex) { toast.Text = "Корпус: " + ex.Message; }
+        catch (Exception ex)
+        {
+            // A slow corpus refresh from a previous page must not leave an
+            // unrelated error in the permanent footer of another view.
+            if (page == "Данные")
+            {
+                toast.Text = ex is TimeoutException
+                    ? "Данные временно заняты. Повтори обновление метрик."
+                    : "Корпус: " + ex.Message;
+            }
+        }
     }
 
     private static ListBox? FindNamedList(DependencyObject? node, string name)
@@ -1251,6 +1267,20 @@ public sealed class NativeWindow : Window
         footnote.Margin = new Thickness(0, 19, 0, 0);
         host.Children.Add(footnote);
         return Scroll(host);
+    }
+
+    // Lightweight Windows UI smoke gate used by the native CI job. The backend
+    // never starts because the window is not shown. It catches WPF logical
+    // parent reuse, page/header mismatch and broken view construction.
+    internal void AssertNavigationWorks()
+    {
+        foreach (var target in new[] { "Драфт", "Разведка", "Данные", "Разведка", "Драфт", "Настройки", "Друзья" })
+        {
+            var previous = body.Content;
+            RenderPage(target);
+            if (page != target || heading.Text != target || ReferenceEquals(previous, body.Content))
+                throw new InvalidOperationException($"Native navigation smoke failed on {target}: visual content did not change.");
+        }
     }
 
     private sealed class PlayerRow
