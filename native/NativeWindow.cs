@@ -21,15 +21,15 @@ public sealed partial class NativeWindow : Window
 {
     private readonly AdvisorCore core = new();
     private readonly HeroArtwork artwork;
-    private readonly Brush background = Hex("#0B1117");
-    private readonly Brush panel = Hex("#121A23");
-    private readonly Brush soft = Hex("#203044");
-    private readonly Brush border = Hex("#263849");
-    private readonly Brush foreground = Hex("#F1F5F9");
-    private readonly Brush muted = Hex("#A0B0C3");
-    private readonly Brush accent = Hex("#30D9C4");
-    private readonly Brush gold = Hex("#F3B562");
-    private readonly Brush good = Hex("#7BD9A5");
+    private readonly Brush background = ThemeBrush("CanvasBrush");
+    private readonly Brush panel = ThemeBrush("PanelBrush");
+    private readonly Brush soft = ThemeBrush("HoverBrush");
+    private readonly Brush border = ThemeBrush("BorderBrush");
+    private readonly Brush foreground = ThemeBrush("TextBrush");
+    private readonly Brush muted = ThemeBrush("MutedBrush");
+    private readonly Brush accent = ThemeBrush("AccentBrush");
+    private readonly Brush gold = ThemeBrush("WarningBrush");
+    private readonly Brush good = ThemeBrush("SuccessBrush");
 
     private readonly ContentControl body = new();
     private readonly TextBlock status = new();
@@ -64,14 +64,11 @@ public sealed partial class NativeWindow : Window
     private TextBlock? draftSummary;
     private ListBox? draftRecommendations;
     private readonly ObservableCollection<HeroRow> heroRows = new();
-    private ListBox? heroList;
-    private WrapPanel? heroGallery;
+    private HeroCatalog? heroGallery;
     private TextBlock? selectedHeroHint;
     private int selectedHeroId;
-    private int heroPageSize = 48;
     private TextBox? heroSearchBox;
     private TextBlock? heroResultsCount;
-    private Button? heroShowMore;
     private Button? applyDraftButton;
     private string heroSearchText = "";
     private StackPanel? scoutDetails;
@@ -97,12 +94,12 @@ public sealed partial class NativeWindow : Window
 
     public NativeWindow(string? initialDataDirectory = null, bool visualPreview = false)
     {
-        artwork = new HeroArtwork(() => core.DataDirectory);
+        artwork = new HeroArtwork(() => visualPreview ? Path.Combine(Path.GetTempPath(), "cmnet-visual-fixture") : core.DataDirectory);
         Title = "CMNET · Match Intelligence";
         Width = 1460;
         Height = 860;
-        MinWidth = 940;
-        MinHeight = 600;
+        MinWidth = 820;
+        MinHeight = 460;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = background;
         Foreground = foreground;
@@ -110,189 +107,7 @@ public sealed partial class NativeWindow : Window
         UseLayoutRounding = true;
         SnapsToDevicePixels = true;
 
-        // Purpose-built match cockpit: restrained navigation, generous
-        // content viewport, one semantic accent and contextual actions.
-        var layout = new Grid();
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(58) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(27) });
-        Content = layout;
-
-        var top = new Grid { Background = Hex("#101927") };
-        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(148) });
-        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        var brand = new StackPanel {
-            Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(13, 0, 0, 0)
-        };
-        var symbol = new Border {
-            Width = 31, Height = 31,
-            Background = Hex("#193B3E"),
-            BorderBrush = Hex("#327F7A"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(7),
-            Child = Text("◈", 20, FontWeights.Bold, accent)
-        };
-        ((TextBlock)symbol.Child).HorizontalAlignment = HorizontalAlignment.Center;
-        brand.Children.Add(symbol);
-        var wordmark = new StackPanel { Margin = new Thickness(10, 3, 0, 0) };
-        var logo = Text("CMNET", 16, FontWeights.Bold, foreground);
-        logo.FontFamily = new FontFamily("Segoe UI Variable Display");
-        wordmark.Children.Add(logo);
-        wordmark.Children.Add(Text("MATCH INTELLIGENCE", 9, FontWeights.Bold, muted));
-        brand.Children.Add(wordmark);
-        top.Children.Add(brand);
-
-        var pageHeading = new StackPanel {
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(17, 0, 0, 0)
-        };
-        heading.FontSize = 15;
-        heading.FontWeight = FontWeights.SemiBold;
-        heading.Foreground = foreground;
-        subtitle.FontSize = 10;
-        subtitle.Foreground = muted;
-        subtitle.Margin = new Thickness(0, 4, 0, 0);
-        pageHeading.Children.Add(heading);
-        pageHeading.Children.Add(subtitle);
-        Grid.SetColumn(pageHeading, 1);
-        top.Children.Add(pageHeading);
-
-        var connection = new Border {
-            Background = Hex("#152A37"),
-            BorderBrush = Hex("#305363"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(99),
-            Padding = new Thickness(14, 8, 14, 8),
-            Margin = new Thickness(10, 0, 25, 0),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        connectionBadge.Text = "●  Соединение…";
-        connectionBadge.Foreground = accent;
-        connectionBadge.FontSize = 11;
-        connectionBadge.FontWeight = FontWeights.SemiBold;
-        connection.Child = connectionBadge;
-        Grid.SetColumn(connection, 2);
-        top.Children.Add(connection);
-        layout.Children.Add(top);
-
-        var content = new Grid();
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(148) });
-        content.ColumnDefinitions.Add(new ColumnDefinition {
-            Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(content, 1);
-        layout.Children.Add(content);
-
-        var aside = new Border {
-            Background = Hex("#101927"),
-            BorderBrush = Hex("#26364A"),
-            BorderThickness = new Thickness(0, 1, 1, 0)
-        };
-        var sidebar = new StackPanel { Margin = new Thickness(6, 15, 6, 10) };
-        var section = Text("МАТЧ", 9, FontWeights.Bold, muted);
-        section.Margin = new Thickness(13, 0, 0, 13);
-        sidebar.Children.Add(section);
-
-        void AddNavigation(string name, string glyph, string shortcut)
-        {
-            var slot = new Grid { Margin = new Thickness(0, 0, 0, 3) };
-            slot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3) });
-            slot.ColumnDefinitions.Add(new ColumnDefinition {
-                Width = new GridLength(1, GridUnitType.Star) });
-            var marker = new Border {
-                Width = 3,
-                CornerRadius = new CornerRadius(2),
-                Background = accent,
-                Visibility = Visibility.Collapsed,
-                Margin = new Thickness(0, 8, 0, 8)
-            };
-            navMarkers[name] = marker;
-            slot.Children.Add(marker);
-            var item = Btn($"{glyph}    {name}", async () =>
-                await OpenPageAsync(name), true);
-            item.HorizontalContentAlignment = HorizontalAlignment.Left;
-            item.FontSize = 12;
-            item.FontWeight = FontWeights.Medium;
-            item.MinHeight = 36;
-            item.Padding = new Thickness(10, 7, 6, 7);
-            item.BorderThickness = new Thickness(1);
-            item.ToolTip = $"Перейти: {name}  ({shortcut})";
-            Grid.SetColumn(item, 1);
-            slot.Children.Add(item);
-            navigation[name] = item;
-            sidebar.Children.Add(slot);
-        }
-
-        AddNavigation("Разведка", "◎", "Ctrl+1");
-        AddNavigation("Драфт", "◇", "Ctrl+2");
-        sidebar.Children.Add(new Border {
-            Height = 1, Background = border,
-            Margin = new Thickness(10, 12, 10, 11)
-        });
-        var sectionOther = Text("СИСТЕМА", 9, FontWeights.Bold, muted);
-        sectionOther.Margin = new Thickness(13, 0, 0, 13);
-        sidebar.Children.Add(sectionOther);
-        AddNavigation("Данные", "▤", "Ctrl+3");
-        AddNavigation("Настройки", "⚙", "Ctrl+4");
-        AddNavigation("Друзья", "♧", "Ctrl+5");
-
-        sidebar.Children.Add(new Border {
-            Height = 1, Background = border,
-            Margin = new Thickness(10, 13, 10, 11)
-        });
-        var tip = new StackPanel();
-        tip.Children.Add(Text("ЛОКАЛЬНЫЙ КЛИЕНТ", 9, FontWeights.Bold, accent));
-        var tipText = Text("Без облачного сервера\nCtrl + 1…5 · разделы", 10, color: muted);
-        tipText.Margin = new Thickness(0, 10, 0, 0);
-        tip.Children.Add(tipText);
-        sidebar.Children.Add(new Border {
-            Background = Hex("#162535"),
-            BorderBrush = Hex("#293F54"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(9),
-            Margin = new Thickness(2, 0, 2, 0),
-            Child = tip
-        });
-        aside.Child = new ScrollViewer {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = sidebar
-        };
-        content.Children.Add(aside);
-
-        var main = new Border {
-            Background = background,
-            Padding = new Thickness(16, 12, 17, 13),
-            Child = body
-        };
-        Grid.SetColumn(main, 1);
-        content.Children.Add(main);
-
-        var footer = new Grid {
-            Background = Hex("#101927")
-        };
-        footer.ColumnDefinitions.Add(new ColumnDefinition {
-            Width = new GridLength(1, GridUnitType.Star) });
-        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        status.Foreground = muted;
-        status.FontSize = 11;
-        status.Margin = new Thickness(23, 0, 0, 0);
-        status.VerticalAlignment = VerticalAlignment.Center;
-        status.TextTrimming = TextTrimming.CharacterEllipsis;
-        status.Text = "Запуск локального ядра…";
-        footer.Children.Add(status);
-        toast.Foreground = gold;
-        toast.FontSize = 11;
-        toast.Margin = new Thickness(12, 0, 25, 0);
-        toast.VerticalAlignment = VerticalAlignment.Center;
-        Grid.SetColumn(toast, 1);
-        footer.Children.Add(toast);
-        Grid.SetRow(footer, 2);
-        layout.Children.Add(footer);
+        BuildShell();
 
         PreviewKeyDown += async (_, e) =>
         {
@@ -332,6 +147,7 @@ public sealed partial class NativeWindow : Window
         RenderPage();
     }
 
+    private static Brush ThemeBrush(string key) => (Brush)Application.Current.FindResource(key);
     private static Brush Hex(string code) => (Brush)new BrushConverter().ConvertFromString(code)!;
     private static Color HexColor(string code) => (Color)ColorConverter.ConvertFromString(code)!;
     private TextBlock Text(string value, double size = 14, FontWeight? weight = null, Brush? color = null)
@@ -342,8 +158,8 @@ public sealed partial class NativeWindow : Window
         var b = new Button
         {
             Content = label, Cursor = Cursors.Hand, Padding = new Thickness(11, 7, 11, 7),
-            Background = subtle ? soft : Hex("#24555D"), Foreground = foreground,
-            BorderBrush = subtle ? border : Hex("#397D81"),
+            Background = subtle ? soft : ThemeBrush("PrimaryBrush"), Foreground = foreground,
+            BorderBrush = subtle ? border : ThemeBrush("PrimaryBrush"),
             BorderThickness = new Thickness(1), MinHeight = 32
         };
         b.Click += async (_, _) =>
@@ -458,8 +274,8 @@ public sealed partial class NativeWindow : Window
         foreach (var item in navigation)
         {
             bool active = item.Key == page;
-            item.Value.Background = active ? Hex("#1D4247") : Hex("#101927");
-            item.Value.BorderBrush = active ? Hex("#3D7773") : Hex("#101927");
+            item.Value.Background = active ? ThemeBrush("SelectedBrush") : ThemeBrush("SidebarBrush");
+            item.Value.BorderBrush = active ? ThemeBrush("PrimaryBrush") : ThemeBrush("SidebarBrush");
             item.Value.Foreground = active ? accent : foreground;
             item.Value.FontWeight = active ? FontWeights.Bold : FontWeights.Medium;
             if (navMarkers.TryGetValue(item.Key, out var marker))
@@ -535,7 +351,7 @@ public sealed partial class NativeWindow : Window
         counter.Margin = new Thickness(0, 8, 0, 0);
         counter.Text = "0 / 5";
         column.Children.Add(counter);
-        return new Border { Child = column, Background = Hex("#1D2C3B"), BorderBrush = border,
+        return new Border { Child = column, Background = ThemeBrush("HoverBrush"), BorderBrush = border,
             BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12),
             Padding = new Thickness(18, 14, 22, 14), MinWidth = 150, Margin = new Thickness(0, 0, 10, 10) };
     }
@@ -581,7 +397,7 @@ public sealed partial class NativeWindow : Window
             row.Children.Add(number);
 
             var avatarFrame = new Grid { Height = 39, Width = 39, Margin = new Thickness(0, 0, 6, 0) };
-            avatarFrame.Children.Add(new Border { Background = Hex("#273B4B"), CornerRadius = new CornerRadius(9),
+            avatarFrame.Children.Add(new Border { Background = ThemeBrush("BorderBrush"), CornerRadius = new CornerRadius(9),
                 Child = Text("?", 16, FontWeights.Bold, muted) });
             ((TextBlock)((Border)avatarFrame.Children[0]).Child).HorizontalAlignment = HorizontalAlignment.Center;
             var avatar = new Image { Height = 37, Width = 37, Stretch = Stretch.UniformToFill };
@@ -629,8 +445,8 @@ public sealed partial class NativeWindow : Window
             Grid.SetColumn(actions, 3);
             row.Children.Add(actions);
 
-            host.Children.Add(new Border { Child = row, Background = Hex("#1D2B3A"),
-                BorderBrush = Hex("#324457"), BorderThickness = new Thickness(1),
+            host.Children.Add(new Border { Child = row, Background = ThemeBrush("HoverBrush"),
+                BorderBrush = ThemeBrush("BorderBrush"), BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(11), Padding = new Thickness(12, 11, 12, 11),
                 Margin = new Thickness(0, 0, 0, 8) });
         }
@@ -753,8 +569,6 @@ public sealed partial class NativeWindow : Window
         RenderScoutDetails();
         scoutSignalKey = "";
         RefreshScoutSignals();
-        if (scoutDetails != null)
-            Dispatcher.BeginInvoke(() => scoutDetails.BringIntoView());
     }
 
     private void RenderScoutedPlayers()
@@ -779,7 +593,7 @@ public sealed partial class NativeWindow : Window
                 }, true);
                 btn.Margin = new Thickness(0, 0, 8, 8);
                 btn.Background = selectedScoutSide == side && selectedScoutId == id
-                    ? Hex("#31565C") : soft;
+                    ? ThemeBrush("PrimaryBrush") : soft;
                 scoutedPlayers.Children.Add(btn);
                 if (selectedScoutId == 0)
                 {
@@ -808,17 +622,19 @@ public sealed partial class NativeWindow : Window
         var entry = stats.At("stats", side == "our" ? "allyPlayers" : "enemyPlayers")
             .Items().FirstOrDefault(p => p.At("accountId").L() == selectedScoutId);
         var head = new DockPanel { LastChildFill = true };
-        var rescout = Btn("↻  Повторить разведку", async () =>
+        var rescout = Btn("↻", async () =>
         {
             await RunAction(side == "our" ? "/api/ops/scout-allies" : "/api/ops/scout",
                 new { players = selectedScoutId.ToString() });
         });
+        rescout.ToolTip = "Повторить разведку игрока";
+        rescout.VerticalAlignment = VerticalAlignment.Top;
         DockPanel.SetDock(rescout, Dock.Right);
         head.Children.Add(rescout);
         var title = new StackPanel();
         title.Children.Add(Text(side == "our" ? "НАШ ИГРОК" : "ПРОТИВНИК", 10, FontWeights.Bold,
             side == "our" ? accent : gold));
-        title.Children.Add(Text(PlayerName(selectedScoutId), 20, FontWeights.Bold));
+        title.Children.Add(Text(PlayerName(selectedScoutId), 16, FontWeights.Bold));
         title.Children.Add(Text("Steam account: " + selectedScoutId, 11, color: muted));
         head.Children.Add(title);
         scoutDetails.Children.Add(head);
@@ -836,7 +652,7 @@ public sealed partial class NativeWindow : Window
         {
             "ok" => "Данные получены",
             "no_stats" => "Нет публичной статистики",
-            "error" => "Ошибка запроса — сохранены старые данные",
+            "error" => "Ошибка источника · доступна только сохранённая выборка",
             "stale" => "Данные могут быть устаревшими",
             "unresolved" => "Steam ID не определён",
             _ => "Статус: " + current
@@ -851,27 +667,19 @@ public sealed partial class NativeWindow : Window
             scoutDetails.Children.Add(Text("Нет статистики по героям для этого аккаунта.", 13, color: muted));
             return;
         }
-        var gallery = new WrapPanel();
+        var gallery = new StackPanel();
         foreach (var hero in heroes)
         {
             var id = hero.At("id").I();
             if (id <= 0) continue;
-            var item = new StackPanel();
-            item.Children.Add(HeroPortrait(id, 130, 75));
-            var name = Text(HeroName(id), 12, FontWeights.SemiBold);
-            name.TextTrimming = TextTrimming.CharacterEllipsis;
-            name.TextWrapping = TextWrapping.NoWrap;
-            name.Width = 130;
-            name.Margin = new Thickness(0, 7, 0, 0);
-            item.Children.Add(name);
-            item.Children.Add(Text($"{hero.At("games").I()} игр · {hero.At("winRate").D():P0} побед",
-                11, color: muted));
-            var affinity = hero.At("aff").D();
-            if (affinity != 0) item.Children.Add(Text($"Комфорт: {affinity:0.00}", 11, color: accent));
-            gallery.Children.Add(new Border { Child = item, Background = Hex("#203044"),
-                BorderBrush = border, BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10), Padding = new Thickness(10),
-                Margin = new Thickness(0, 0, 10, 10) });
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var portrait = HeroPortrait(id, 64, 38);
+            portrait.Margin = new Thickness(0, 0, 10, 0);
+            DockPanel.SetDock(portrait, Dock.Left); row.Children.Add(portrait);
+            var details = new StackPanel();
+            details.Children.Add(Text(HeroName(id), 12, FontWeights.SemiBold));
+            details.Children.Add(Text($"{hero.At("games").I()} игр · {hero.At("winRate").D():P0} побед", 11, color: muted));
+            row.Children.Add(details); gallery.Children.Add(row);
         }
         scoutDetails.Children.Add(gallery);
     }
@@ -980,7 +788,7 @@ public sealed partial class NativeWindow : Window
             Background = new LinearGradientBrush(HexColor("#29465A"),
                 HexColor("#142534"), 35),
             Child = Text(monogram.ToUpperInvariant(), Math.Min(19, height * 0.35),
-                FontWeights.Bold, Hex("#9CBBC8"))
+                FontWeights.Bold, ThemeBrush("MutedBrush"))
         };
         ((TextBlock)fallback.Child).HorizontalAlignment = HorizontalAlignment.Center;
         host.Children.Add(fallback);
@@ -990,43 +798,13 @@ public sealed partial class NativeWindow : Window
         return host;
     }
 
-    private UIElement DraftHeroTile(int id)
-    {
-        var tile = new StackPanel();
-        tile.Children.Add(HeroPortrait(id, 126, 74));
-        var label = Text(HeroName(id), 11, FontWeights.SemiBold);
-        label.TextTrimming = TextTrimming.CharacterEllipsis;
-        label.TextWrapping = TextWrapping.NoWrap;
-        label.Width = 126;
-        label.Margin = new Thickness(0, 6, 0, 0);
-        tile.Children.Add(label);
-        var choose = Btn("", async () =>
-        {
-            selectedHeroId = id;
-            if (selectedHeroHint != null) selectedHeroHint.Text = "Выбран: " + HeroName(id);
-            HighlightDraftSelection();
-            if (applyDraftButton != null) applyDraftButton.IsEnabled = true;
-            await Task.CompletedTask;
-        }, true);
-        choose.Content = tile;
-        choose.Padding = new Thickness(4);
-        choose.Width = 138;
-        choose.Height = 116;
-        choose.Margin = new Thickness(0, 0, 8, 8);
-        choose.Tag = id;
-        choose.ToolTip = HeroName(id);
-        choose.Background = id == selectedHeroId ? Hex("#2B5A5E") : soft;
-        choose.BorderBrush = id == selectedHeroId ? accent : border;
-        return choose;
-    }
-
     private void HighlightDraftSelection()
     {
         if (heroGallery == null) return;
-        foreach (var button in heroGallery.Children.OfType<Button>())
+        foreach (var button in heroGallery.VisibleButtons())
         {
             bool selected = button.Tag is int id && id == selectedHeroId;
-            button.Background = selected ? Hex("#2B5A5E") : soft;
+            button.Background = selected ? ThemeBrush("PrimaryBrush") : soft;
             button.BorderBrush = selected ? accent : border;
         }
     }
@@ -1034,13 +812,13 @@ public sealed partial class NativeWindow : Window
     private UIElement RecommendationRow(int id, double score, int rank)
     {
         var row = new Grid { MinHeight = 44 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(49) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var order = Text(rank.ToString("D2"), 11, FontWeights.Bold,
             rank == 1 ? accent : muted);
         row.Children.Add(order);
-        var portrait = HeroPortrait(id, 44, 30);
+        var portrait = HeroPortrait(id, 36, 26);
         Grid.SetColumn(portrait, 1);
         row.Children.Add(portrait);
         var content = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -1048,7 +826,7 @@ public sealed partial class NativeWindow : Window
         name.TextWrapping = TextWrapping.NoWrap;
         name.TextTrimming = TextTrimming.CharacterEllipsis;
         content.Children.Add(name);
-        content.Children.Add(Text("Оценка " + score.ToString("0.000"), 10,
+        content.Children.Add(Text(score.ToString("0.000"), 10,
             FontWeights.SemiBold, accent));
         Grid.SetColumn(content, 2);
         row.Children.Add(content);
@@ -1058,8 +836,8 @@ public sealed partial class NativeWindow : Window
             await Task.CompletedTask;
         }, true);
         button.Content = row;
-        button.Padding = new Thickness(5, 8, 5, 8);
-        button.Margin = new Thickness(0, 0, 0, 7);
+        button.Padding = new Thickness(3);
+        button.Margin = new Thickness(0, 0, 0, 3);
         button.ToolTip = "Выбрать " + HeroName(id) +
             " · оценка модели " + score.ToString("0.000");
         button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
@@ -1091,16 +869,18 @@ public sealed partial class NativeWindow : Window
                 draftRecommendations.Items.Add(RecommendationRow(recs[i].id, recs[i].score, i + 1));
             recommendationKey = recKey;
         }
-        RefreshSelectedHeroDetail();
         var key = state.At("heroes")?.ToJsonString() + "|" + state.At("board")?.ToJsonString();
         if (key != heroCatalogKey)
         {
             heroCatalogKey = key;
             UpdateHeroes(heroSearchText);
         }
+        if (applyDraftButton != null) applyDraftButton.IsEnabled = CanApplyHero(selectedHeroId);
+        RefreshSelectedHeroDetail();
+        HighlightDraftSelection();
     }
 
-    private string HeroName(int id) => state.At("names",id.ToString()).S(id.ToString());
+    private string HeroName(int id) => state.At("names",id.ToString()).S("Неизвестный герой");
     private void UpdateHeroes(string filter)
     {
         if (state == null || page != "Драфт") return;
@@ -1113,9 +893,6 @@ public sealed partial class NativeWindow : Window
             .OrderBy(h=>h.Name).ToList();
         if (heroResultsCount != null)
             heroResultsCount.Text = $"{all.Count} доступно";
-        if (heroShowMore != null)
-            heroShowMore.Visibility = all.Count > heroPageSize
-                ? Visibility.Visible : Visibility.Collapsed;
         if (selectedHeroId > 0 && taken.Contains(selectedHeroId))
         {
             selectedHeroId = 0;
@@ -1125,14 +902,8 @@ public sealed partial class NativeWindow : Window
         heroRows.Clear();
         foreach (var x in all) heroRows.Add(x);
         if (heroGallery == null) return;
-        heroGallery.Children.Clear();
-        if (all.Count == 0)
-        {
-            heroGallery.Children.Add(Text("Нет подходящих героев", 13, color: muted));
-            return;
-        }
-        foreach (var h in all.Take(heroPageSize))
-            heroGallery.Children.Add(TacticalHeroTile(h.Id));
+        heroGallery.SetHeroes(all.Select(h => h.Id).ToArray(), id => (Button)TacticalHeroTile(id));
+        RefreshSelectedHeroDetail();
     }
 
     private UIElement BuildDataView()
@@ -1171,8 +942,8 @@ public sealed partial class NativeWindow : Window
         ), new Thickness(0, 0, 0, 12));
         host.Children.Add(job);
         dataActivity = Text("Активных заданий нет", 13, color: accent);
-        var activityBox = new Border { Child = dataActivity, Background = Hex("#132434"),
-            BorderBrush = Hex("#365061"), BorderThickness = new Thickness(1),
+        var activityBox = new Border { Child = dataActivity, Background = ThemeBrush("RaisedBrush"),
+            BorderBrush = ThemeBrush("PrimaryBrush"), BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10), Padding = new Thickness(18, 15, 18, 15) };
         host.Children.Add(activityBox);
 

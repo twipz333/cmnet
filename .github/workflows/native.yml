@@ -59,7 +59,7 @@ jobs:
         shell: pwsh
         run: |
           $binary = (Resolve-Path native/out/Cmnet.Native.exe).Path
-          $process = Start-Process -FilePath $binary -ArgumentList '--smoke-ui' -PassThru
+          $process = Start-Process -FilePath $binary -ArgumentList '--smoke-ui' -WindowStyle Hidden -PassThru
           if (-not $process.WaitForExit(30000)) {
             Stop-Process -Id $process.Id -Force
             throw 'WPF navigation smoke timed out'
@@ -73,15 +73,17 @@ jobs:
           # WinExe is a GUI subsystem application. Direct PowerShell '&'
           # launches it without waiting, causing a screenshot/upload race.
           $exe = (Resolve-Path native/out/Cmnet.Native.exe).Path
-          $process = Start-Process -FilePath $exe -ArgumentList @('--capture-ui', 'native/ui-snapshots') -WorkingDirectory (Get-Location).Path -PassThru
-          if (-not $process.WaitForExit(60000)) {
+          $process = Start-Process -FilePath $exe -ArgumentList @('--capture-ui', 'native/ui-snapshots') -WorkingDirectory (Get-Location).Path -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(180000)) {
             Stop-Process -Id $process.Id -Force
             throw 'WPF visual capture timed out'
           }
           if ($process.ExitCode -ne 0) {
             throw "WPF visual capture failed: exit $($process.ExitCode)"
           }
-          foreach ($file in @('scout.png', 'draft.png')) {
+          $matrix = Get-Content native/ui-snapshots/geometry.json -Raw | ConvertFrom-Json
+          if ($matrix.Count -ne 33) { throw 'Incomplete WPF screenshot matrix' }
+          foreach ($file in @('scout.png', 'draft.png') + @($matrix.file)) {
             $candidate = Get-Item "native/ui-snapshots/$file" -ErrorAction Stop
             if ($candidate.PSIsContainer -or $candidate.Length -lt 2048) {
               throw "Invalid screenshot $file"
@@ -90,6 +92,7 @@ jobs:
           }
           Get-ChildItem native/ui-snapshots -Force | Format-Table Name, Length, Attributes
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: cmnet-wpf-3b-screenshots
           path: native/ui-snapshots/
