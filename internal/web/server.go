@@ -347,7 +347,16 @@ func (s *Server) routes() http.Handler {
 	s.routeTeam(mux)
 	s.routeRemote(mux)
 	// Explicit v1 alias while the Electron wire contract remains supported.
-	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", mux))
+	mux.Handle("/api/v1/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Strip only the version, never the /api prefix. The same handlers and
+		// schemas serve legacy Electron and native clients during migration.
+		forward := r.Clone(r.Context())
+		u := *r.URL
+		u.Path = "/api" + strings.TrimPrefix(r.URL.Path, "/api/v1")
+		u.RawPath = ""
+		forward.URL = &u
+		mux.ServeHTTP(w, forward)
+	}))
 	return sameSiteOnly(mux)
 }
 
