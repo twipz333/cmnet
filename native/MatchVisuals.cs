@@ -239,17 +239,24 @@ public sealed partial class NativeWindow
                 ?? Array.Empty<System.Text.Json.Nodes.JsonNode?>();
             int observedGames = heroes.Sum(h => h!.At("games").I());
             double weightedWins = heroes.Sum(h => h!.At("games").I() * h!.At("winRate").D());
+            // error/stale may retain prior topHeroes — never present as fresh ok WR.
+            bool retainedCache = (source is "error" or "stale") && observedGames > 0;
             string wrText = observedGames > 0 ? (weightedWins / observedGames).ToString("P0") : "—";
-            string gamesText = observedGames > 0 ? observedGames + " игр" : "нет игр";
+            string gamesText = observedGames == 0 ? "нет игр"
+                : retainedCache
+                    ? (source == "stale" ? "устарело · " : "кэш · ") + observedGames + " игр"
+                    : observedGames + " игр";
             var wr = Text(wrText, compactScout ? 14 : 18, FontWeights.Bold,
-                observedGames > 0 ? foreground : muted);
+                observedGames > 0 && !retainedCache ? foreground : muted);
             wr.TextAlignment = TextAlignment.Center;
             wr.Margin = new Thickness(0, compactScout ? 4 : 8, 0, 0);
-            wr.ToolTip = observedGames > 0
-                ? "Взвешенный WR по известным героям источника (не модель силы)"
-                : "WR недоступен: источник не отдал героев";
+            wr.ToolTip = retainedCache
+                ? "Сохранённая выборка при ошибке/устаревании источника — не свежий WR"
+                : observedGames > 0
+                    ? "Взвешенный WR по известным героям источника (не модель силы)"
+                    : "WR недоступен: источник не отдал героев";
             content.Children.Add(wr);
-            var games = Text(gamesText, 10, color: muted);
+            var games = Text(gamesText, 10, color: retainedCache ? gold : muted);
             games.TextAlignment = TextAlignment.Center;
             games.ToolTip = wr.ToolTip;
             content.Children.Add(games);

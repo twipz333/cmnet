@@ -683,27 +683,40 @@ public sealed partial class NativeWindow : Window
         var heroes = entry.At("topHeroes").Items().Where(h => h.At("id").I() > 0).Take(8).ToArray();
         int games = heroes.Sum(h => h.At("games").I());
         double weighted = heroes.Sum(h => h.At("games").I() * h.At("winRate").D());
+        // Same honesty gate as opponent cards: retained heroes under error/stale are cache.
+        bool retainedCache = (current is "error" or "stale") && games > 0;
         var wrLine = Text(games > 0
-                ? (weighted / games).ToString("P0") + " WR · " + games + " игр в выборке"
+                ? (retainedCache ? "Кэш · " : "") +
+                  (weighted / games).ToString("P0") + " WR · " + games +
+                  (retainedCache ? " игр (не свежие)" : " игр в выборке")
                 : "WR недоступен — источник не отдал героев",
-            13, FontWeights.SemiBold, games > 0 ? foreground : muted);
-        wrLine.ToolTip = "Агрегат только по известным topHeroes, без модели силы.";
+            13, FontWeights.SemiBold, games > 0 && !retainedCache ? foreground : muted);
+        wrLine.ToolTip = retainedCache
+            ? "Сохранённая выборка при ошибке/устаревании источника — не свежий WR"
+            : "Агрегат только по известным topHeroes, без модели силы.";
         scoutDetails.Children.Add(wrLine);
 
         if (heroes.Length > 0)
         {
+            if (retainedCache)
+            {
+                var cacheCaption = Text(current == "stale" ? "ГЕРОИ · УСТАРЕЛО" : "ГЕРОИ · КЭШ",
+                    10, FontWeights.Bold, gold);
+                cacheCaption.Margin = new Thickness(0, 12, 0, 4);
+                scoutDetails.Children.Add(cacheCaption);
+            }
             var strip = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Margin = new Thickness(0, 12, 0, 0)
+                Margin = new Thickness(0, retainedCache ? 0 : 12, 0, 0)
             };
             foreach (var hero in heroes.Take(6))
             {
                 var id = hero.At("id").I();
                 var thumb = HeroPortrait(id, 48, 28);
                 thumb.Margin = new Thickness(0, 0, 6, 0);
-                thumb.ToolTip = HeroName(id) + " · " + hero.At("games").I() + " игр · " +
-                    hero.At("winRate").D().ToString("P0");
+                thumb.ToolTip = (retainedCache ? "Кэш · " : "") + HeroName(id) + " · " +
+                    hero.At("games").I() + " игр · " + hero.At("winRate").D().ToString("P0");
                 strip.Children.Add(thumb);
             }
             scoutDetails.Children.Add(strip);
@@ -715,6 +728,11 @@ public sealed partial class NativeWindow : Window
         var notes = new System.Collections.Generic.List<(string Text, Brush Tone)>();
         if (heroes.Length == 0)
             notes.Add(("Нет статистики по героям для этого аккаунта.", muted));
+        else if (retainedCache)
+        {
+            notes.Add(("Показана сохранённая выборка; источник сейчас в статусе «" +
+                friendly + "» — цифры не свежие.", gold));
+        }
         else
         {
             var top = heroes.OrderByDescending(h => h.At("games").I()).ThenBy(h => h.At("id").I()).First();
@@ -737,7 +755,9 @@ public sealed partial class NativeWindow : Window
             if (!string.IsNullOrWhiteSpace(label) || !string.IsNullOrWhiteSpace(level))
                 notes.Add(("Метка ядра: " + (string.IsNullOrWhiteSpace(label) ? level : label), gold));
         }
-        if (current is "no_stats" or "error" or "stale" or "unresolved")
+        if (current is "no_stats" or "unresolved")
+            notes.Add(("Источник ограничил ответ (" + friendly + "). Пробел не заполняем выдумкой.", gold));
+        else if ((current is "error" or "stale") && !retainedCache)
             notes.Add(("Источник ограничил ответ (" + friendly + "). Пробел не заполняем выдумкой.", gold));
         foreach (var note in notes)
         {
@@ -765,7 +785,10 @@ public sealed partial class NativeWindow : Window
 
         if (heroes.Length > 0)
         {
-            var galleryTitle = Text("ГЕРОИ ИСТОЧНИКА", 10, FontWeights.Bold, muted);
+            var galleryTitle = Text(retainedCache
+                    ? (current == "stale" ? "ГЕРОИ ИСТОЧНИКА · УСТАРЕЛО" : "ГЕРОИ ИСТОЧНИКА · КЭШ")
+                    : "ГЕРОИ ИСТОЧНИКА",
+                10, FontWeights.Bold, retainedCache ? gold : muted);
             galleryTitle.Margin = new Thickness(0, 14, 0, 8);
             scoutDetails.Children.Add(galleryTitle);
             foreach (var hero in heroes)
@@ -778,7 +801,9 @@ public sealed partial class NativeWindow : Window
                 row.Children.Add(portrait);
                 var details = new StackPanel();
                 details.Children.Add(Text(HeroName(id), 12, FontWeights.SemiBold));
-                details.Children.Add(Text($"{hero.At("games").I()} игр · {hero.At("winRate").D():P0}", 11, color: muted));
+                var heroMeta = (retainedCache ? "кэш · " : "") +
+                    $"{hero.At("games").I()} игр · {hero.At("winRate").D():P0}";
+                details.Children.Add(Text(heroMeta, 11, color: retainedCache ? gold : muted));
                 row.Children.Add(details);
                 scoutDetails.Children.Add(row);
             }

@@ -70,11 +70,10 @@ Draft rows D1–D7 correctly out of scope for this PR (shared tokens only).
 - Insights derive from `topHeroes` aggregates; thin-pool note denies skill verdict.
 - Empty/error threat modules stay empty of fabricated combos/bans (verified on `scout-empty.png`, `scout-error.png`).
 
-**Gap — error scenario retained heroes (P1 honesty labeling):**
-- `UiPreview` error path sets every `scoutStatus = "error"` but **leaves prior `topHeroes` intact**.
-- Cards and selected panel still render weighted WR / heroes while the badge only says «Ошибка» / «Ошибка источника».
-- Prior detail copy «доступна только сохранённая выборка» was removed; residual note «Пробел не заполняем выдумкой» does not mark the still-visible WR as cached/stale.
-- **Not invented numbers**, but fails PRODUCT-BAR differentiation of **cached vs unavailable** on the primary badge. Fix should be copy/gating only (label WR as cached, or hide heroes when status is `error` unless explicitly stale-ok).
+**Gap — error scenario retained heroes (P1 honesty labeling):** ~~open~~ **Closed (follow-up on this PR).**
+- `UiPreview` error path still retains prior `topHeroes` (honest residual evidence).
+- Cards now show muted WR + `кэш · N игр` / `устарело · N игр`; selected panel prefixes `Кэш ·` / `(не свежие)`, captions `ГЕРОИ · КЭШ` / `ГЕРОИ ИСТОЧНИКА · КЭШ`, and replaces fresh insight bullets with an explicit saved-sample note.
+- Verified on re-captured `scout-error.png` (SAMPLE DATA · error).
 
 **Naming oversell (P2, mitigated):**
 - Module titles «Опасные пересечения» / «Рекомендованный бан» inherit mock language; body copy and observational pill mitigate. Prefer renaming ban module to «Наблюдаемый бан-кандидат» in a follow-up if captains misread it as model advice.
@@ -115,7 +114,7 @@ Extra shell brushes (`SidebarBrush` `#0D141C`, `PrimaryBrush`, `HoverBrush`, …
 
 ## Remaining gaps (ordered)
 
-1. **P1 — Error + retained `topHeroes`:** restore cached/stale labeling or suppress WR/heroes under `error` (see honesty).
+1. ~~**P1 — Error + retained `topHeroes`**~~ **Closed** — cached/stale labeling on cards + selected panel; see honesty section and `scout-error.png`.
 2. **P2 — Live cancel proof:** one real in-flight scout cancel (or automation against ops.active).
 3. **P2 — S4 quick actions:** either implement real profile/notes links or drop mock parity claim; current «Составы» toast is a stub.
 4. **P3 — Visual craft:** portraits/glyphs, metric icons, denser selected-player strip vs board; keep honesty over pixel chase.

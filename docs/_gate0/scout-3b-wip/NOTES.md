@@ -22,6 +22,10 @@
 - Selected-player insights + quick actions; cancel control wired to `/api/ops/cancel` (enabled only while scout ops are active).
 - Go core unchanged; UI still renders snapshot/stats only.
 
+## Honesty P1 follow-up (error + retained topHeroes)
+
+When `scoutStatus` is `error` or `stale` but prior `topHeroes` remain, opponent cards and the selected panel now label WR/heroes as **кэш / устарело / не свежие** (and suppress fresh-style insight bullets). Threat modules still use only `ok` reports. Re-captured `scout-error.png` after the change.
+
 ## Remaining gaps (honest)
 
 1. **Not pixel-identical to the mock** — sidebar glyphs, metric icons, and bottom full-width player strip from the board are approximated (side split kept for viewport acceptance at 1280@150%).
@@ -29,5 +33,5 @@
 3. **“Рекомендованный бан” is observational** (≥12 games in confirmed pools), not a draft-model ban score.
 4. **Cancel** is present and API-backed; not proven under a live long scout job in this PR (fixture shows disabled when idle).
 5. **Draft IA** intentionally untouched beyond shared tokens (parallel Gate 1 Draft issue).
-6. **Independent second-model review** unavailable (Codex usage_limit); Cursor was the implementer — needs human/other-model review before merge.
+6. **Independent review** landed in `REVIEW.md` (ACCEPT_WITH_GAPS); P1 honesty labeling addressed in this follow-up — still needs user visual OK before merge.
 7. Full DPI matrix PNGs in this folder are local WIP; git keeps a small sample via `.gitignore` exceptions.
