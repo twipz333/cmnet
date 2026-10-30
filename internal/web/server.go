@@ -346,6 +346,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/reload", s.mutate(s.doReload))
 	mux.HandleFunc("/api/new-draft", s.mutate(s.doNewDraft))
 	mux.HandleFunc("/api/catalog", s.handleCatalog)
+	mux.HandleFunc("/api/intelligence/observation", s.handleIntelligenceObservation)
 	// Cached images, served from disk. The page must never reference a CDN: it is
 	// opened from a local server and has to work with no network at all, which is
 	// also how a laptop behaves on a Battle Cup night more often than one would

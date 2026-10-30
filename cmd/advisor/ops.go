@@ -1615,6 +1615,7 @@ func opScout(ctx context.Context, players []string, o scoutOpts, log logFunc) (s
 	// Preserve useful partial evidence on deadline expiry; only explicit job
 	// cancellation must discard the result.
 	if errors.Is(ctx.Err(), context.Canceled) { return "", ctx.Err() }
+	recordScoutEvidence(o.dbPath, fresh.Layer2, "enemy", log)
 	if !scoutHadAnswer(fresh.Layer2) && fresh.Layer3 == nil {
 		return "", fmt.Errorf("OpenDota returned no player scouting data; try again later (previous snapshot preserved)")
 	}
@@ -1683,6 +1684,7 @@ func opScoutAllies(ctx context.Context, players []string, o scoutOpts, log logFu
 	// same idea as enemy scout via layer 3 — otherwise capability sees a one-row roster.
 	allies := scout.ExpandWithTeammates(ctx, src, resolved, o.windowDays, teammatesWanted(o.outPath, resolved), log)
 	if errors.Is(ctx.Err(), context.Canceled) { return "", ctx.Err() }
+	recordScoutEvidence(o.dbPath, allies, "ally", log)
 	if !scoutHadAnswer(allies) {
 		return "", fmt.Errorf("OpenDota returned no ally scouting data; try again later (previous snapshot preserved)")
 	}
