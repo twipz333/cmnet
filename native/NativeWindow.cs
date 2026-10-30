@@ -66,6 +66,11 @@ public sealed partial class NativeWindow : Window
     private WrapPanel? heroGallery;
     private TextBlock? selectedHeroHint;
     private int selectedHeroId;
+    private int heroPageSize = 48;
+    private TextBox? heroSearchBox;
+    private TextBlock? heroResultsCount;
+    private Button? heroShowMore;
+    private Button? applyDraftButton;
     private string heroSearchText = "";
     private StackPanel? scoutDetails;
     private WrapPanel? scoutedPlayers;
@@ -1016,6 +1021,7 @@ public sealed partial class NativeWindow : Window
             selectedHeroId = id;
             if (selectedHeroHint != null) selectedHeroHint.Text = "Выбран: " + HeroName(id);
             HighlightDraftSelection();
+            if (applyDraftButton != null) applyDraftButton.IsEnabled = true;
             await Task.CompletedTask;
         }, true);
         choose.Content = tile;
@@ -1072,6 +1078,7 @@ public sealed partial class NativeWindow : Window
             if (selectedHeroHint != null)
                 selectedHeroHint.Text = "Выбран из рекомендаций: " + HeroName(id);
             HighlightDraftSelection();
+            if (applyDraftButton != null) applyDraftButton.IsEnabled = true;
             await Task.CompletedTask;
         }, true);
         select.Content = row;
@@ -1086,132 +1093,186 @@ public sealed partial class NativeWindow : Window
     {
         heroCatalogKey = "";
         recommendationKey = "";
-        var frame = new Grid();
-        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
-        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        frame.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        frame.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        heroPageSize = 48;
+        selectedHeroId = 0;
 
-        var tools = new StackPanel();
-        tools.Children.Add(Text("CMNET  /  DRAFT LAB", 10, FontWeights.Bold, accent));
-        var head = Text("Драфт-ассистент", 24, FontWeights.Bold);
-        head.Margin = new Thickness(0, 8, 0, 7);
-        tools.Children.Add(head);
-        tools.Children.Add(Text("Сохраняет ход драфта. Подбирает героев по текущей модели.", 12, color: muted));
-        Header(tools, "Состояние");
-        var statusBox = new Border { Background = Hex("#172C3D"), CornerRadius = new CornerRadius(11),
-            BorderBrush = Hex("#38566A"), BorderThickness = new Thickness(1),
-            Padding = new Thickness(15), Margin = new Thickness(0, 0, 0, 12) };
-        draftSummary = Text("Ожидание модели…", 13);
-        statusBox.Child = draftSummary;
-        tools.Children.Add(statusBox);
+        // The board is the first visual landmark. The hero selector is the
+        // primary work area, while model evidence is a secondary right rail.
+        var screen = new Grid();
+        screen.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        screen.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        screen.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var controls = new WrapPanel();
-        var undo = Btn("↶  Назад", async () => await RunAction("/api/undo"), true);
-        undo.Margin = new Thickness(0, 0, 7, 7);
-        controls.Children.Add(undo);
-        var redo = Btn("↷  Вперёд", async () => await RunAction("/api/redo"), true);
-        redo.Margin = new Thickness(0, 0, 7, 7);
-        controls.Children.Add(redo);
-        controls.Children.Add(Btn("Новый драфт", async () => await RunAction("/api/new-draft"), true));
-        tools.Children.Add(controls);
-
-        Header(tools, "Рекомендации модели");
-        tools.Children.Add(Text("Ранжирование модели, не вероятность победы.", 12, color: muted));
-        draftRecommendations = new ListBox { MinHeight = 195, MaxHeight = 370,
-            Margin = new Thickness(0, 13, 0, 0) };
-        VirtualizingStackPanel.SetIsVirtualizing(draftRecommendations, true);
-        tools.Children.Add(draftRecommendations);
-        var left = Surface(Scroll(tools), new Thickness(0, 0, 10, 0));
-        frame.Children.Add(left);
-
-        // Constrain the hero list with a real Grid star row. A ListBox inside
-        // StackPanel was measured at infinite height and did not scroll.
-        var right = new Grid();
-        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        right.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var pickIntro = new StackPanel();
-        pickIntro.Children.Add(Text("HERO SELECTOR", 10, FontWeights.Bold, accent));
-        var pickTitle = Text("Выбрать героя", 23, FontWeights.Bold);
-        pickTitle.Margin = new Thickness(0, 8, 0, 5);
-        pickIntro.Children.Add(pickTitle);
-        pickIntro.Children.Add(Text("Поиск по имени. Недоступные герои скрываются автоматически.", 12, color: muted));
-        pickIntro.Margin = new Thickness(0, 0, 0, 18);
-        right.Children.Add(pickIntro);
+        var headingRow = new DockPanel { LastChildFill = true,
+            Margin = new Thickness(0, 0, 0, 15) };
+        var newDraft = Btn("＋  Новый драфт", async () =>
+            await RunAction("/api/new-draft"), true);
+        newDraft.Margin = new Thickness(8, 0, 0, 0);
+        DockPanel.SetDock(newDraft, Dock.Right);
+        headingRow.Children.Add(newDraft);
+        var headingColumn = new StackPanel();
+        headingColumn.Children.Add(Text("CAPTAINS MODE  /  LIVE STRATEGY", 10,
+            FontWeights.Bold, accent));
+        var title = Text("Командный драфт", 27, FontWeights.Bold);
+        title.Margin = new Thickness(0, 6, 0, 4);
+        headingColumn.Children.Add(title);
+        headingColumn.Children.Add(Text("Следующий ход, доступные герои и обоснованные рекомендации — на одном экране.",
+            12, color: muted));
+        headingRow.Children.Add(headingColumn);
+        screen.Children.Add(headingRow);
 
         draftBoardKey = "";
-        draftBoardHost = new StackPanel { Margin = new Thickness(0, 0, 0, 17) };
-        Grid.SetRow(draftBoardHost, 1);
-        right.Children.Add(draftBoardHost);
+        draftBoardHost = new StackPanel();
+        var boardPanel = Surface(draftBoardHost, new Thickness(0, 0, 0, 14));
+        boardPanel.Padding = new Thickness(19, 14, 19, 16);
+        Grid.SetRow(boardPanel, 1);
+        screen.Children.Add(boardPanel);
 
-        var search = new TextBox { Margin = new Thickness(0, 0, 0, 12),
-            ToolTip = "Быстрый поиск героя" };
-        search.TextChanged += (_, _) =>
+        var workspace = new Grid();
+        workspace.ColumnDefinitions.Add(new ColumnDefinition {
+            Width = new GridLength(1, GridUnitType.Star) });
+        workspace.ColumnDefinitions.Add(new ColumnDefinition {
+            Width = new GridLength(340) });
+        workspace.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        workspace.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var selector = new StackPanel();
+        var selectorTitle = new DockPanel { LastChildFill = true,
+            Margin = new Thickness(0, 0, 0, 15) };
+        heroResultsCount = Text("0 героев", 11, FontWeights.SemiBold, muted);
+        DockPanel.SetDock(heroResultsCount, Dock.Right);
+        selectorTitle.Children.Add(heroResultsCount);
+        var selectorHeading = new StackPanel();
+        selectorHeading.Children.Add(Text("HERO POOL", 10, FontWeights.Bold, accent));
+        var heroTitle = Text("Герои", 22, FontWeights.Bold);
+        heroTitle.Margin = new Thickness(0, 5, 0, 0);
+        selectorHeading.Children.Add(heroTitle);
+        selectorTitle.Children.Add(selectorHeading);
+        selector.Children.Add(selectorTitle);
+
+        heroSearchBox = new TextBox {
+            Margin = new Thickness(0, 0, 0, 15),
+            ToolTip = "Быстрый поиск по имени героя (Ctrl+F)"
+        };
+        System.Windows.Automation.AutomationProperties.SetName(heroSearchBox,
+            "Поиск героев");
+        heroSearchBox.TextChanged += (_, _) =>
         {
-            heroSearchText = search.Text;
+            heroSearchText = heroSearchBox.Text;
+            heroPageSize = 48;
             UpdateHeroes(heroSearchText);
         };
-        Grid.SetRow(search, 2);
-        right.Children.Add(search);
-        // A compact portrait gallery is the primary Dota interaction, not a
-        // text-only ListBox. The vertical ScrollViewer belongs to this region
-        // and not to the full desktop page.
+        selector.Children.Add(heroSearchBox);
+
+        // Fixed viewport prevents WPF from creating unbounded visual children
+        // because of infinite StackPanel measurement.
         heroGallery = new WrapPanel { Orientation = Orientation.Horizontal };
         var galleryViewport = Scroll(heroGallery);
+        galleryViewport.Height = 365;
         galleryViewport.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-        galleryViewport.MinHeight = 135;
-        Grid.SetRow(galleryViewport, 3);
-        right.Children.Add(galleryViewport);
-        var selectionBar = new Grid { Margin = new Thickness(0, 14, 0, 0) };
-        selectionBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        selectionBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        selectedHeroHint = Text("Выбери героя на сетке", 13, FontWeights.SemiBold, muted);
-        selectionBar.Children.Add(selectedHeroHint);
-        var apply = Btn("✓  Применить", async () =>
+        selector.Children.Add(galleryViewport);
+
+        heroShowMore = Btn("Показать ещё героев", async () =>
+        {
+            heroPageSize += 48;
+            UpdateHeroes(heroSearchText);
+            await Task.CompletedTask;
+        }, true);
+        heroShowMore.HorizontalAlignment = HorizontalAlignment.Stretch;
+        heroShowMore.Margin = new Thickness(0, 10, 0, 0);
+        selector.Children.Add(heroShowMore);
+
+        var selection = new Grid { Margin = new Thickness(0, 15, 0, 0) };
+        selection.ColumnDefinitions.Add(new ColumnDefinition {
+            Width = new GridLength(1, GridUnitType.Star) });
+        selection.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        selectedHeroHint = Text("Выбери героя из каталога или рекомендаций",
+            12, FontWeights.SemiBold, muted);
+        selection.Children.Add(selectedHeroHint);
+        var apply = Btn("Применить выбор  →", async () =>
         {
             if (selectedHeroId > 0)
                 await RunAction("/api/apply", new { heroId = selectedHeroId });
         });
+        apply.ToolTip = "Применить героя на текущем ходе драфта";
+        apply.IsEnabled = false;
+        applyDraftButton = apply;
         Grid.SetColumn(apply, 1);
-        selectionBar.Children.Add(apply);
-        Grid.SetRow(selectionBar, 4);
-        right.Children.Add(selectionBar);
-        var rightCard = Surface(right, new Thickness(10, 0, 0, 0));
-        Grid.SetColumn(rightCard, 1);
-        frame.Children.Add(rightCard);
+        selection.Children.Add(apply);
+        selector.Children.Add(selection);
 
-        // On small windows stack the selector beneath the recommendations.
-        // This avoids a squeezed right panel and the browser-style x-scroll.
+        var selectorPanel = Surface(selector, new Thickness(0, 0, 9, 0));
+        Grid.SetColumn(selectorPanel, 0);
+        workspace.Children.Add(selectorPanel);
+
+        var insights = new StackPanel();
+        insights.Children.Add(Text("DECISION SUPPORT", 10, FontWeights.Bold, accent));
+        var insightTitle = Text("Рекомендации", 21, FontWeights.Bold);
+        insightTitle.Margin = new Thickness(0, 6, 0, 8);
+        insights.Children.Add(insightTitle);
+        insights.Children.Add(Text("Рейтинг модели; это не вероятность победы.",
+            12, color: muted));
+        var statusBox = new Border {
+            Background = Hex("#112636"),
+            BorderBrush = Hex("#345569"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(9),
+            Padding = new Thickness(12),
+            Margin = new Thickness(0, 15, 0, 14)
+        };
+        draftSummary = Text("Ожидание модели…", 12);
+        statusBox.Child = draftSummary;
+        insights.Children.Add(statusBox);
+
+        draftRecommendations = new ListBox {
+            MinHeight = 195,
+            MaxHeight = 365,
+            Margin = new Thickness(0, 1, 0, 11),
+            BorderThickness = new Thickness(0)
+        };
+        insights.Children.Add(draftRecommendations);
+
+        insights.Children.Add(new Border {
+            Height = 1, Background = border,
+            Margin = new Thickness(0, 8, 0, 15)
+        });
+        var historyLabel = Text("ИСТОРИЯ ХОДОВ", 10, FontWeights.Bold, muted);
+        historyLabel.Margin = new Thickness(0, 0, 0, 10);
+        insights.Children.Add(historyLabel);
+        var history = new WrapPanel();
+        var undo = Btn("↶  Отменить", async () => await RunAction("/api/undo"), true);
+        undo.Margin = new Thickness(0, 0, 7, 7);
+        history.Children.Add(undo);
+        history.Children.Add(Btn("↷  Повторить", async () => await RunAction("/api/redo"), true));
+        insights.Children.Add(history);
+
+        var insightPanel = Surface(insights, new Thickness(9, 0, 0, 0));
+        Grid.SetColumn(insightPanel, 1);
+        workspace.Children.Add(insightPanel);
+
+        // The complete content scrolls on compact windows, without clipping
+        // controls or creating a horizontal scrollbar.
+        var workspaceViewport = Scroll(workspace);
+        workspaceViewport.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        Grid.SetRow(workspaceViewport, 2);
+        screen.Children.Add(workspaceViewport);
+
         bool compactLayout = false;
-        frame.SizeChanged += (_, _) =>
+        workspace.SizeChanged += (_, _) =>
         {
-            bool compact = frame.ActualWidth < 800;
+            var compact = workspace.ActualWidth < 760;
             if (compact == compactLayout) return;
             compactLayout = compact;
-            frame.ColumnDefinitions[0].Width = compact ? new GridLength(1, GridUnitType.Star) : new GridLength(360);
-            frame.ColumnDefinitions[1].Width = compact ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-            frame.RowDefinitions[0].Height = compact ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
-            frame.RowDefinitions[1].Height = compact ? new GridLength(480) : GridLength.Auto;
-            Grid.SetColumn(rightCard, compact ? 0 : 1);
-            Grid.SetRow(rightCard, compact ? 1 : 0);
-            left.Margin = compact ? new Thickness(0, 0, 0, 12) : new Thickness(0, 0, 10, 0);
-            rightCard.Margin = compact ? new Thickness(0) : new Thickness(10, 0, 0, 0);
+            workspace.ColumnDefinitions[1].Width = compact
+                ? new GridLength(0) : new GridLength(340);
+            Grid.SetColumn(insightPanel, compact ? 0 : 1);
+            Grid.SetRow(insightPanel, compact ? 1 : 0);
+            selectorPanel.Margin = compact ? new Thickness(0, 0, 0, 12)
+                : new Thickness(0, 0, 9, 0);
+            insightPanel.Margin = compact ? new Thickness(0)
+                : new Thickness(9, 0, 0, 0);
         };
-        // A second page-level ScrollViewer used to draw a scrollbar alongside
-        // the virtualized hero list at desktop widths. The list is the only
-        // vertical scroller in the normal two-column layout.
-        var viewport = Scroll(frame);
-        viewport.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
-        frame.SizeChanged += (_, _) =>
-        {
-            viewport.VerticalScrollBarVisibility = frame.ActualWidth < 800
-                ? ScrollBarVisibility.Auto
-                : ScrollBarVisibility.Disabled;
-        };
-        return viewport;
+        return screen;
     }
 
     private void UpdateDraft()
@@ -1257,6 +1318,17 @@ public sealed partial class NativeWindow : Window
             .Distinct().Select(id => new HeroRow { Id = id, Name = HeroName(id) })
             .Where(h => h.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
             .OrderBy(h=>h.Name).ToList();
+        if (heroResultsCount != null)
+            heroResultsCount.Text = $"{all.Count} доступно";
+        if (heroShowMore != null)
+            heroShowMore.Visibility = all.Count > heroPageSize
+                ? Visibility.Visible : Visibility.Collapsed;
+        if (selectedHeroId > 0 && taken.Contains(selectedHeroId))
+        {
+            selectedHeroId = 0;
+            if (applyDraftButton != null) applyDraftButton.IsEnabled = false;
+            if (selectedHeroHint != null) selectedHeroHint.Text = "Выбери героя для следующего хода";
+        }
         heroRows.Clear();
         foreach (var x in all) heroRows.Add(x);
         if (heroGallery == null) return;
@@ -1266,7 +1338,7 @@ public sealed partial class NativeWindow : Window
             heroGallery.Children.Add(Text("Нет подходящих героев", 13, color: muted));
             return;
         }
-        foreach (var h in all)
+        foreach (var h in all.Take(heroPageSize))
             heroGallery.Children.Add(DraftHeroTile(h.Id));
     }
 
