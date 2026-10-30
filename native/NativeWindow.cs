@@ -60,6 +60,7 @@ public sealed partial class NativeWindow : Window
     private readonly Dictionary<string, TextBlock> rosterBadges = new();
     private readonly Dictionary<string, TextBlock> rosterHeroes = new();
     private TextBlock? scoutLive;
+    private ScrollViewer? scoutViewport;
     private TextBlock? draftSummary;
     private ListBox? draftRecommendations;
     private readonly ObservableCollection<HeroRow> heroRows = new();
@@ -244,7 +245,7 @@ public sealed partial class NativeWindow : Window
         });
         var tip = new StackPanel();
         tip.Children.Add(Text("БЫСТРЫЙ ДОСТУП", 10, FontWeights.Bold, accent));
-        var tipText = Text("Ctrl + 1…5    разделы\\nCtrl + F       поиск героев\\nCtrl + R       обновить данные",
+        var tipText = Text("Ctrl + 1…5    разделы\nCtrl + F       поиск героев\nCtrl + R       обновить данные",
             11, color: muted);
         tipText.Margin = new Thickness(0, 10, 0, 0);
         tip.Children.Add(tipText);
@@ -672,24 +673,57 @@ public sealed partial class NativeWindow : Window
 
         var banner = new Border
         {
-            Background = new LinearGradientBrush(Color.FromRgb(29, 59, 68), Color.FromRgb(24, 39, 59), 15),
-            CornerRadius = new CornerRadius(14), Padding = new Thickness(22, 20, 22, 18),
-            Margin = new Thickness(0, 0, 0, 22), BorderBrush = Hex("#395966"),
+            Background = new LinearGradientBrush(
+                Color.FromRgb(22, 52, 60), Color.FromRgb(19, 29, 46), 10),
+            CornerRadius = new CornerRadius(13),
+            Padding = new Thickness(24, 20, 24, 17),
+            Margin = new Thickness(0, 0, 0, 15),
+            BorderBrush = Hex("#35636B"),
             BorderThickness = new Thickness(1)
         };
         var intro = new StackPanel();
-        intro.Children.Add(Text("CMNET  /  OPPONENT INTELLIGENCE", 10, FontWeights.Bold, accent));
-        var title = Text("Твой матч начинается здесь", 27, FontWeights.Bold);
-        title.Margin = new Thickness(0, 9, 0, 8);
+        var quickActions = new WrapPanel {
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 4, 0, 6)
+        };
+        var scoutNow = Btn("◎  Разведать противников", async () =>
+        {
+            var ids = state.At("team", "enemy").Items()
+                .Select(x => x.L()).Where(x => x > 0).Distinct().ToArray();
+            if (ids.Length == 0)
+            {
+                toast.Text = "Добавь хотя бы одного противника в состав.";
+                return;
+            }
+            await RunAction("/api/ops/scout", new {
+                players = string.Join(",", ids)
+            });
+        });
+        scoutNow.Margin = new Thickness(0, 0, 8, 8);
+        quickActions.Children.Add(scoutNow);
+        quickActions.Children.Add(Btn("К драфту  →", async () =>
+            await OpenPageAsync("Драфт"), true));
+        intro.Children.Add(quickActions);
+        intro.Children.Add(Text("PRE-MATCH  /  ENEMY INTELLIGENCE", 10,
+            FontWeights.Bold, accent));
+        var title = Text("Разведка перед матчем", 27, FontWeights.Bold);
+        title.Margin = new Thickness(0, 7, 0, 5);
         intro.Children.Add(title);
-        intro.Children.Add(Text("Составы, профильные герои и прозрачный статус источников перед драфтом.",
-            13, color: Hex("#C2D3DA")));
-        var metrics = new WrapPanel { Margin = new Thickness(0, 18, 0, 0) };
+        intro.Children.Add(Text(
+            "Кто играет против вас, на каких героях силён и какие данные удалось подтвердить.",
+            13, color: Hex("#CDDAE5")));
+        var metrics = new WrapPanel { Margin = new Thickness(0, 14, 0, 0) };
         metrics.Children.Add(MetricTile("Союзники", allyMetric, accent));
         metrics.Children.Add(MetricTile("Противники", enemyMetric, gold));
         intro.Children.Add(metrics);
         banner.Child = intro;
         host.Children.Add(banner);
+
+        // Evidence comes before the editable roster: users see whether
+        // scouting is usable without scrolling through ten seat controls.
+        scoutSignalKey = "";
+        scoutSignalHost = new StackPanel();
+        host.Children.Add(Surface(scoutSignalHost, new Thickness(0, 0, 0, 15)));
 
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -715,10 +749,6 @@ public sealed partial class NativeWindow : Window
         };
         teamGrid = grid;
         host.Children.Add(grid);
-
-        scoutSignalKey = "";
-        scoutSignalHost = new StackPanel();
-        host.Children.Add(Surface(scoutSignalHost, new Thickness(0, 15, 0, 14)));
 
         Header(host, "Разведанные игроки");
         host.Children.Add(Text("Выбери профиль, чтобы посмотреть сильных героев, количество игр и винрейт.",
@@ -768,7 +798,8 @@ public sealed partial class NativeWindow : Window
         bookEmptyHint.Margin = new Thickness(6, 10, 6, 10);
         bookPanel.Children.Add(bookEmptyHint);
         host.Children.Add(Surface(bookPanel, new Thickness(0, 0, 0, 14)));
-        return Scroll(host);
+        scoutViewport = Scroll(host);
+        return scoutViewport;
     }
 
     private async Task LoadScoutAsync()
@@ -861,6 +892,8 @@ public sealed partial class NativeWindow : Window
         selectedScoutId = id;
         RenderScoutedPlayers();
         RenderScoutDetails();
+        if (scoutDetails != null)
+            Dispatcher.BeginInvoke(() => scoutDetails.BringIntoView());
     }
 
     private void RenderScoutedPlayers()
