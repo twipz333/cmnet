@@ -39,6 +39,9 @@ type Server struct {
 	revision uint64            // monotonic event revision
 	sessionID string           // per-process session identity
 	ipcToken string            // per-child native bearer secret
+	commandMu sync.Mutex      // serializes manual state changes + idempotency
+	receipts map[string][32]byte
+	receiptOrder []string
 	localCache *cache.Store    // local durable draft checkpoints
 	draftID string            // changes only when the captain starts a new manual draft
 	draftRevision uint64      // persisted board ordering, independent of SSE progress
@@ -612,7 +615,16 @@ func (s *Server) mutate(fn func(*http.Request) (string, error)) http.HandlerFunc
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		s.commandMu.Lock()
+		defer s.commandMu.Unlock()
+		seenKey, fingerprint, duplicate, valid := s.checkIdempotency(w, r)
+		if !valid { return }
+		if duplicate {
+			writeJSON(w, http.StatusOK, s.snapshot(false))
+			return
+		}
 		msg, err := fn(r)
+		if seenKey != "" { s.rememberIdempotency(seenKey, fingerprint) }
 		if err != nil {
 			s.setStatus(err.Error())
 		} else {

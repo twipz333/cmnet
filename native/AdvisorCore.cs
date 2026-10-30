@@ -137,7 +137,10 @@ public sealed class AdvisorCore : IAsyncDisposable
         {
             var json = JsonSerializer.Serialize(request);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            using var resp = await http.PostAsync(uri, content, requestTimeout.Token);
+            // Stable request identity for at-most-once execution in this core process.
+            using var req = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
+            req.Headers.TryAddWithoutValidation("Idempotency-Key", Guid.NewGuid().ToString("N"));
+            using var resp = await http.SendAsync(req, requestTimeout.Token);
             var body = await resp.Content.ReadAsStringAsync(requestTimeout.Token);
             if (!resp.IsSuccessStatusCode)
                 throw new HttpRequestException($"{(int)resp.StatusCode}: {body}");
