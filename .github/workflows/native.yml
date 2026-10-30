@@ -70,8 +70,17 @@ jobs:
       - name: Capture native WPF screenshots for visual review
         shell: pwsh
         run: |
-          & native/out/Cmnet.Native.exe --capture-ui native/ui-snapshots
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # WinExe is a GUI subsystem application. Direct PowerShell '&'
+          # launches it without waiting, causing a screenshot/upload race.
+          $exe = (Resolve-Path native/out/Cmnet.Native.exe).Path
+          $process = Start-Process -FilePath $exe -ArgumentList @('--capture-ui', 'native/ui-snapshots') -WorkingDirectory (Get-Location).Path -PassThru
+          if (-not $process.WaitForExit(60000)) {
+            Stop-Process -Id $process.Id -Force
+            throw 'WPF visual capture timed out'
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "WPF visual capture failed: exit $($process.ExitCode)"
+          }
           foreach ($file in @('scout.png', 'draft.png')) {
             $candidate = Get-Item "native/ui-snapshots/$file" -ErrorAction Stop
             if ($candidate.PSIsContainer -or $candidate.Length -lt 2048) {
