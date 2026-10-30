@@ -129,3 +129,18 @@ func (s *Store) Backup(ctx context.Context, destination string) error {
 	if integrity != "ok" { return fmt.Errorf("backup integrity check failed: %s",integrity) }
 	return nil
 }
+
+// LatestDraftCheckpoint selects the most recently written local manual board.
+// rowid disambiguates writes occurring within the same Unix second.
+func (s *Store) LatestDraftCheckpoint(ctx context.Context) (DraftCheckpoint, bool, error) {
+	var v DraftCheckpoint
+	var body string
+	err := s.rd.QueryRowContext(ctx,
+		`SELECT draft_id,created_at,updated_at,revision,model_version,state_json
+		 FROM draft_sessions ORDER BY updated_at DESC,rowid DESC LIMIT 1`).
+		Scan(&v.ID,&v.CreatedAt,&v.UpdatedAt,&v.Revision,&v.ModelVersion,&body)
+	if errors.Is(err,sql.ErrNoRows) { return v,false,nil }
+	if err != nil { return v,false,err }
+	v.State=json.RawMessage(body)
+	return v,true,nil
+}

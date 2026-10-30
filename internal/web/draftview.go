@@ -143,6 +143,8 @@ func (s *Server) doNewDraft(*http.Request) (string, error) {
 	s.mu.Lock()
 	pending := s.pendingCfg
 	s.pendingCfg = nil
+	s.draftID = newSessionID()
+	s.draftRevision = 0
 	s.mu.Unlock()
 	if pending != nil {
 		pending.OurTeam, pending.FirstPick = sess.OurTeam(), sess.FirstPick()

@@ -18,6 +18,7 @@ import (
 
 	// Aliased: this package already has an embed.FS called assets for the static UI.
 	assetstore "cmnet/internal/assets"
+	"cmnet/internal/cache"
 	"cmnet/internal/draft"
 	"cmnet/internal/objectives"
 	"cmnet/internal/recommender"
@@ -38,6 +39,9 @@ type Server struct {
 	revision uint64            // monotonic event revision
 	sessionID string           // per-process session identity
 	ipcToken string            // per-child native bearer secret
+	localCache *cache.Store    // local durable draft checkpoints
+	draftID string            // changes only when the captain starts a new manual draft
+	draftRevision uint64      // persisted board ordering, independent of SSE progress
 	status   string           // last human-readable outcome
 	gsiOnce  sync.Once
 	baseCtx  context.Context // server lifetime, for the GSI pump
@@ -56,7 +60,7 @@ type Server struct {
 // built on demand (and rebuilt after train/scout), so the UI still comes up when
 // no bundle exists yet — the user can go straight to Train.
 func New(shell session.ShellConfig, addr string) *Server {
-	s := &Server{shell: shell, addr: addr, hub: newHub(), revision: 1, sessionID: newSessionID(), ipcToken: ipcTokenFromEnv()}
+	s := &Server{shell: shell, addr: addr, hub: newHub(), revision: 1, sessionID: newSessionID(), ipcToken: ipcTokenFromEnv(), draftID: newSessionID()}
 	if shell.Auto != nil {
 		// A bundle trained in the background is of no use while the server keeps
 		// serving the one it loaded at startup. Rebuilding the session picks it up,
@@ -107,6 +111,15 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("non-loopback web listener refused: %s", s.addr)
 	}
 	s.addr = ln.Addr().String()
+	if s.shell.CachePath != "" {
+		store, err := cache.Open(s.shell.CachePath)
+		if err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("open local checkpoint cache: %w", err)
+		}
+		s.localCache = store
+		defer store.Close()
+	}
 
 	s.mu.Lock()
 	s.baseCtx = ctx
@@ -116,6 +129,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// while the user is still on another screen. A failure is not fatal: it is
 	// reported in the UI and retried on the next request.
 	_, _ = s.session()
+	s.restoreCheckpoint(ctx)
 	s.resumeFollow() // a guest who followed the host's draft picks it up again
 
 	srv := &http.Server{
@@ -604,6 +618,12 @@ func (s *Server) mutate(fn func(*http.Request) (string, error)) http.HandlerFunc
 			s.setStatus(msg)
 		}
 		if err == nil && s.shell.Auto != nil { s.shell.Auto.TouchDraft() }
+		if err == nil {
+			if saveErr := s.saveCheckpoint(); saveErr != nil {
+				err = fmt.Errorf("draft changed but could not save checkpoint: %w", saveErr)
+				s.setStatus(err.Error())
+			}
+		}
 		s.broadcast(false)
 		writeJSON(w, http.StatusOK, s.snapshot(false))
 	}
