@@ -35,8 +35,11 @@ public sealed class NativeWindow : Window
     private readonly TextBlock heading = new();
     private readonly TextBlock subtitle = new();
     private readonly TextBlock connectionBadge = new();
-    private readonly TextBlock allyMetric = new();
-    private readonly TextBlock enemyMetric = new();
+    // Each view build must own fresh WPF elements. Reusing a TextBlock across
+    // navigation causes "already the logical child of another element", leaving
+    // the old page on screen while the header/sidebar switch to the new one.
+    private TextBlock allyMetric = new();
+    private TextBlock enemyMetric = new();
     private readonly Dictionary<string, Button> navigation = new();
     private string page = "Разведка";
     private JsonObject? state;
@@ -66,10 +69,10 @@ public sealed class NativeWindow : Window
     private string heroCatalogKey = "";
     private string recommendationKey = "";
     private TextBlock? dataActivity;
-    private readonly TextBlock corpusMatches = new();
-    private readonly TextBlock corpusDrafts = new();
-    private readonly TextBlock corpusCoverage = new();
-    private readonly TextBlock corpusHeroes = new();
+    private TextBlock corpusMatches = new();
+    private TextBlock corpusDrafts = new();
+    private TextBlock corpusCoverage = new();
+    private TextBlock corpusHeroes = new();
     private TextBlock? shareStatus;
     private StackPanel? configHost;
     private readonly List<ConfigField> configEditors = new();
@@ -307,14 +310,43 @@ public sealed class NativeWindow : Window
     }
     private async Task OpenPageAsync(string name)
     {
-        page = name;
-        RenderPage();
-        if (page == "Разведка") await LoadScoutAsync();
-        if (page == "Данные") await LoadDataAsync();
-        if (page == "Настройки") await LoadSettingsAsync();
+        // Build the view before changing the navigation state. A failed view
+        // construction must not leave "Разведка" highlighted over a draft page.
+        if (name != page || body.Content == null)
+        {
+            RenderPage(name);
+        }
+        if (page != name) return; // construction failed; keep current view
+        if (name == "Разведка") await LoadScoutAsync();
+        else if (name == "Данные") await LoadDataAsync();
+        else if (name == "Настройки") await LoadSettingsAsync();
     }
     private void RenderPage()
     {
+        RenderPage(page);
+    }
+    private void RenderPage(string target)
+    {
+        UIElement view;
+        try
+        {
+            view = target switch
+            {
+                "Разведка" => BuildScoutView(),
+                "Драфт" => BuildDraftView(),
+                "Данные" => BuildDataView(),
+                "Настройки" => BuildSettingsView(),
+                "Друзья" => BuildShareView(),
+                _ => Text(target)
+            };
+        }
+        catch (Exception ex)
+        {
+            toast.Text = $"Ошибка экрана «{target}»: {ex.Message}";
+            return; // preserve previous page + selection
+        }
+        page = target;
+        body.Content = view;
         heading.Text = page;
         subtitle.Text = page switch
         {
@@ -332,15 +364,6 @@ public sealed class NativeWindow : Window
             item.Value.Foreground = active ? accent : foreground;
             item.Value.FontWeight = active ? FontWeights.Bold : FontWeights.Medium;
         }
-        body.Content = page switch
-        {
-            "Разведка" => BuildScoutView(),
-            "Драфт" => BuildDraftView(),
-            "Данные" => BuildDataView(),
-            "Настройки" => BuildSettingsView(),
-            "Друзья" => BuildShareView(),
-            _ => Text(page)
-        };
         if (state != null) UpdateLiveState();
     }
     private void ApplyState(JsonObject next)
@@ -524,6 +547,8 @@ public sealed class NativeWindow : Window
 
     private UIElement BuildScoutView()
     {
+        allyMetric = new TextBlock();
+        enemyMetric = new TextBlock();
         rosterLabels.Clear();
         rosterAvatars.Clear();
         rosterBadges.Clear();
@@ -638,7 +663,11 @@ public sealed class NativeWindow : Window
                 UpdateKnownPlayers();
             }
         }
-        catch (Exception ex) { toast.Text = "Список: " + ex.Message; }
+        catch (Exception ex)
+        {
+            if (page == "Разведка")
+                toast.Text = ex is TimeoutException ? "Steam-статистика временно занята." : "Список: " + ex.Message;
+        }
         finally { loadingScout = false; }
     }
 
@@ -886,7 +915,18 @@ public sealed class NativeWindow : Window
             left.Margin = compact ? new Thickness(0, 0, 0, 12) : new Thickness(0, 0, 10, 0);
             rightCard.Margin = compact ? new Thickness(0) : new Thickness(10, 0, 0, 0);
         };
-        return Scroll(frame);
+        // A second page-level ScrollViewer used to draw a scrollbar alongside
+        // the virtualized hero list at desktop widths. The list is the only
+        // vertical scroller in the normal two-column layout.
+        var viewport = Scroll(frame);
+        viewport.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        frame.SizeChanged += (_, _) =>
+        {
+            viewport.VerticalScrollBarVisibility = frame.ActualWidth < 800
+                ? ScrollBarVisibility.Auto
+                : ScrollBarVisibility.Disabled;
+        };
+        return viewport;
     }
 
     private void UpdateDraft()
@@ -936,6 +976,10 @@ public sealed class NativeWindow : Window
 
     private UIElement BuildDataView()
     {
+        corpusMatches = new TextBlock();
+        corpusDrafts = new TextBlock();
+        corpusCoverage = new TextBlock();
+        corpusHeroes = new TextBlock();
         var host = new StackPanel();
         host.Children.Add(Text("Данные и обучение модели", 24, FontWeights.Bold));
         var note = Text("Следи за корпусом матчей, запускай синхронизацию и обучение без ожидания на главном экране.", 13, color: muted);
@@ -993,6 +1037,7 @@ public sealed class NativeWindow : Window
                 toast.Text = result.At("error").S("Корпус пока недоступен");
                 return;
             }
+            if (page != "Данные") return; // stale response after navigation
             corpusMatches.Text = corpus.At("matches").L().ToString("N0");
             corpusDrafts.Text = corpus.At("cmDrafts").L().ToString("N0");
             corpusCoverage.Text = corpus.At("withPositions").L().ToString("N0");
@@ -1003,7 +1048,17 @@ public sealed class NativeWindow : Window
                     .Select((h, i) => $"{i + 1:D2}    {h.At("name").S("Герой")}    ·    {h.At("count").L():N0} пиков")
                     .ToList();
         }
-        catch (Exception ex) { toast.Text = "Корпус: " + ex.Message; }
+        catch (Exception ex)
+        {
+            // A slow corpus refresh from a previous page must not leave an
+            // unrelated error in the permanent footer of another view.
+            if (page == "Данные")
+            {
+                toast.Text = ex is TimeoutException
+                    ? "Данные временно заняты. Повтори обновление метрик."
+                    : "Корпус: " + ex.Message;
+            }
+        }
     }
 
     private static ListBox? FindNamedList(DependencyObject? node, string name)
@@ -1212,6 +1267,20 @@ public sealed class NativeWindow : Window
         footnote.Margin = new Thickness(0, 19, 0, 0);
         host.Children.Add(footnote);
         return Scroll(host);
+    }
+
+    // Lightweight Windows UI smoke gate used by the native CI job. The backend
+    // never starts because the window is not shown. It catches WPF logical
+    // parent reuse, page/header mismatch and broken view construction.
+    internal void AssertNavigationWorks()
+    {
+        foreach (var target in new[] { "Драфт", "Разведка", "Данные", "Разведка", "Драфт", "Настройки", "Друзья" })
+        {
+            var previous = body.Content;
+            RenderPage(target);
+            if (page != target || heading.Text != target || ReferenceEquals(previous, body.Content))
+                throw new InvalidOperationException($"Native navigation smoke failed on {target}: visual content did not change.");
+        }
     }
 
     private sealed class PlayerRow
