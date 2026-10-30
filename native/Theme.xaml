@@ -195,4 +195,73 @@
     <Setter Property="FontSize" Value="12"/>
     <Setter Property="Padding" Value="9,6"/>
   </Style>
+
+  <!-- Native, narrow dark scrollbars. WPF's light defaults were starkly
+       visible over the dark draft panel (including two nested scrollbars). -->
+  <Style TargetType="{x:Type ScrollBar}">
+    <Setter Property="Background" Value="#142335"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type ScrollBar}">
+          <Border Background="{TemplateBinding Background}"
+                  CornerRadius="5"
+                  Padding="2">
+            <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}"
+                   IsDirectionReversed="True">
+              <Track.DecreaseRepeatButton>
+                <RepeatButton Command="ScrollBar.PageUpCommand"
+                              Focusable="False">
+                  <RepeatButton.Template>
+                    <ControlTemplate TargetType="{x:Type RepeatButton}">
+                      <Border Background="Transparent"/>
+                    </ControlTemplate>
+                  </RepeatButton.Template>
+                </RepeatButton>
+              </Track.DecreaseRepeatButton>
+              <Track.Thumb>
+                <Thumb>
+                  <Thumb.Template>
+                    <ControlTemplate TargetType="{x:Type Thumb}">
+                      <Border x:Name="Grip" CornerRadius="4" Background="#486277"/>
+                      <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                          <Setter TargetName="Grip" Property="Background" Value="#70D7CB"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                          <Setter TargetName="Grip" Property="Background" Value="#82E6DB"/>
+                        </Trigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+              <Track.IncreaseRepeatButton>
+                <RepeatButton Command="ScrollBar.PageDownCommand"
+                              Focusable="False">
+                  <RepeatButton.Template>
+                    <ControlTemplate TargetType="{x:Type RepeatButton}">
+                      <Border Background="Transparent"/>
+                    </ControlTemplate>
+                  </RepeatButton.Template>
+                </RepeatButton>
+              </Track.IncreaseRepeatButton>
+            </Track>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+              <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="Orientation" Value="Vertical">
+        <Setter Property="Width" Value="10"/>
+      </Trigger>
+      <Trigger Property="Orientation" Value="Horizontal">
+        <Setter Property="Height" Value="10"/>
+      </Trigger>
+    </Style.Triggers>
+  </Style>
 </ResourceDictionary>
