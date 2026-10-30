@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
@@ -24,11 +25,11 @@ public sealed partial class NativeWindow
     {
         return new Border
         {
-            Background = Hex(elevated ? "#182B3C" : "#121E2B"),
-            BorderBrush = Hex("#263C50"),
+            Background = Hex(elevated ? "#172737" : "#111E2B"),
+            BorderBrush = Hex("#2A4054"),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(17),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12),
             Margin = margin,
             Child = child
         };
@@ -36,16 +37,16 @@ public sealed partial class NativeWindow
 
     private Border TacticalStatistic(string label, TextBlock value, Brush tone)
     {
-        var root = new StackPanel { MinWidth = 140 };
+        var root = new StackPanel();
         var heading = Text(label.ToUpperInvariant(), 10, FontWeights.SemiBold, muted);
         heading.Margin = new Thickness(0, 0, 0, 7);
         root.Children.Add(heading);
-        value.FontSize = 21;
+        value.FontSize = 20;
         value.FontWeight = FontWeights.Bold;
         value.Foreground = tone;
         value.Text = "—";
         root.Children.Add(value);
-        return TacticalPanel(root, new Thickness(0, 0, 9, 9));
+        return TacticalPanel(root, new Thickness(0, 0, 6, 0));
     }
 
     private UIElement BuildTacticalScoutView()
@@ -65,7 +66,7 @@ public sealed partial class NativeWindow
         playersVersion = "";
 
         var pageContent = new StackPanel();
-        var heading = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 18) };
+        var heading = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 11) };
         var actionRow = new StackPanel { Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center };
         var rescout = Btn("◎  Разведать соперников", async () =>
@@ -86,7 +87,7 @@ public sealed partial class NativeWindow
         heading.Children.Add(actionRow);
         var title = new StackPanel();
         title.Children.Add(Text("PRE-MATCH  /  INTELLIGENCE", 10, FontWeights.Bold, accent));
-        var largeTitle = Text("Разведка противников", 26, FontWeights.Bold);
+        var largeTitle = Text("Разведка противников", 21, FontWeights.Bold);
         largeTitle.Margin = new Thickness(0, 5, 0, 5);
         title.Children.Add(largeTitle);
         title.Children.Add(Text("Состав, источники и сигнатурные герои перед драфтом.",
@@ -94,7 +95,7 @@ public sealed partial class NativeWindow
         heading.Children.Add(title);
         pageContent.Children.Add(heading);
 
-        var metrics = new WrapPanel();
+        var metrics = new UniformGrid { Rows = 1, Columns = 4, Margin = new Thickness(0, 0, 0, 10) };
         metrics.Children.Add(TacticalStatistic("Найдено игроков", scoutFoundCount, foreground));
         metrics.Children.Add(TacticalStatistic("Данные готовы", scoutReadyCount, accent));
         metrics.Children.Add(TacticalStatistic("Ограниченные данные", scoutLimitedCount, gold));
@@ -109,7 +110,7 @@ public sealed partial class NativeWindow
         opponentSection.Children.Add(sub);
         scoutSignalHost = new StackPanel();
         opponentSection.Children.Add(scoutSignalHost);
-        pageContent.Children.Add(TacticalPanel(opponentSection, new Thickness(0, 8, 0, 14)));
+        pageContent.Children.Add(TacticalPanel(opponentSection, new Thickness(0, 0, 0, 10)));
 
         var split = new Grid();
         split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -119,7 +120,7 @@ public sealed partial class NativeWindow
 
         var intel = new StackPanel();
         intel.Children.Add(Text("MATCH INTELLIGENCE", 10, FontWeights.Bold, accent));
-        var threats = Text("Сводка по составу", 19, FontWeights.Bold);
+        var threats = Text("Сводка по составу", 16, FontWeights.Bold);
         threats.Margin = new Thickness(0, 6, 0, 12);
         intel.Children.Add(threats);
         tacticalInsights = new StackPanel();
@@ -129,7 +130,7 @@ public sealed partial class NativeWindow
 
         var details = new StackPanel();
         details.Children.Add(Text("PLAYER PROFILE", 10, FontWeights.Bold, accent));
-        var caption = Text("Данные выбранного игрока", 19, FontWeights.Bold);
+        var caption = Text("Данные выбранного игрока", 16, FontWeights.Bold);
         caption.Margin = new Thickness(0, 6, 0, 12);
         details.Children.Add(caption);
         scoutDetails = new StackPanel();
@@ -151,7 +152,7 @@ public sealed partial class NativeWindow
         };
         pageContent.Children.Add(split);
 
-        var activityRow = new DockPanel { Margin = new Thickness(0, 17, 0, 13),
+        var activityRow = new DockPanel { Margin = new Thickness(0, 10, 0, 8),
             LastChildFill = true };
         scoutLive = Text("Ожидание разведки", 12, color: muted);
         var activityCaption = Text("СТАТУС ЗАДАЧ  /  ", 10, FontWeights.Bold, accent);
@@ -235,13 +236,13 @@ public sealed partial class NativeWindow
 
         var root = new StackPanel();
 
-        var heading = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 15) };
+        var heading = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 10) };
         var newDraft = Btn("＋  Новый драфт", async () => await RunAction("/api/new-draft"), true);
         DockPanel.SetDock(newDraft, Dock.Right);
         heading.Children.Add(newDraft);
         var title = new StackPanel();
         title.Children.Add(Text("CAPTAINS MODE  /  TACTICAL DRAFT", 10, FontWeights.Bold, accent));
-        var name = Text("Драфт", 26, FontWeights.Bold);
+        var name = Text("Драфт", 21, FontWeights.Bold);
         name.Margin = new Thickness(0, 6, 0, 5);
         title.Children.Add(name);
         title.Children.Add(Text("Выбери героя по текущему состоянию драфта и данным модели.",
@@ -250,25 +251,25 @@ public sealed partial class NativeWindow
         root.Children.Add(heading);
 
         draftBoardHost = new StackPanel();
-        root.Children.Add(TacticalPanel(draftBoardHost, new Thickness(0, 0, 0, 14), true));
+        root.Children.Add(TacticalPanel(draftBoardHost, new Thickness(0, 0, 0, 10), true));
 
         var workspace = new Grid();
-        workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(238) });
+        workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(222) });
         workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(245) });
+        workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(228) });
         for (int i = 0; i < 3; i++)
             workspace.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var recommendations = new StackPanel();
         recommendations.Children.Add(Text("RECOMMENDED", 10, FontWeights.Bold, accent));
-        var recTitle = Text("Рекомендации", 18, FontWeights.Bold);
+        var recTitle = Text("Рекомендации", 16, FontWeights.Bold);
         recTitle.Margin = new Thickness(0, 6, 0, 6);
         recommendations.Children.Add(recTitle);
         recommendations.Children.Add(Text("Оценки модели · без выдуманных процентов",
             11, color: muted));
         draftRecommendations = new ListBox {
-            MinHeight = 185,
-            MaxHeight = 390,
+            MinHeight = 180,
+            MaxHeight = 360,
             Margin = new Thickness(0, 13, 0, 12)
         };
         recommendations.Children.Add(draftRecommendations);
@@ -291,13 +292,13 @@ public sealed partial class NativeWindow
         filterHeading.Children.Add(heroResultsCount);
         var poolTitle = new StackPanel();
         poolTitle.Children.Add(Text("HERO POOL", 10, FontWeights.Bold, accent));
-        var mainLabel = Text("Каталог героев", 18, FontWeights.Bold);
+        var mainLabel = Text("Каталог героев", 16, FontWeights.Bold);
         mainLabel.Margin = new Thickness(0, 6, 0, 0);
         poolTitle.Children.Add(mainLabel);
         filterHeading.Children.Add(poolTitle);
         catalog.Children.Add(filterHeading);
 
-        heroSearchBox = new TextBox { Margin = new Thickness(0, 15, 0, 12),
+        heroSearchBox = new TextBox { Margin = new Thickness(0, 9, 0, 9),
             ToolTip = "Поиск героя (Ctrl+F)" };
         System.Windows.Automation.AutomationProperties.SetName(heroSearchBox, "Поиск героев");
         heroSearchBox.TextChanged += (_, _) =>
@@ -388,12 +389,12 @@ public sealed partial class NativeWindow
     private UIElement TacticalHeroTile(int id)
     {
         var stack = new StackPanel();
-        stack.Children.Add(HeroPortrait(id, 88, 49));
+        stack.Children.Add(HeroPortrait(id, 67, 42));
         var title = Text(HeroName(id), 10, FontWeights.SemiBold);
-        title.Width = 88;
+        title.Width = 67;
         title.TextTrimming = TextTrimming.CharacterEllipsis;
         title.TextWrapping = TextWrapping.NoWrap;
-        title.Margin = new Thickness(0, 5, 0, 0);
+        title.Margin = new Thickness(0, 3, 0, 0);
         stack.Children.Add(title);
         var button = Btn("", async () =>
         {
@@ -403,10 +404,10 @@ public sealed partial class NativeWindow
         button.Content = stack;
         button.Tag = id;
         button.ToolTip = "Выбрать " + HeroName(id);
-        button.Width = 102;
-        button.Height = 87;
-        button.Padding = new Thickness(4);
-        button.Margin = new Thickness(0, 0, 7, 7);
+        button.Width = 77;
+        button.Height = 73;
+        button.Padding = new Thickness(3);
+        button.Margin = new Thickness(0, 0, 5, 5);
         button.Background = id == selectedHeroId ? Hex("#1B5858") : Hex("#172738");
         button.BorderBrush = id == selectedHeroId ? accent : border;
         return button;
@@ -445,8 +446,8 @@ public sealed partial class NativeWindow
         }
 
         var selected = selectedHeroId;
-        tacticalSelection.Children.Add(HeroPortrait(selected, 188, 108));
-        var heroName = Text(HeroName(selected), 18, FontWeights.Bold);
+        tacticalSelection.Children.Add(HeroPortrait(selected, 176, 100));
+        var heroName = Text(HeroName(selected), 16, FontWeights.Bold);
         heroName.Margin = new Thickness(0, 10, 0, 7);
         tacticalSelection.Children.Add(heroName);
         var rec = state.At("result", "recs").Items()

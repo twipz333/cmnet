@@ -159,7 +159,7 @@ public sealed partial class NativeWindow
         if (scoutFailureCount != null) scoutFailureCount.Text = errors.ToString();
 
         scoutSignalHost.Children.Clear();
-        var cards = new WrapPanel();
+        var cards = new UniformGrid { Rows = 1, Columns = 5 };
         for (int i = 0; i < 5; i++)
         {
             var id = i < ids.Length ? ids[i] : 0L;
@@ -193,9 +193,9 @@ public sealed partial class NativeWindow
             statusRow.Children.Add(Text("● " + statusLabel, 10, FontWeights.Bold, tone));
             content.Children.Add(statusRow);
 
-            var portrait = new Grid { Width = 48, Height = 48, Margin = new Thickness(0, 14, 0, 9) };
+            var portrait = new Grid { Width = 42, Height = 42, Margin = new Thickness(0, 8, 0, 7) };
             portrait.Children.Add(new Border {
-                Background = Hex("#263E53"), CornerRadius = new CornerRadius(24),
+                Background = Hex("#263E53"), CornerRadius = new CornerRadius(21),
                 Child = new TextBlock {
                     Text = id == 0 ? "?" : (i + 1).ToString(),
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -205,13 +205,13 @@ public sealed partial class NativeWindow
             });
             if (id > 0 && core.BaseUri != null)
             {
-                var image = new Image { Width = 48, Height = 48, Stretch = Stretch.UniformToFill };
+                var image = new Image { Width = 42, Height = 42, Stretch = Stretch.UniformToFill };
                 try
                 {
                     image.Source = new System.Windows.Media.Imaging.BitmapImage(
                         new Uri(core.BaseUri, "assets/avatars/" + id + ".jpg"));
                     var clip = new System.Windows.Media.EllipseGeometry(
-                        new Point(24, 24), 24, 24);
+                        new Point(21, 21), 21, 21);
                     image.Clip = clip;
                 }
                 catch (Exception) { /* fallback initials */ }
@@ -225,19 +225,19 @@ public sealed partial class NativeWindow
             name.TextAlignment = TextAlignment.Center;
             name.TextWrapping = TextWrapping.NoWrap;
             name.TextTrimming = TextTrimming.CharacterEllipsis;
-            name.Width = 144;
+            name.MaxWidth = 150;
             content.Children.Add(name);
 
             var strong = report?.At("topHeroes").Items().Take(2).ToArray() ??
                 Array.Empty<System.Text.Json.Nodes.JsonNode?>();
             var heroList = new StackPanel { Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 11, 0, 4) };
+                Margin = new Thickness(0, 7, 0, 4) };
             foreach (var hero in strong)
             {
                 var heroId = hero.At("id").I();
                 if (heroId <= 0) continue;
-                var thumb = HeroPortrait(heroId, 54, 31);
+                var thumb = HeroPortrait(heroId, 46, 26);
                 thumb.Margin = new Thickness(0, 0, 5, 0);
                 thumb.ToolTip = HeroName(heroId);
                 heroList.Children.Add(thumb);
@@ -259,9 +259,9 @@ public sealed partial class NativeWindow
             }, true);
             button.Content = content;
             button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            button.Width = 177;
-            button.Padding = new Thickness(11, 11, 11, 12);
-            button.Margin = new Thickness(0, 0, 9, 8);
+            button.MinWidth = 0;
+            button.Padding = new Thickness(7, 9, 7, 10);
+            button.Margin = new Thickness(0, 0, 6, 0);
             button.Background = selected ? Hex("#1D4149") : Hex("#172838");
             button.BorderBrush = selected ? accent : border;
             button.ToolTip = id > 0 ? "Профиль Steam account ID: " + id :

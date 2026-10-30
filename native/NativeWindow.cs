@@ -99,9 +99,9 @@ public sealed partial class NativeWindow : Window
     {
         artwork = new HeroArtwork(() => core.DataDirectory);
         Title = "CMNET · Match Intelligence";
-        Width = 1510;
-        Height = 930;
-        MinWidth = 900;
+        Width = 1460;
+        Height = 860;
+        MinWidth = 940;
         MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = background;
@@ -113,33 +113,33 @@ public sealed partial class NativeWindow : Window
         // Purpose-built match cockpit: restrained navigation, generous
         // content viewport, one semantic accent and contextual actions.
         var layout = new Grid();
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(76) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(58) });
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(35) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(27) });
         Content = layout;
 
         var top = new Grid { Background = Hex("#101927") };
-        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(215) });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(168) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var brand = new StackPanel {
             Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(22, 0, 0, 0)
+            Margin = new Thickness(13, 0, 0, 0)
         };
         var symbol = new Border {
-            Width = 38, Height = 38,
+            Width = 31, Height = 31,
             Background = Hex("#193B3E"),
             BorderBrush = Hex("#327F7A"),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Child = Text("◈", 25, FontWeights.Bold, accent)
+            CornerRadius = new CornerRadius(7),
+            Child = Text("◈", 20, FontWeights.Bold, accent)
         };
         ((TextBlock)symbol.Child).HorizontalAlignment = HorizontalAlignment.Center;
         brand.Children.Add(symbol);
         var wordmark = new StackPanel { Margin = new Thickness(10, 3, 0, 0) };
-        var logo = Text("CMNET", 19, FontWeights.Bold, foreground);
+        var logo = Text("CMNET", 16, FontWeights.Bold, foreground);
         logo.FontFamily = new FontFamily("Segoe UI Variable Display");
         wordmark.Children.Add(logo);
         wordmark.Children.Add(Text("MATCH INTELLIGENCE", 9, FontWeights.Bold, muted));
@@ -148,12 +148,12 @@ public sealed partial class NativeWindow : Window
 
         var pageHeading = new StackPanel {
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(26, 0, 0, 0)
+            Margin = new Thickness(17, 0, 0, 0)
         };
-        heading.FontSize = 18;
+        heading.FontSize = 15;
         heading.FontWeight = FontWeights.SemiBold;
         heading.Foreground = foreground;
-        subtitle.FontSize = 11;
+        subtitle.FontSize = 10;
         subtitle.Foreground = muted;
         subtitle.Margin = new Thickness(0, 4, 0, 0);
         pageHeading.Children.Add(heading);
@@ -180,7 +180,7 @@ public sealed partial class NativeWindow : Window
         layout.Children.Add(top);
 
         var content = new Grid();
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(215) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(168) });
         content.ColumnDefinitions.Add(new ColumnDefinition {
             Width = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(content, 1);
@@ -191,14 +191,14 @@ public sealed partial class NativeWindow : Window
             BorderBrush = Hex("#26364A"),
             BorderThickness = new Thickness(0, 1, 1, 0)
         };
-        var sidebar = new StackPanel { Margin = new Thickness(12, 24, 12, 14) };
-        var section = Text("MATCH WORKFLOW", 10, FontWeights.Bold, muted);
+        var sidebar = new StackPanel { Margin = new Thickness(6, 15, 6, 10) };
+        var section = Text("МАТЧ", 9, FontWeights.Bold, muted);
         section.Margin = new Thickness(13, 0, 0, 13);
         sidebar.Children.Add(section);
 
         void AddNavigation(string name, string glyph, string shortcut)
         {
-            var slot = new Grid { Margin = new Thickness(0, 0, 0, 7) };
+            var slot = new Grid { Margin = new Thickness(0, 0, 0, 3) };
             slot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3) });
             slot.ColumnDefinitions.Add(new ColumnDefinition {
                 Width = new GridLength(1, GridUnitType.Star) });
@@ -214,10 +214,10 @@ public sealed partial class NativeWindow : Window
             var item = Btn($"{glyph}    {name}", async () =>
                 await OpenPageAsync(name), true);
             item.HorizontalContentAlignment = HorizontalAlignment.Left;
-            item.FontSize = 14;
+            item.FontSize = 12;
             item.FontWeight = FontWeights.Medium;
-            item.MinHeight = 47;
-            item.Padding = new Thickness(15, 11, 10, 11);
+            item.MinHeight = 36;
+            item.Padding = new Thickness(10, 7, 6, 7);
             item.BorderThickness = new Thickness(1);
             item.ToolTip = $"Перейти: {name}  ({shortcut})";
             Grid.SetColumn(item, 1);
@@ -230,9 +230,9 @@ public sealed partial class NativeWindow : Window
         AddNavigation("Драфт", "◇", "Ctrl+2");
         sidebar.Children.Add(new Border {
             Height = 1, Background = border,
-            Margin = new Thickness(13, 18, 13, 17)
+            Margin = new Thickness(10, 12, 10, 11)
         });
-        var sectionOther = Text("ИНСТРУМЕНТЫ", 10, FontWeights.Bold, muted);
+        var sectionOther = Text("СИСТЕМА", 9, FontWeights.Bold, muted);
         sectionOther.Margin = new Thickness(13, 0, 0, 13);
         sidebar.Children.Add(sectionOther);
         AddNavigation("Данные", "▤", "Ctrl+3");
@@ -241,7 +241,7 @@ public sealed partial class NativeWindow : Window
 
         sidebar.Children.Add(new Border {
             Height = 1, Background = border,
-            Margin = new Thickness(13, 20, 13, 19)
+            Margin = new Thickness(10, 13, 10, 11)
         });
         var tip = new StackPanel();
         tip.Children.Add(Text("БЫСТРЫЙ ДОСТУП", 10, FontWeights.Bold, accent));
@@ -254,7 +254,7 @@ public sealed partial class NativeWindow : Window
             BorderBrush = Hex("#293F54"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(13),
+            Padding = new Thickness(9),
             Margin = new Thickness(2, 0, 2, 0),
             Child = tip
         });
@@ -267,7 +267,7 @@ public sealed partial class NativeWindow : Window
 
         var main = new Border {
             Background = background,
-            Padding = new Thickness(26, 20, 29, 21),
+            Padding = new Thickness(16, 12, 17, 13),
             Child = body
         };
         Grid.SetColumn(main, 1);
@@ -340,10 +340,10 @@ public sealed partial class NativeWindow : Window
     {
         var b = new Button
         {
-            Content = label, Cursor = Cursors.Hand, Padding = new Thickness(14, 10, 14, 10),
+            Content = label, Cursor = Cursors.Hand, Padding = new Thickness(11, 7, 11, 7),
             Background = subtle ? soft : Hex("#24555D"), Foreground = foreground,
             BorderBrush = subtle ? border : Hex("#397D81"),
-            BorderThickness = new Thickness(1), MinHeight = 38
+            BorderThickness = new Thickness(1), MinHeight = 32
         };
         b.Click += async (_, _) =>
         {
