@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 
 namespace Cmnet.Native;
@@ -79,13 +80,13 @@ public sealed partial class NativeWindow
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Margin = new Thickness(0, 0, 5, 0),
-                Height = 47,
+                Height = 40,
                 ClipToBounds = true
             };
             if (heroId > 0)
             {
                 var frame = new Grid();
-                frame.Children.Add(HeroPortrait(heroId, 65, 47));
+                frame.Children.Add(HeroPortrait(heroId, 52, 40));
                 box.Child = frame;
                 box.ToolTip = HeroName(heroId);
             }
