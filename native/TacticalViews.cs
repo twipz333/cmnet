@@ -13,6 +13,7 @@ namespace Cmnet.Native;
 public sealed partial class NativeWindow
 {
     private StackPanel? tacticalSelection;
+    private string tacticalSelectedKey = "";
     private StackPanel? tacticalInsights;
     private TextBlock? scoutFoundCount;
     private TextBlock? scoutReadyCount;
@@ -230,6 +231,7 @@ public sealed partial class NativeWindow
         heroSearchText = "";
         selectedHeroId = 0;
         draftBoardKey = "";
+        tacticalSelectedKey = "";
 
         var root = new StackPanel();
 
@@ -423,6 +425,11 @@ public sealed partial class NativeWindow
     private void RefreshSelectedHeroDetail()
     {
         if (tacticalSelection == null) return;
+        var selectedRecommendation = state.At("result", "recs").Items()
+            .FirstOrDefault(r => r.At("heroId").I() == selectedHeroId);
+        var key = selectedHeroId + "|" + (selectedRecommendation?.At("score").D().ToString("R") ?? "missing");
+        if (key == tacticalSelectedKey && tacticalSelection.Children.Count > 0) return;
+        tacticalSelectedKey = key;
         tacticalSelection.Children.Clear();
         if (state == null || selectedHeroId <= 0)
         {
