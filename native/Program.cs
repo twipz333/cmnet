@@ -36,7 +36,9 @@ public static class Program
 // There is no WebView2, Chromium or browser embedding in this process.
 public sealed class AdvisorCore : IAsyncDisposable
 {
-    private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    // SSE is long-lived; never put a global 15-second timeout on the client.
+    // Individual requests have explicit cancellation budgets below.
+    private readonly HttpClient http = new() { Timeout = Timeout.InfiniteTimeSpan };
     private Process? child;
     private CancellationTokenSource? streamCancellation;
     private Task? streamTask;
@@ -119,27 +121,51 @@ public sealed class AdvisorCore : IAsyncDisposable
 
     public async Task<JsonObject> GetAsync(string path, CancellationToken ct = default)
     {
-        using var response = await http.GetAsync(new Uri(BaseUri ?? throw new InvalidOperationException("Core is not ready"), path.TrimStart('/')), ct);
-        response.EnsureSuccessStatusCode();
-        return JsonNode.Parse(await response.Content.ReadAsStringAsync(ct)) as JsonObject ?? new JsonObject();
+        var uri = new Uri(BaseUri ?? throw new InvalidOperationException("Core is not ready"), path.TrimStart('/'));
+        using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // Corpus/stats may be slow while SQLite is writing; give them time to
+        // complete without hanging indefinitely. The old global 15s timeout
+        // was also killing the long-lived SSE connection.
+        requestTimeout.CancelAfter(TimeSpan.FromSeconds(45));
+        try
+        {
+            using var response = await http.GetAsync(uri, requestTimeout.Token);
+            response.EnsureSuccessStatusCode();
+            return JsonNode.Parse(await response.Content.ReadAsStringAsync(requestTimeout.Token)) as JsonObject
+                ?? new JsonObject();
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Go-ядро не ответило на {uri.AbsolutePath} за 45 секунд.");
+        }
     }
 
     public async Task<string> PostAsync(string path, object request, CancellationToken ct = default)
     {
-        var json = JsonSerializer.Serialize(request);
-        using var resp = await http.PostAsync(new Uri(BaseUri ?? throw new InvalidOperationException("Core is not ready"), path.TrimStart('/')),
-            new StringContent(json, Encoding.UTF8, "application/json"), ct);
-        var body = await resp.Content.ReadAsStringAsync(ct);
-        if (!resp.IsSuccessStatusCode)
-            throw new HttpRequestException($"{(int)resp.StatusCode}: {body}");
-        // The Go API returns the entire current state on POST.
+        var uri = new Uri(BaseUri ?? throw new InvalidOperationException("Core is not ready"), path.TrimStart('/'));
+        using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        requestTimeout.CancelAfter(TimeSpan.FromSeconds(45));
         try
         {
-            var node = JsonNode.Parse(body) as JsonObject;
-            if (node?.ContainsKey("meta") == true) StateReceived?.Invoke(node);
+            var json = JsonSerializer.Serialize(request);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var resp = await http.PostAsync(uri, content, requestTimeout.Token);
+            var body = await resp.Content.ReadAsStringAsync(requestTimeout.Token);
+            if (!resp.IsSuccessStatusCode)
+                throw new HttpRequestException($"{(int)resp.StatusCode}: {body}");
+            // The Go API returns the entire current state on POST.
+            try
+            {
+                var node = JsonNode.Parse(body) as JsonObject;
+                if (node?.ContainsKey("meta") == true) StateReceived?.Invoke(node);
+            }
+            catch (JsonException) { /* Some endpoints return an acknowledgment only. */ }
+            return body;
         }
-        catch (JsonException) { /* Some endpoints return an acknowledgment only. */ }
-        return body;
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Операция {uri.AbsolutePath} не завершилась за 45 секунд.");
+        }
     }
 
     private async Task ReadEventsAsync(CancellationToken ct)
