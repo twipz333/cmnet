@@ -1210,6 +1210,7 @@ public sealed partial class NativeWindow : Window
         heroCatalogKey = "";
         recommendationKey = "";
         heroPageSize = 48;
+        heroSearchText = "";
         selectedHeroId = 0;
 
         // The board is the first visual landmark. The hero selector is the
@@ -1769,6 +1770,18 @@ public sealed partial class NativeWindow : Window
             RenderPage(target);
             if (page != target || heading.Text != target || ReferenceEquals(previous, body.Content))
                 throw new InvalidOperationException($"Native navigation smoke failed on {target}: visual content did not change.");
+            if (!navMarkers.TryGetValue(target, out var nav) ||
+                nav.Visibility != Visibility.Visible)
+                throw new InvalidOperationException($"Navigation marker did not activate for {target}.");
+            if (target == "Драфт" &&
+                (draftBoardHost == null || heroGallery == null ||
+                 heroSearchBox == null || draftRecommendations == null ||
+                 applyDraftButton == null || applyDraftButton.IsEnabled))
+                throw new InvalidOperationException("Draft cockpit controls missing or action incorrectly enabled.");
+            if (target == "Разведка" &&
+                (scoutSignalHost == null || scoutViewport == null ||
+                 scoutedPlayers == null || scoutDetails == null))
+                throw new InvalidOperationException("Scouting overview or detail drill-down missing.");
         }
     }
 
