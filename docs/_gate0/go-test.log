@@ -1,0 +1,81 @@
+ok  	cmnet/cmd/advisor	57.813s
+?   	cmnet/cmd/advisor-discord	[no test files]
+?   	cmnet/cmd/advisor-gsi-fake	[no test files]
+ok  	cmnet/internal/alerts	1.514s
+ok  	cmnet/internal/assets	9.868s
+ok  	cmnet/internal/atomicfile	16.555s
+ok  	cmnet/internal/blend	1.515s
+ok  	cmnet/internal/bundle	15.335s
+--- FAIL: TestMetaRoundTrip (33.10s)
+    testing.go:1617: TempDir RemoveAll cleanup: unlinkat F:\Go\tmp\TestMetaRoundTrip2423856671\001: The directory is not empty.
+--- FAIL: TestUpsertReplacesPickBans (9.82s)
+    testing.go:1617: TempDir RemoveAll cleanup: unlinkat F:\Go\tmp\TestUpsertReplacesPickBans163987316\001: The directory is not empty.
+FAIL
+FAIL	cmnet/internal/cache	205.932s
+ok  	cmnet/internal/capability	3.022s
+--- FAIL: TestSaveViewRoundTripAndClear (2.00s)
+    testing.go:1617: TempDir RemoveAll cleanup: unlinkat F:\Go\tmp\TestSaveViewRoundTripAndClear631194237\001: The directory is not empty.
+FAIL
+FAIL	cmnet/internal/config	15.607s
+ok  	cmnet/internal/declog	69.263s
+ok  	cmnet/internal/determinism	17.024s
+ok  	cmnet/internal/discordbot	13.098s
+ok  	cmnet/internal/dota/action	3.212s
+ok  	cmnet/internal/dota/macrolabel	1.519s
+?   	cmnet/internal/dota/macrolabel/adapter/current_capture	[no test files]
+?   	cmnet/internal/dota/macrolabel/audit	[no test files]
+2026/10/30 19:04:09 behavioraudit: unknown MacroAction id=99999 (schema=macro-action-v0.1)
+2026/10/30 19:04:09 behavioraudit: warning: 1 cases missing macro_action_schema_version (assuming macro-action-v0.1)
+2026/10/30 19:04:09 behavioraudit: unknown MacroAction id=42 (schema=macro-action-v0.1)
+--- FAIL: TestSaveLoadMergeResume (9.43s)
+    testing.go:1617: TempDir RemoveAll cleanup: unlinkat F:\Go\tmp\TestSaveLoadMergeResume4029984842\001: The directory is not empty.
+FAIL
+FAIL	cmnet/internal/dota/macrolabel/behavioraudit	13.348s
+ok  	cmnet/internal/dota/minimap	10.200s
+ok  	cmnet/internal/dota/state	3.211s
+ok  	cmnet/internal/dota/worldmap	1.523s
+ok  	cmnet/internal/draft	13.078s
+ok  	cmnet/internal/eval	13.684s
+ok  	cmnet/internal/features	1.538s
+ok  	cmnet/internal/gsi	9.869s
+ok  	cmnet/internal/gsi/belief	13.474s
+ok  	cmnet/internal/gsi/lanestate	27.007s
+ok  	cmnet/internal/gsi/mapstate	1.520s
+ok  	cmnet/internal/gsi/observe	1.519s
+ok  	cmnet/internal/gsi/probe	138.303s
+ok  	cmnet/internal/gsi/replay	12.673s
+ok  	cmnet/internal/gsi/track	3.787s
+ok  	cmnet/internal/heroagg	11.776s
+ok  	cmnet/internal/herogrid	3.211s
+--- FAIL: TestDisjointResourcesRunConcurrently (28.71s)
+    testing.go:1617: TempDir RemoveAll cleanup: unlinkat F:\Go\tmp\TestDisjointResourcesRunConcurrently1237728301\001\cmnet.db: The process cannot access the file because it is being used by another process.
+--- FAIL: TestSharedResourceSerialises (24.89s)
+    testing.go:1617: TempDir RemoveAll cleanup: unlinkat F:\Go\tmp\TestSharedResourceSerialises2232533027\001\cmnet.db: The process cannot access the file because it is being used by another process.
+FAIL
+FAIL	cmnet/internal/jobs	121.070s
+ok  	cmnet/internal/lineup	0.923s
+ok  	cmnet/internal/matrices	0.923s
+ok  	cmnet/internal/model	0.698s
+ok  	cmnet/internal/objectives	0.661s
+ok  	cmnet/internal/outcome	2.239s
+ok  	cmnet/internal/pairstats	2.666s
+ok  	cmnet/internal/recommender	4.447s
+ok  	cmnet/internal/roles	0.831s
+ok  	cmnet/internal/rules	0.493s
+ok  	cmnet/internal/scout	13.669s
+ok  	cmnet/internal/session	58.754s
+ok  	cmnet/internal/share	12.670s
+ok  	cmnet/internal/sources/opendota	12.403s
+--- FAIL: TestActivityReportsInFlight (0.56s)
+    activity_test.go:54: Busiest = ""/0s, want the open request named
+FAIL
+FAIL	cmnet/internal/sources/ratelimit	3.479s
+?   	cmnet/internal/sources/stratz	[no test files]
+?   	cmnet/internal/startup	[no test files]
+ok  	cmnet/internal/train	2.969s
+?   	cmnet/internal/tui	[no test files]
+--- FAIL: TestJobsViewReportsLiveness (26.09s)
+    testing.go:1617: TempDir RemoveAll cleanup: unlinkat F:\Go\tmp\TestJobsViewReportsLiveness2827915978\001\cmnet.db: The process cannot access the file because it is being used by another process.
+FAIL
+FAIL	cmnet/internal/web	73.886s
+FAIL

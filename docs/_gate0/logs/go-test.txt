@@ -1,0 +1,62 @@
+ok  	cmnet/cmd/advisor	15.080s
+?   	cmnet/cmd/advisor-discord	[no test files]
+?   	cmnet/cmd/advisor-gsi-fake	[no test files]
+ok  	cmnet/internal/alerts	2.158s
+ok  	cmnet/internal/assets	3.447s
+ok  	cmnet/internal/atomicfile	5.909s
+ok  	cmnet/internal/blend	2.108s
+ok  	cmnet/internal/bundle	4.665s
+--- FAIL: TestCorpusDailyIsPerMatchAndCMIsASubset (4.89s)
+    testing.go:1617: TempDir RemoveAll cleanup: unlinkat F:\Go\tmp\TestCorpusDailyIsPerMatchAndCMIsASubset914987308\001: The directory is not empty.
+FAIL
+FAIL	cmnet/internal/cache	152.631s
+ok  	cmnet/internal/capability	4.734s
+ok  	cmnet/internal/config	3.773s
+--- FAIL: TestPurgeDeletesWholeDrafts (3.00s)
+    testing.go:1617: TempDir RemoveAll cleanup: unlinkat F:\Go\tmp\TestPurgeDeletesWholeDrafts1798599188\001: The directory is not empty.
+FAIL
+FAIL	cmnet/internal/declog	26.391s
+ok  	cmnet/internal/determinism	4.235s
+ok  	cmnet/internal/discordbot	3.961s
+ok  	cmnet/internal/dota/action	2.185s
+ok  	cmnet/internal/dota/macrolabel	2.319s
+?   	cmnet/internal/dota/macrolabel/adapter/current_capture	[no test files]
+?   	cmnet/internal/dota/macrolabel/audit	[no test files]
+ok  	cmnet/internal/dota/macrolabel/behavioraudit	5.699s
+ok  	cmnet/internal/dota/minimap	3.542s
+ok  	cmnet/internal/dota/state	4.725s
+ok  	cmnet/internal/dota/worldmap	2.341s
+ok  	cmnet/internal/draft	2.790s
+ok  	cmnet/internal/eval	5.742s
+ok  	cmnet/internal/features	2.338s
+ok  	cmnet/internal/gsi	3.660s
+ok  	cmnet/internal/gsi/belief	4.883s
+ok  	cmnet/internal/gsi/lanestate	4.746s
+ok  	cmnet/internal/gsi/mapstate	2.337s
+ok  	cmnet/internal/gsi/observe	2.308s
+ok  	cmnet/internal/gsi/probe	74.375s
+ok  	cmnet/internal/gsi/replay	4.739s
+ok  	cmnet/internal/gsi/track	3.884s
+ok  	cmnet/internal/heroagg	4.726s
+ok  	cmnet/internal/herogrid	2.099s
+ok  	cmnet/internal/jobs	65.043s
+ok  	cmnet/internal/lineup	0.807s
+ok  	cmnet/internal/matrices	0.754s
+ok  	cmnet/internal/model	0.693s
+ok  	cmnet/internal/objectives	0.685s
+ok  	cmnet/internal/outcome	2.142s
+ok  	cmnet/internal/pairstats	2.713s
+ok  	cmnet/internal/recommender	3.455s
+ok  	cmnet/internal/roles	1.871s
+ok  	cmnet/internal/rules	0.677s
+ok  	cmnet/internal/scout	3.967s
+ok  	cmnet/internal/session	23.501s
+ok  	cmnet/internal/share	5.553s
+ok  	cmnet/internal/sources/opendota	10.123s
+ok  	cmnet/internal/sources/ratelimit	3.095s
+?   	cmnet/internal/sources/stratz	[no test files]
+?   	cmnet/internal/startup	[no test files]
+ok  	cmnet/internal/train	2.014s
+?   	cmnet/internal/tui	[no test files]
+ok  	cmnet/internal/web	35.854s
+FAIL
