@@ -138,6 +138,10 @@ func (s *Store) SetPlayerNote(accountID int64, note string) error {
 // aggregates. This is the "really forget them" path, distinct from removing them
 // from the current snapshot.
 func (s *Store) ForgetPlayer(accountID int64) error {
+	// Privacy deletion includes provenance recorded by local scouting.
+	if _, err := s.db.Exec("DELETE FROM source_observations WHERE account_id = ?", accountID); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`DELETE FROM known_players WHERE account_id = ?`, accountID); err != nil {
 		return err
 	}

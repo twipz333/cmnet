@@ -117,6 +117,7 @@ var migrations = []migration{
 	{5, "known players", migrateKnownPlayers},
 	{6, "rank probe bookkeeping", migrateRankProbe},
 	{7, "Steam avatar URL in player profile cache", migratePlayerAvatars},
+	{8, "local intelligence, draft checkpoints and provenance", migrateLocalIntelligence},
 }
 
 // migrateRankProbe records that a match's rank tier was looked up, whatever the
@@ -237,6 +238,11 @@ func runMigration(db *sql.DB, m migration) error {
 	defer tx.Rollback()
 	if err := m.apply(tx); err != nil {
 		return fmt.Errorf("migration %d (%s): %w", m.version, m.name, err)
+	}
+	// Schema changes and their version must commit atomically. A crash must
+	// never leave an upgraded database marked as an older schema.
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
+		return fmt.Errorf("migration %d (%s): stamp: %w", m.version, m.name, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("migration %d (%s): commit: %w", m.version, m.name, err)

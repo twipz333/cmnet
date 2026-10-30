@@ -31,7 +31,7 @@ public sealed class CoreSnapshotGate
         var gate = new CoreSnapshotGate();
         static JsonObject State(string id, int rev) => new()
         {
-            ["schemaVersion"] = 1, ["sessionId"] = id, ["revision"] = rev
+            ["schemaVersion"] = 1, ["sessionId"] = id, ["revision"] = (long)rev
         };
         if (!gate.TryAccept(State("a", 1)) || gate.TryAccept(State("a", 1)) ||
             gate.TryAccept(State("a", 0)) || !gate.TryAccept(State("a", 2)) ||
