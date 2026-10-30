@@ -40,7 +40,11 @@ Draft board additionally shows warm/amber action accents for primary CTA emphasi
 
 ## Comparison note (current WPF fixtures vs 3B)
 
-Current `--capture-ui` fixtures already use dark teal accents and sidebar nav, but diverge from 3B in: metric strip composition, threat/ban recommendation modules, scout signal cards, draft timer/first-class why panel, role filters, and denser IA. Gate 1 must close these deltas against `scout-approved.png` / `draft-approved.png` with real WPF screenshots — fixtures alone are not acceptance.
+**Compared fixtures:** `docs/_gate0/ci-screenshots/draft-1920x1080-layout100.png` and `scout-1920x1080-layout100.png` against `draft-approved.png` / `scout-approved.png` on **2026-10-30** (this Gate 0.5 task).
+
+Full delta list (no redesign): [`DELTAS.md`](./DELTAS.md).
+
+Headline gaps only: Draft lacks dual-team CM board + timer/turn, rec tags, role filters, selected-hero why/Select panel, enemy-intel strip; Scout lacks four-card metric strip, threat analytics + ban card, selected-player insights/quick actions, and 3B player-card status language. Gate 1 must close these against the approved PNGs with real WPF screenshots — fixtures alone are not acceptance.
 
 ## Authority
 
