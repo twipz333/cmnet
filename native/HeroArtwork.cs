@@ -30,8 +30,35 @@ internal sealed class HeroArtwork
     public void Bind(Image control, int heroId, string internalName)
     {
         if (heroId <= 0) return;
-        // Each UI Image owns its Source, shared cached images are frozen.
+        // An existing disk cache should paint on the first WPF frame.
+        // Network loading is only the fallback and never blocks the UI.
+        var cached = TryReadDiskCache(heroId);
+        if (cached != null)
+        {
+            control.Source = cached;
+            return;
+        }
         _ = BindAsync(control, heroId, internalName);
+    }
+
+    private ImageSource? TryReadDiskCache(int id)
+    {
+        try
+        {
+            var root = dataDirectory();
+            var userCache = string.IsNullOrWhiteSpace(root) ? null :
+                Path.Combine(root, "assets", "heroes", id + ".png");
+            if (userCache != null && File.Exists(userCache))
+            {
+                var result = TryDecode(File.ReadAllBytes(userCache));
+                if (result != null) return result;
+            }
+            // For legally sourced, user-provided local portrait packs.
+            var local = Path.Combine(AppContext.BaseDirectory, "assets", "heroes", id + ".png");
+            return File.Exists(local) ? TryDecode(File.ReadAllBytes(local)) : null;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
     }
 
     private async Task BindAsync(Image target, int id, string name)

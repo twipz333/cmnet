@@ -62,6 +62,23 @@ public static class Program
                     window.UpdateLayout();
                     window.Dispatcher.Invoke(() => { },
                         System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    // Let asynchronously fetched public hero artwork appear
+                    // in the demo when available, while keeping a bounded
+                    // timeout and reliable offline fallback rendering.
+                    var frame = new System.Windows.Threading.DispatcherFrame();
+                    var timer = new System.Windows.Threading.DispatcherTimer(
+                        System.Windows.Threading.DispatcherPriority.Background)
+                    {
+                        Interval = TimeSpan.FromSeconds(4)
+                    };
+                    timer.Tick += (_, _) =>
+                    {
+                        timer.Stop();
+                        frame.Continue = false;
+                    };
+                    timer.Start();
+                    System.Windows.Threading.Dispatcher.PushFrame(frame);
+                    window.UpdateLayout();
                     window.CaptureVisualPreview(Path.Combine(destination,
                         screen == "Разведка" ? "scout.png" : "draft.png"));
                 }
