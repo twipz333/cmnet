@@ -2,6 +2,8 @@
 
 This runbook targets **stablyai/orca** (desktop Orca, https://www.onorca.dev/docs/) and its experimental Orchestration layer. It is not the unrelated `orca-cli/orca` binary or `araa47/orca`. Verify the installed product first.
 
+> For repeated product-development iterations with selective human interruptions, use [ORCA-CONTINUOUS-LOOP.md](ORCA-CONTINUOUS-LOOP.md). A Run is a durable namespace, not an unattended background agent; keep the coordinator active and resume from GitHub issues/PRs after interruption.
+
 ## First local setup (on Windows, where WPF can actually be tested)
 
 1. Open the **CMNET repo in Orca**. Set `master` as the baseline; do not run two agents in one working directory.
