@@ -966,25 +966,36 @@ public sealed class NativeWindow : Window
 
         var search = new TextBox { Margin = new Thickness(0, 0, 0, 12),
             ToolTip = "Быстрый поиск героя" };
-        search.TextChanged += (_, _) => UpdateHeroes(search.Text);
+        search.TextChanged += (_, _) =>
+        {
+            heroSearchText = search.Text;
+            UpdateHeroes(heroSearchText);
+        };
         Grid.SetRow(search, 1);
         right.Children.Add(search);
-        heroList = new ListBox { ItemsSource = heroRows, DisplayMemberPath = "Label",
-            Background = Brushes.Transparent, MinHeight = 135, MaxHeight = 400 };
-        VirtualizingStackPanel.SetIsVirtualizing(heroList, true);
-        VirtualizingStackPanel.SetVirtualizationMode(heroList, VirtualizationMode.Recycling);
-        ScrollViewer.SetCanContentScroll(heroList, true);
-        Grid.SetRow(heroList, 2);
-        right.Children.Add(heroList);
-        var apply = Btn("✓  Применить выбранного героя", async () =>
+        // A compact portrait gallery is the primary Dota interaction, not a
+        // text-only ListBox. The vertical ScrollViewer belongs to this region
+        // and not to the full desktop page.
+        heroGallery = new WrapPanel { Orientation = Orientation.Horizontal };
+        var galleryViewport = Scroll(heroGallery);
+        galleryViewport.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        galleryViewport.MinHeight = 135;
+        Grid.SetRow(galleryViewport, 2);
+        right.Children.Add(galleryViewport);
+        var selectionBar = new Grid { Margin = new Thickness(0, 14, 0, 0) };
+        selectionBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        selectionBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        selectedHeroHint = Text("Выбери героя на сетке", 13, FontWeights.SemiBold, muted);
+        selectionBar.Children.Add(selectedHeroHint);
+        var apply = Btn("✓  Применить", async () =>
         {
-            if (heroList.SelectedItem is HeroRow h)
-                await RunAction("/api/apply", new { heroId = h.Id });
+            if (selectedHeroId > 0)
+                await RunAction("/api/apply", new { heroId = selectedHeroId });
         });
-        apply.HorizontalAlignment = HorizontalAlignment.Stretch;
-        apply.Margin = new Thickness(0, 15, 0, 0);
-        Grid.SetRow(apply, 3);
-        right.Children.Add(apply);
+        Grid.SetColumn(apply, 1);
+        selectionBar.Children.Add(apply);
+        Grid.SetRow(selectionBar, 3);
+        right.Children.Add(selectionBar);
         var rightCard = Surface(right, new Thickness(10, 0, 0, 0));
         Grid.SetColumn(rightCard, 1);
         frame.Children.Add(rightCard);
@@ -1032,18 +1043,21 @@ public sealed class NativeWindow : Window
                 : $"Сторона: {m.At("ourTeam").S()}\nХод: {step.At("team").S("—")} · {step.At("action").S("—")}\nПатч: {m.At("patchTag").S("—")}";
         }
         var recs = state.At("result","recs").Items().Take(6)
-            .Select(x => $"  {HeroName(x.At("heroId").I())}   ·   {x.At("score").D():P1}").ToList();
-        var recKey = string.Join("|", recs);
+            .Select(x => (id: x.At("heroId").I(), score: x.At("score").D()))
+            .Where(x => x.id > 0).ToList();
+        var recKey = string.Join("|", recs.Select(x => x.id + ":" + x.score));
         if (draftRecommendations != null && recKey != recommendationKey)
         {
-            draftRecommendations.ItemsSource = recs;
+            draftRecommendations.Items.Clear();
+            for (int i = 0; i < recs.Count; i++)
+                draftRecommendations.Items.Add(RecommendationRow(recs[i].id, recs[i].score, i + 1));
             recommendationKey = recKey;
         }
         var key = state.At("heroes")?.ToJsonString() + "|" + state.At("board")?.ToJsonString();
         if (key != heroCatalogKey)
         {
             heroCatalogKey = key;
-            UpdateHeroes("");
+            UpdateHeroes(heroSearchText);
         }
     }
 
@@ -1058,11 +1072,17 @@ public sealed class NativeWindow : Window
             .Distinct().Select(id => new HeroRow { Id = id, Name = HeroName(id) })
             .Where(h => h.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
             .OrderBy(h=>h.Name).ToList();
-        var selected = (heroList?.SelectedItem as HeroRow)?.Id;
         heroRows.Clear();
         foreach (var x in all) heroRows.Add(x);
-        if (selected is int hero)
-            heroList!.SelectedItem = heroRows.FirstOrDefault(x => x.Id == hero);
+        if (heroGallery == null) return;
+        heroGallery.Children.Clear();
+        if (all.Count == 0)
+        {
+            heroGallery.Children.Add(Text("Нет подходящих героев", 13, color: muted));
+            return;
+        }
+        foreach (var h in all)
+            heroGallery.Children.Add(DraftHeroTile(h.Id));
     }
 
     private UIElement BuildDataView()
