@@ -67,6 +67,19 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "WPF navigation smoke failed: exit $($process.ExitCode)"
           }
+      - name: Capture native WPF screenshots for visual review
+        shell: pwsh
+        run: |
+          & native/out/Cmnet.Native.exe --capture-ui native/ui-snapshots
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($file in @('scout.png', 'draft.png')) {
+            if (-not (Test-Path "native/ui-snapshots/$file")) { throw "Missing visual $file" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cmnet-wpf-3b-screenshots
+          path: native/ui-snapshots/*.png
+          if-no-files-found: error
       - name: Zip native preview with Go sidecar
         shell: pwsh
         run: Compress-Archive -Path native/out/* -DestinationPath native/cmnet-native-preview-win-x64.zip -Force

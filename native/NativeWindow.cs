@@ -95,7 +95,7 @@ public sealed partial class NativeWindow : Window
     private readonly List<ConfigField> configEditors = new();
     private readonly TextBlock toast = new();
 
-    public NativeWindow(string? initialDataDirectory = null)
+    public NativeWindow(string? initialDataDirectory = null, bool visualPreview = false)
     {
         artwork = new HeroArtwork(() => core.DataDirectory);
         Title = "CMNET · Match Intelligence";
@@ -327,7 +327,8 @@ public sealed partial class NativeWindow : Window
             connectionBadge.Text = message == "Go-ядро подключено" ? "●  Локально · онлайн" : "●  " + message;
             connectionBadge.Foreground = message == "Go-ядро подключено" ? good : gold;
         });
-        Loaded += async (_, _) => await BootAsync(initialDataDirectory);
+        if (!visualPreview)
+            Loaded += async (_, _) => await BootAsync(initialDataDirectory);
         Closed += (_, _) => core.Stop();
         RenderPage();
     }
