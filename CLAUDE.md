@@ -1,3 +1,5 @@
+> **CURRENT PRODUCT CONTRACT (2026-10-30):** Before implementing anything, read [AGENTS.md](AGENTS.md), [docs/PRODUCT-BAR.md](docs/PRODUCT-BAR.md), [docs/DELIVERY-BOARD.md](docs/DELIVERY-BOARD.md), and [docs/ORCA-PLAYBOOK.md](docs/ORCA-PLAYBOOK.md). These describe the current native-Windows product goal and its mandatory acceptance evidence. This file retains historical algorithm/TUI requirements; whenever it conflicts with the current product contract, the newer product contract wins. Do not change the agreed Minimal Tactical 3B direction or call a WPF preview 'released' without acceptance.
+
 # Dota 2 Draft Advisor — Техническое задание
 
 > Этот файл — контекст проекта для Claude Code. Здесь зафиксированы цель, архитектура
