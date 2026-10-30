@@ -44,6 +44,7 @@ public sealed class NativeWindow : Window
     private readonly Dictionary<string, Button> navigation = new();
     private string page = "Разведка";
     private JsonObject? state;
+    private readonly CoreSnapshotGate snapshotGate = new();
     private JsonObject? stats;
     private JsonObject? players;
     private string scoutVersion = "";
@@ -378,6 +379,8 @@ public sealed class NativeWindow : Window
     }
     private void ApplyState(JsonObject next)
     {
+        // Ignore SSE frames older than the latest mutation response.
+        if (!snapshotGate.TryAccept(next)) return;
         state = next;
         UpdateLiveState();
         if (page == "Разведка" && DateTime.UtcNow - lastScoutLoad > TimeSpan.FromSeconds(9))
@@ -1190,7 +1193,8 @@ public sealed class NativeWindow : Window
         {
             draftSummary.Text = !m.At("draftReady").B()
                 ? m.At("draftError").S("Модель ещё не обучена. Открой раздел «Данные».")
-                : $"Сторона: {m.At("ourTeam").S()}\nХод: {step.At("team").S("—")} · {step.At("action").S("—")}\nПатч: {m.At("patchTag").S("—")}";
+                : $"Сторона: {m.At("ourTeam").S()}\nХод: {step.At("team").S("—")} · {step.At("action").S("—")}\nПатч: {m.At("patchTag").S("—")}" +
+                  (state.At("modelUpdatePending").B() ? "\nНовая модель активируется в следующем драфте" : "");
         }
         var recs = state.At("result","recs").Items().Take(6)
             .Select(x => (id: x.At("heroId").I(), score: x.At("score").D()))
