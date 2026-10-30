@@ -133,107 +133,184 @@ public sealed partial class NativeWindow
     private void RefreshScoutSignals()
     {
         if (scoutSignalHost == null || page != "Разведка" || state == null) return;
-        var ids = state.At("team", "enemy").Items()
-            .Select(x => x.L()).Take(5).ToArray();
+        var ids = state.At("team", "enemy").Items().Select(x => x.L()).Take(5).ToArray();
         var reports = stats.At("stats", "enemyPlayers").Items().ToArray();
         var key = string.Join("|", ids) + "|" +
             string.Join("|", reports.Select(p => p.ToJsonString())) + "|" +
-            players?.ToJsonString();
+            players?.ToJsonString() + "|" + selectedScoutSide + ":" + selectedScoutId;
         if (key == scoutSignalKey) return;
         scoutSignalKey = key;
+
+        var found = ids.Count(id => id > 0);
+        var ready = 0;
+        var limited = 0;
+        var errors = 0;
+        foreach (var id in ids.Where(id => id > 0))
+        {
+            var source = reports.FirstOrDefault(p => p.At("accountId").L() == id)
+                ?.At("scoutStatus").S("pending") ?? "pending";
+            if (source == "ok") ready++;
+            else if (source is "no_stats" or "stale" or "unresolved") limited++;
+            else if (source == "error") errors++;
+        }
+        if (scoutFoundCount != null) scoutFoundCount.Text = found + " / 5";
+        if (scoutReadyCount != null) scoutReadyCount.Text = ready + " / " + found;
+        if (scoutLimitedCount != null) scoutLimitedCount.Text = limited.ToString();
+        if (scoutFailureCount != null) scoutFailureCount.Text = errors.ToString();
+
         scoutSignalHost.Children.Clear();
-
-        var ready = ids.Count(id => id > 0 &&
-            reports.Any(p => p.At("accountId").L() == id &&
-                p.At("scoutStatus").S() == "ok"));
-        var assigned = ids.Count(id => id > 0);
-        var top = new DockPanel { LastChildFill = true,
-            Margin = new Thickness(0, 0, 0, 15) };
-        var badge = Pill($"{ready} / {assigned}  ГОТОВО",
-            ready == assigned && assigned > 0 ? Hex("#1B403D") : Hex("#443527"),
-            ready == assigned && assigned > 0 ? good : gold);
-        DockPanel.SetDock(badge, Dock.Right);
-        top.Children.Add(badge);
-        var titles = new StackPanel();
-        titles.Children.Add(Text("СИГНАЛЫ РАЗВЕДКИ", 10, FontWeights.Bold, accent));
-        var caption = Text("Пять противников. Достоверность данных — без догадок.",
-            12, color: muted);
-        caption.Margin = new Thickness(0, 5, 0, 0);
-        titles.Children.Add(caption);
-        top.Children.Add(titles);
-        scoutSignalHost.Children.Add(top);
-
         var cards = new WrapPanel();
-        for (var i = 0; i < 5; i++)
+        for (int i = 0; i < 5; i++)
         {
             var id = i < ids.Length ? ids[i] : 0L;
-            var report = reports.FirstOrDefault(p => p.At("accountId").L() == id);
+            var report = id == 0 ? null :
+                reports.FirstOrDefault(p => p.At("accountId").L() == id);
             var source = id == 0 ? "empty" :
                 report?.At("scoutStatus").S("pending") ?? "pending";
-            var valid = source == "ok";
-            var color = valid ? good : source == "pending" || source == "empty"
-                ? muted : gold;
-            var shortStatus = source switch {
-                "ok" => "ДАННЫЕ ГОТОВЫ",
-                "no_stats" => "СКРЫТА СТАТИСТИКА",
-                "stale" => "УСТАРЕЛИ",
-                "error" => "ОШИБКА ИСТОЧНИКА",
+            bool valid = source == "ok";
+            bool selected = id > 0 && selectedScoutId == id &&
+                selectedScoutSide == "enemy";
+            var tone = source switch {
+                "ok" => good,
+                "error" => Hex("#EF7D88"),
+                "no_stats" or "stale" or "unresolved" => gold,
+                _ => muted
+            };
+            var statusLabel = source switch {
+                "ok" => "ГОТОВО",
+                "no_stats" => "СКРЫТО",
+                "stale" => "УСТАРЕЛО",
+                "error" => "ОШИБКА",
                 "unresolved" => "НЕ ОПОЗНАН",
-                "empty" => "НЕ НАЗНАЧЕН",
+                "empty" => "НЕТ ИГРОКА",
                 _ => "ОЖИДАНИЕ"
             };
-            var card = new StackPanel();
-            var topLine = new DockPanel();
-            var number = Text($"0{i + 1}", 11, FontWeights.Bold, color);
-            DockPanel.SetDock(number, Dock.Right);
-            topLine.Children.Add(number);
-            topLine.Children.Add(Text(shortStatus, 9, FontWeights.Bold, color));
-            card.Children.Add(topLine);
+            var content = new StackPanel();
+            var statusRow = new DockPanel { LastChildFill = true };
+            var seat = Text("POS " + (i + 1), 10, FontWeights.Bold, muted);
+            DockPanel.SetDock(seat, Dock.Right);
+            statusRow.Children.Add(seat);
+            statusRow.Children.Add(Text("● " + statusLabel, 10, FontWeights.Bold, tone));
+            content.Children.Add(statusRow);
 
-            var person = Text(id == 0 ? "Свободное место" : PlayerName(id),
-                13, FontWeights.Bold);
-            person.TextTrimming = TextTrimming.CharacterEllipsis;
-            person.TextWrapping = TextWrapping.NoWrap;
-            person.Margin = new Thickness(0, 10, 0, 4);
-            card.Children.Add(person);
-
-            var best = report?.At("topHeroes").Items().FirstOrDefault();
-            var heroId = best?.At("id").I() ?? 0;
-            var detail = id == 0 ? "Добавь Steam ID" :
-                heroId > 0 ? $"{HeroName(heroId)} · {best?.At("games").I()} игр" :
-                "Открой профиль для деталей";
-            var small = Text(detail, 10, color: muted);
-            small.TextTrimming = TextTrimming.CharacterEllipsis;
-            small.TextWrapping = TextWrapping.NoWrap;
-            card.Children.Add(small);
-            if (heroId > 0)
+            var portrait = new Grid { Width = 48, Height = 48, Margin = new Thickness(0, 14, 0, 9) };
+            portrait.Children.Add(new Border {
+                Background = Hex("#263E53"), CornerRadius = new CornerRadius(24),
+                Child = new TextBlock {
+                    Text = id == 0 ? "?" : (i + 1).ToString(),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = muted, FontSize = 17, FontWeight = FontWeights.Bold
+                }
+            });
+            if (id > 0 && core.BaseUri != null)
             {
-                var portrait = HeroPortrait(heroId, 135, 76);
-                portrait.Margin = new Thickness(0, 10, 0, 1);
-                card.Children.Add(portrait);
+                var image = new Image { Width = 48, Height = 48, Stretch = Stretch.UniformToFill };
+                try
+                {
+                    image.Source = new System.Windows.Media.Imaging.BitmapImage(
+                        new Uri(core.BaseUri, "assets/avatars/" + id + ".jpg"));
+                    var clip = new System.Windows.Media.EllipseGeometry(
+                        new Point(24, 24), 24, 24);
+                    image.Clip = clip;
+                }
+                catch (Exception) { /* fallback initials */ }
+                portrait.Children.Add(image);
             }
-            else
-            {
-                card.Children.Add(new Border {
-                    Height = 3, Background = Hex("#31465A"),
-                    CornerRadius = new CornerRadius(2),
-                    Margin = new Thickness(0, 12, 0, 0)
-                });
-            }
+            portrait.HorizontalAlignment = HorizontalAlignment.Center;
+            content.Children.Add(portrait);
 
-            var tile = new Border {
-                Child = card,
-                Width = 170,
-                Background = Hex(valid ? "#163332" : "#172838"),
-                BorderBrush = valid ? Hex("#397467") : border,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(12, 11, 12, 12),
-                Margin = new Thickness(0, 0, 9, 9),
-                ToolTip = id > 0 ? $"Steam Account ID: {id}" : "Место не занято"
-            };
-            cards.Children.Add(tile);
+            var name = Text(id == 0 ? "Место пусто" : PlayerName(id),
+                13, FontWeights.Bold, foreground);
+            name.TextAlignment = TextAlignment.Center;
+            name.TextWrapping = TextWrapping.NoWrap;
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            name.Width = 144;
+            content.Children.Add(name);
+
+            var strong = report?.At("topHeroes").Items().Take(2).ToArray() ??
+                Array.Empty<System.Text.Json.Nodes.JsonNode?>();
+            var heroList = new StackPanel { Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 11, 0, 4) };
+            foreach (var hero in strong)
+            {
+                var heroId = hero.At("id").I();
+                if (heroId <= 0) continue;
+                var thumb = HeroPortrait(heroId, 54, 31);
+                thumb.Margin = new Thickness(0, 0, 5, 0);
+                thumb.ToolTip = HeroName(heroId);
+                heroList.Children.Add(thumb);
+            }
+            if (heroList.Children.Count == 0)
+                heroList.Children.Add(Text("Нет героев в выборке", 10, color: muted));
+            content.Children.Add(heroList);
+
+            var hint = Text(id > 0 ? "Подробнее  ›" : "Назначить в составах",
+                10, FontWeights.SemiBold, id > 0 ? accent : muted);
+            hint.HorizontalAlignment = HorizontalAlignment.Center;
+            hint.Margin = new Thickness(0, 5, 0, 0);
+            content.Children.Add(hint);
+            var account = id;
+            var button = Btn("", async () =>
+            {
+                if (account > 0) ShowScoutDetails("enemy", account);
+                await System.Threading.Tasks.Task.CompletedTask;
+            }, true);
+            button.Content = content;
+            button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            button.Width = 177;
+            button.Padding = new Thickness(11, 11, 11, 12);
+            button.Margin = new Thickness(0, 0, 9, 8);
+            button.Background = selected ? Hex("#1D4149") : Hex("#172838");
+            button.BorderBrush = selected ? accent : border;
+            button.ToolTip = id > 0 ? "Профиль Steam account ID: " + id :
+                "Добавить игрока можно в «Управление составами»";
+            button.IsEnabled = id > 0;
+            cards.Children.Add(button);
         }
         scoutSignalHost.Children.Add(cards);
+        if (tacticalInsights == null) return;
+        tacticalInsights.Children.Clear();
+        var visible = ids.Where(id => id > 0).Select(id =>
+            reports.FirstOrDefault(p => p.At("accountId").L() == id))
+            .Where(p => p != null).ToArray();
+        var favorites = visible.Where(p => p!.At("scoutStatus").S() == "ok")
+            .Select(p => p!.At("topHeroes").Items().FirstOrDefault()?.At("id").I() ?? 0)
+            .Where(id => id > 0).ToArray();
+        TacticalInsightRow("◎", "Источники разведки",
+            ready + " подтверждено · " + limited + " ограничено · " + errors + " ошибок",
+            accent);
+        TacticalInsightRow("◇", "Сильнейшие известные герои",
+            favorites.Length == 0 ? "Статистика героев не получена" :
+            string.Join(", ", favorites.Distinct().Take(4).Select(HeroName)),
+            gold);
+        TacticalInsightRow("▤", "Неполные профили",
+            (found - ready) == 0 ? "Для всех назначенных есть ответ источника" :
+            "Без подтверждённых данных: " + (found - ready) +
+            ". Не считай отсутствие статистики слабостью игрока.",
+            muted);
+        var notice = Text("CMNET не выводит риск, рейтинг или уверенность без достоверной метрики.",
+            11, color: muted);
+        notice.Margin = new Thickness(0, 12, 0, 0);
+        tacticalInsights.Children.Add(notice);
+    }
+
+    private void TacticalInsightRow(string glyph, string heading, string message, Brush tone)
+    {
+        if (tacticalInsights == null) return;
+        var line = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var icon = Text(glyph, 17, FontWeights.Bold, tone);
+        line.Children.Add(icon);
+        var texts = new StackPanel();
+        texts.Children.Add(Text(heading, 12, FontWeights.SemiBold, foreground));
+        var details = Text(message, 11, color: muted);
+        details.Margin = new Thickness(0, 3, 0, 0);
+        texts.Children.Add(details);
+        Grid.SetColumn(texts, 1);
+        line.Children.Add(texts);
+        tacticalInsights.Children.Add(line);
     }
 }
