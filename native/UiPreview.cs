@@ -248,11 +248,27 @@ public sealed partial class NativeWindow
         """)!;
         selectedScoutId = 10001;
         selectedScoutSide = "enemy";
+        // Data fixture defaults: ready model + SAMPLE corpus (never user DB).
+        state["meta"]!["canSync"] = true;
+        state["meta"]!["canTrain"] = true;
+        state["meta"]!["bundleVersion"] = "demo-bundle01";
+        state["meta"]!["hasMatrices"] = true;
+        state["ops"] = new JsonObject
+        {
+            ["active"] = new JsonArray(),
+            ["recent"] = new JsonArray()
+        };
+        previewCorpus = SampleCorpusFixture();
         RenderPage(target);
         if (target == "Драфт")
         {
             SelectTacticalHero(120);
             UpdateDraft();
+        }
+        else if (target == "Данные")
+        {
+            ApplyCorpusPayload(previewCorpus!);
+            UpdateDataView();
         }
         else
         {
@@ -550,5 +566,100 @@ public sealed partial class NativeWindow
         recommendationKey = "scenario-reset";
         UpdateDraft();
         toast.Text = "SAMPLE DATA · draft-" + scenario;
+    }
+
+    /// <summary>
+    /// Gate 2.1 Data honesty fixtures. Outside geometry.json (CI Count==33).
+    /// </summary>
+    internal void LoadDataPreviewScenario(string scenario)
+    {
+        LoadVisualFixture("Данные");
+        state!["meta"]!["previewOffline"] = false;
+        state["meta"]!.AsObject().Remove("draftError");
+        state["modelUpdatePending"] = false;
+        state["meta"]!["draftReady"] = true;
+        state["meta"]!["canSync"] = true;
+        state["meta"]!["canTrain"] = true;
+        state["ops"] = new JsonObject
+        {
+            ["active"] = new JsonArray(),
+            ["recent"] = new JsonArray()
+        };
+        coreOnline = true;
+        ApplyConnectionChrome("Go-ядро подключено");
+        previewCorpus = SampleCorpusFixture();
+        dataLogJobId = 0;
+        dataLogLines.Clear();
+        StopDataLogTimer();
+
+        if (scenario is "ready" or "happy")
+        {
+            previewCorpus = SampleCorpusFixture(12840);
+            ApplyPreviewJobLog(0);
+        }
+        else if (scenario == "empty")
+        {
+            state!["meta"]!["draftReady"] = false;
+            state["meta"]!.AsObject().Remove("draftError");
+            previewCorpus = SampleCorpusFixture(0);
+            dataCorpusMatches = 0;
+        }
+        else if (scenario == "loading")
+        {
+            state!["ops"]!["active"] = new JsonArray(new JsonObject
+            {
+                ["id"] = 9001,
+                ["kind"] = "sync",
+                ["state"] = "running",
+                ["phase"] = "cm",
+                ["lastLine"] = "SAMPLE · 2 / 5 · ожидание OpenDota",
+                ["runningMs"] = 42000,
+                ["waitingOn"] = "opendota"
+            });
+            ApplyPreviewJobLog(9001);
+        }
+        else if (scenario == "error")
+        {
+            state!["meta"]!["draftReady"] = false;
+            state["meta"]!["draftError"] = "SAMPLE · обучение не удалось (fixture)";
+            state["ops"]!["recent"] = new JsonArray(new JsonObject
+            {
+                ["id"] = 9002,
+                ["kind"] = "train",
+                ["state"] = "failed",
+                ["error"] = "SAMPLE · недостаточно CM-драфтов в окне",
+                ["runningMs"] = 18000
+            });
+            previewCorpus = SampleCorpusFixture(240);
+            ApplyPreviewJobLog(9002);
+        }
+        else if (scenario == "partial")
+        {
+            state!["ops"]!["recent"] = new JsonArray(new JsonObject
+            {
+                ["id"] = 9003,
+                ["kind"] = "sync",
+                ["state"] = "failed",
+                ["error"] = "SAMPLE · STRATZ 429, кэш частично обновлён",
+                ["runningMs"] = 9000
+            });
+            previewCorpus = SampleCorpusFixture(3100);
+            ApplyPreviewJobLog(9003);
+        }
+        else if (scenario == "stale")
+        {
+            state!["modelUpdatePending"] = true;
+            previewCorpus = SampleCorpusFixture(12840);
+        }
+        else if (scenario == "offline")
+        {
+            state!["meta"]!["previewOffline"] = true;
+            coreOnline = false;
+            ApplyConnectionChrome("SAMPLE · офлайн");
+        }
+
+        ApplyCorpusPayload(previewCorpus ?? SampleCorpusFixture());
+        UpdateDataView();
+        toast.Text = "SAMPLE DATA · data-" + scenario;
     }
 }

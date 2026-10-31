@@ -28,6 +28,12 @@ public static class Program
         // Optional Gate1 honesty PNGs (partial/stale/offline + draft states). Off by
         // default so CI --capture-ui stays inside the 180s WaitForExit budget.
         var captureHonesty = Array.Exists(args, a => a == "--capture-honesty");
+        // Gate 2.1 Data surface PNGs — also outside geometry.json (Count stays 33).
+        var captureData = Array.Exists(args, a => a == "--capture-data");
+        // Fast path: Data honesty kit only (skips Draft/Scout matrix). geometry.json
+        // is still written with Count==0 here; use default --capture-ui for CI 33.
+        var captureDataOnly = Array.Exists(args, a => a == "--capture-data-only");
+        if (captureDataOnly) captureData = true;
         var app = new Application
         {
             ShutdownMode = smoke || capture >= 0 ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose
@@ -47,8 +53,9 @@ public static class Program
         }
         if (capture >= 0)
         {
-            var destination = capture + 1 < args.Length
-                ? args[capture + 1] : Path.Combine(Environment.CurrentDirectory, "native", "ui-snapshots");
+            var destination = capture + 1 < args.Length && !args[capture + 1].StartsWith("--", StringComparison.Ordinal)
+                ? args[capture + 1]
+                : Path.Combine(Environment.CurrentDirectory, "native", "ui-snapshots");
             Directory.CreateDirectory(destination);
             var window = new NativeWindow(null, visualPreview: true);
             window.WindowStyle = WindowStyle.None;
@@ -61,57 +68,85 @@ public static class Program
             var reports = new JsonArray();
             try
             {
-                window.AssertPreviewInteractions();
-                foreach (var screen in new[] { "Разведка", "Драфт" })
+                if (!captureDataOnly)
                 {
-                    window.LoadVisualFixture(screen);
-                    window.UpdateLayout();
-                    // One full CDN/cache fill per screen; size/scale variants only settle.
-                    window.WarmPreviewArtwork(screen == "Драфт" ? 25 : 15);
-                    var prefix = screen == "Разведка" ? "scout" : "draft";
-                    foreach (var size in new[] { (1920,1080), (1600,900), (1440,900), (1366,768), (1280,720) })
-                    foreach (var scale in new[] { 1d, 1.25d, 1.5d })
+                    window.AssertPreviewInteractions();
+                    foreach (var screen in new[] { "Разведка", "Драфт" })
                     {
-                        var filename = $"{prefix}-{size.Item1}x{size.Item2}-layout{scale * 100:0}.png";
-                        reports.Add(window.CaptureVisualPreview(
-                            Path.Combine(destination, filename), size.Item1, size.Item2, scale,
-                            artworkWarmSeconds: 0));
-                        if (size == (1440,900) && scale == 1) File.Copy(Path.Combine(destination, filename), Path.Combine(destination, prefix + ".png"), true);
+                        window.LoadVisualFixture(screen);
+                        window.UpdateLayout();
+                        // One full CDN/cache fill per screen; size/scale variants only settle.
+                        window.WarmPreviewArtwork(screen == "Драфт" ? 25 : 15);
+                        var prefix = screen == "Разведка" ? "scout" : "draft";
+                        foreach (var size in new[] { (1920,1080), (1600,900), (1440,900), (1366,768), (1280,720) })
+                        foreach (var scale in new[] { 1d, 1.25d, 1.5d })
+                        {
+                            var filename = $"{prefix}-{size.Item1}x{size.Item2}-layout{scale * 100:0}.png";
+                            reports.Add(window.CaptureVisualPreview(
+                                Path.Combine(destination, filename), size.Item1, size.Item2, scale,
+                                artworkWarmSeconds: 0));
+                            if (size == (1440,900) && scale == 1) File.Copy(Path.Combine(destination, filename), Path.Combine(destination, prefix + ".png"), true);
+                        }
                     }
-                }
-                // Historical geometry matrix keeps scout empty/loading/error (33 entries total).
-                foreach (var scenario in new[] { "empty", "loading", "error" })
-                {
-                    window.LoadPreviewScenario(scenario);
-                    reports.Add(window.CaptureVisualPreview(
-                        Path.Combine(destination, "scout-" + scenario + ".png"),
-                        artworkWarmSeconds: 10));
-                }
-                // Gate1 close-out honesty PNGs are opt-in (--capture-honesty). They are
-                // review evidence only and must NOT enter geometry.json (CI Count==33).
-                // Default CI path omits them so WarmPreviewArtwork on Draft states cannot
-                // push total wall clock past the 180s WaitForExit in native.yml.
-                if (captureHonesty)
-                {
-                    foreach (var scenario in new[] { "partial", "stale", "offline" })
+                    // Historical geometry matrix keeps scout empty/loading/error (33 entries total).
+                    foreach (var scenario in new[] { "empty", "loading", "error" })
                     {
                         window.LoadPreviewScenario(scenario);
-                        window.CaptureVisualPreview(
+                        reports.Add(window.CaptureVisualPreview(
                             Path.Combine(destination, "scout-" + scenario + ".png"),
-                            artworkWarmSeconds: 10);
+                            artworkWarmSeconds: 10));
                     }
-                    foreach (var scenario in new[] { "empty", "loading", "error", "partial", "stale", "offline" })
+                    // Gate1 close-out honesty PNGs are opt-in (--capture-honesty). They are
+                    // review evidence only and must NOT enter geometry.json (CI Count==33).
+                    // Default CI path omits them so WarmPreviewArtwork on Draft states cannot
+                    // push total wall clock past the 180s WaitForExit in native.yml.
+                    if (captureHonesty)
                     {
-                        window.LoadDraftPreviewScenario(scenario);
-                        window.CaptureVisualPreview(
-                            Path.Combine(destination, "draft-" + scenario + ".png"),
-                            artworkWarmSeconds: 15);
+                        foreach (var scenario in new[] { "partial", "stale", "offline" })
+                        {
+                            window.LoadPreviewScenario(scenario);
+                            window.CaptureVisualPreview(
+                                Path.Combine(destination, "scout-" + scenario + ".png"),
+                                artworkWarmSeconds: 10);
+                        }
+                        foreach (var scenario in new[] { "empty", "loading", "error", "partial", "stale", "offline" })
+                        {
+                            window.LoadDraftPreviewScenario(scenario);
+                            window.CaptureVisualPreview(
+                                Path.Combine(destination, "draft-" + scenario + ".png"),
+                                artworkWarmSeconds: 15);
+                        }
                     }
                 }
-                File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                var checks = "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\ngeometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).";
-                if (captureHonesty)
+                // Gate 2.1 Data — review evidence only; must NOT enter geometry.json.
+                if (captureData)
+                {
+                    foreach (var scenario in new[] { "ready", "empty", "loading", "error", "partial", "stale", "offline" })
+                    {
+                        window.LoadDataPreviewScenario(scenario);
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, "data-" + scenario + ".png"),
+                            artworkWarmSeconds: 0);
+                        if (scenario == "ready")
+                        {
+                            File.Copy(
+                                Path.Combine(destination, "data-ready.png"),
+                                Path.Combine(destination, "data.png"), true);
+                        }
+                    }
+                }
+                // Data-only must not wipe a prior CI matrix geometry.json (Count==33).
+                if (!captureDataOnly)
+                {
+                    File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                }
+                var checks = captureDataOnly
+                    ? "Gate 2.1 Data-only capture (--capture-data-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
+                    : "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\ngeometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).";
+                if (captureHonesty && !captureDataOnly)
                     checks += "\nGate1 honesty kit (--capture-honesty): scout partial/stale/offline + draft empty/loading/error/partial/stale/offline (outside geometry.json).";
+                if (captureData)
+                    checks += "\nGate 2.1 Data kit (--capture-data): data ready/empty/loading/error/partial/stale/offline (outside geometry.json).";
                 File.WriteAllText(Path.Combine(destination, "checks.txt"), checks);
             }
             catch (Exception ex)

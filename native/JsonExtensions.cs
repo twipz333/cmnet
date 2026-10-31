@@ -23,6 +23,11 @@ public static class J
     {
         try { return n?.GetValue<bool>() ?? false; } catch { return false; }
     }
+    public static bool B(this JsonNode? n, bool fallback)
+    {
+        if (n is null) return fallback;
+        try { return n.GetValue<bool>(); } catch { return fallback; }
+    }
     public static int I(this JsonNode? n)
     {
         try { return n?.GetValue<int>() ?? 0; } catch { return 0; }
