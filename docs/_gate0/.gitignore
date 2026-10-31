@@ -1,0 +1,19 @@
+# Keep reports, 3B references, logs, and a small screenshot sample in git.
+# Full DPI matrices remain downloadable from Actions artifact cmnet-wpf-3b-screenshots.
+ci-screenshots/*
+!ci-screenshots/checks.txt
+!ci-screenshots/geometry.json
+!ci-screenshots/draft-1920x1080-layout100.png
+!ci-screenshots/scout-1920x1080-layout100.png
+!ci-screenshots/scout-empty.png
+!ci-screenshots/scout-error.png
+!ci-screenshots/draft.png
+!ci-screenshots/scout.png
+
+local-capture/*
+!local-capture/checks.txt
+!local-capture/geometry.json
+!local-capture/draft-1920x1080-layout100.png
+!local-capture/scout-1920x1080-layout100.png
+!local-capture/scout-empty.png
+!local-capture/scout-error.png
