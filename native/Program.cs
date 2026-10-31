@@ -46,6 +46,10 @@ public static class Program
         var captureHistory = Array.Exists(args, a => a == "--capture-history");
         var captureHistoryOnly = Array.Exists(args, a => a == "--capture-history-only");
         if (captureHistoryOnly) captureHistory = true;
+        // Gate 2.5 Friends local file exchange — outside geometry.json (Count stays 33).
+        var captureFriends = Array.Exists(args, a => a == "--capture-friends");
+        var captureFriendsOnly = Array.Exists(args, a => a == "--capture-friends-only");
+        if (captureFriendsOnly) captureFriends = true;
         var app = new Application
         {
             ShutdownMode = smoke || capture >= 0 ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose
@@ -80,7 +84,7 @@ public static class Program
             var reports = new JsonArray();
             try
             {
-                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly)
+                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly)
                 {
                     window.AssertPreviewInteractions();
                     foreach (var screen in new[] { "Разведка", "Драфт" })
@@ -211,12 +215,31 @@ public static class Program
                         }
                     }
                 }
-                // Data/Settings/GSI/History-only must not wipe a prior CI matrix geometry.json (Count==33).
-                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly)
+                // Gate 2.5 Friends — review evidence only; must NOT enter geometry.json.
+                if (captureFriends)
+                {
+                    foreach (var scenario in new[] { "ready", "empty", "partial", "loading", "error", "offline", "imported" })
+                    {
+                        window.LoadFriendsPreviewScenario(scenario);
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, "friends-" + scenario + ".png"),
+                            artworkWarmSeconds: 0);
+                        if (scenario == "ready")
+                        {
+                            File.Copy(
+                                Path.Combine(destination, "friends-ready.png"),
+                                Path.Combine(destination, "friends.png"), true);
+                        }
+                    }
+                }
+                // Data/Settings/GSI/History/Friends-only must not wipe a prior CI matrix geometry.json (Count==33).
+                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly)
                 {
                     File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 }
-                var checks = captureHistoryOnly
+                var checks = captureFriendsOnly
+                    ? "Gate 2.5 Friends-only capture (--capture-friends-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
+                    : captureHistoryOnly
                     ? "Gate 2.4 History-only capture (--capture-history-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
                     : captureGsiOnly
                     ? "Gate 2.3 GSI-only capture (--capture-gsi-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
@@ -225,7 +248,7 @@ public static class Program
                     : captureDataOnly
                     ? "Gate 2.1 Data-only capture (--capture-data-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
                     : "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\ngeometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).";
-                if (captureHonesty && !captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly)
+                if (captureHonesty && !captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly)
                     checks += "\nGate1 honesty kit (--capture-honesty): scout partial/stale/offline + draft empty/loading/error/partial/stale/offline (outside geometry.json).";
                 if (captureData)
                     checks += "\nGate 2.1 Data kit (--capture-data): data ready/empty/loading/error/partial/stale/offline (outside geometry.json).";
@@ -235,6 +258,8 @@ public static class Program
                     checks += "\nGate 2.3 GSI kit (--capture-gsi): settings missing/installed/waiting/live/offline + draft-manual/waiting/live (outside geometry.json).";
                 if (captureHistory)
                     checks += "\nGate 2.4 History kit (--capture-history): history ready/empty/partial/loading/error/offline/detail (outside geometry.json).";
+                if (captureFriends)
+                    checks += "\nGate 2.5 Friends kit (--capture-friends): friends ready/empty/partial/loading/error/offline/imported (outside geometry.json).";
                 File.WriteAllText(Path.Combine(destination, "checks.txt"), checks);
             }
             catch (Exception ex)

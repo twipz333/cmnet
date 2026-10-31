@@ -394,6 +394,11 @@ public sealed partial class NativeWindow
             SetEvidenceBanner(settingsEvidenceBanner, lastSettingsEvidence, title, detail,
                 forceShow: forceShowReady || lastSettingsEvidence != EvidenceKind.Ready);
         }
+        if (page == "Друзья" && friendsEvidenceBanner != null)
+        {
+            // Friends owns its banner copy via RefreshFriendsView (file exchange state).
+            RefreshFriendsView();
+        }
     }
 
     private void EnsureDraftRecPlaceholder(EvidenceKind kind, string title, string detail)

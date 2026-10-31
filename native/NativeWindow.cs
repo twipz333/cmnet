@@ -87,7 +87,6 @@ public sealed partial class NativeWindow : Window
     private TextBlock corpusDrafts = new();
     private TextBlock corpusCoverage = new();
     private TextBlock corpusHeroes = new();
-    private TextBlock? shareStatus;
     private readonly TextBlock toast = new();
     private readonly bool isVisualPreview;
 
@@ -299,7 +298,8 @@ public sealed partial class NativeWindow : Window
             "Данные" => "Корпус матчей и обучение модели",
             "История" => "Сохранённые драфты и журнал решений после матча",
             "Настройки" => "Конфиг ядра · о программе · честный cut-list",
-            _ => "Совместная работа и приглашения"
+            "Друзья" => "Локальный импорт/экспорт пакета · без публичного relay",
+            _ => "Локальный обмен с друзьями"
         };
         foreach (var item in navigation)
         {
@@ -362,8 +362,7 @@ public sealed partial class NativeWindow : Window
         }
         if (page == "Драфт") UpdateDraft();
         if (page == "Данные") UpdateDataView();
-        if (page == "Друзья" && shareStatus != null)
-            shareStatus.Text = $"Режим: {state.At("share","live").S("—")}  ·  Подключений: {state.At("share","followers").I()}  ·  Код: {state.At("share","host","code").S("—")}";
+        if (page == "Друзья") RefreshFriendsView();
     }
 
     private async Task RunAction(string endpoint, object? payload = null)
@@ -1186,84 +1185,7 @@ public sealed partial class NativeWindow : Window
             if (FindNamedText(VisualTreeHelper.GetChild(node,i),name) is { } found) return found;
         return null;
     }
-    private UIElement BuildShareView()
-    {
-        var host = new StackPanel();
-        host.Children.Add(Text("COLLABORATION  /  05", 10, FontWeights.Bold, accent));
-        var heading = Text("Драфт вместе с командой", 25, FontWeights.Bold);
-        heading.Margin = new Thickness(0, 9, 0, 7);
-        host.Children.Add(heading);
-        var description = Text("Открой сессию для друзей или подключись к чужому драфту по коду.", 13, color: muted);
-        description.Margin = new Thickness(0, 0, 0, 22);
-        host.Children.Add(description);
-
-        var stateBox = new StackPanel();
-        stateBox.Children.Add(Text("ТЕКУЩАЯ СЕССИЯ", 10, FontWeights.Bold, muted));
-        shareStatus = Text("Проверяем подключение…", 15, FontWeights.SemiBold, accent);
-        shareStatus.Margin = new Thickness(0, 10, 0, 0);
-        stateBox.Children.Add(shareStatus);
-        host.Children.Add(Surface(stateBox, new Thickness(0, 0, 0, 18)));
-
-        var cards = new Grid();
-        cards.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        cards.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        cards.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        cards.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var publish = new StackPanel();
-        publish.Children.Add(Text("01  ·  ХОСТ", 10, FontWeights.Bold, accent));
-        var hostTitle = Text("Поделиться драфтом", 19, FontWeights.SemiBold);
-        hostTitle.Margin = new Thickness(0, 9, 0, 8);
-        publish.Children.Add(hostTitle);
-        publish.Children.Add(Text("Сгенерируй код комнаты и покажи союзникам актуальный драфт.", 13, color: muted));
-        var publishActions = new WrapPanel { Margin = new Thickness(0, 18, 0, 0) };
-        var open = Btn("Открыть сессию", async () => await RunAction("/api/share/start"));
-        open.IsEnabled = false;
-        open.ToolTip = "Публичные relay отключены в локальной версии. LAN sharing пока не реализован.";
-        open.Margin = new Thickness(0, 0, 8, 8);
-        publishActions.Children.Add(open);
-        publishActions.Children.Add(Btn("Завершить", async () => await RunAction("/api/share/stop"), true));
-        publish.Children.Add(publishActions);
-        var publishCard = Surface(publish, new Thickness(0, 0, 9, 0));
-        cards.Children.Add(publishCard);
-
-        var join = new StackPanel();
-        join.Children.Add(Text("02  ·  ГОСТЬ", 10, FontWeights.Bold, gold));
-        var joinTitle = Text("Присоединиться", 19, FontWeights.SemiBold);
-        joinTitle.Margin = new Thickness(0, 9, 0, 8);
-        join.Children.Add(joinTitle);
-        join.Children.Add(Text("Вставь код комнаты, который прислал лидер команды.", 13, color: muted));
-        var codeInput = new TextBox { Margin = new Thickness(0, 16, 0, 9),
-            ToolTip = "Код комнаты", MaxLength = 24 };
-        join.Children.Add(codeInput);
-        var receive = Btn("Получить драфт", async () =>
-            await RunAction("/api/share/receive", new { code = codeInput.Text.Trim() }));
-        receive.IsEnabled = false;
-        receive.ToolTip = "Публичные relay отключены в локальной версии.";
-        join.Children.Add(receive);
-        var joinCard = Surface(join, new Thickness(9, 0, 0, 0));
-        Grid.SetColumn(joinCard, 1);
-        cards.Children.Add(joinCard);
-
-        bool compactLayout = false;
-        cards.SizeChanged += (_, _) =>
-        {
-            bool compact = cards.ActualWidth < 700;
-            if (compact == compactLayout) return;
-            compactLayout = compact;
-            cards.ColumnDefinitions[1].Width = compact ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-            Grid.SetColumn(joinCard, compact ? 0 : 1);
-            Grid.SetRow(joinCard, compact ? 1 : 0);
-            publishCard.Margin = compact ? new Thickness(0, 0, 0, 12) : new Thickness(0, 0, 9, 0);
-            joinCard.Margin = compact ? new Thickness(0) : new Thickness(9, 0, 0, 0);
-        };
-        host.Children.Add(cards);
-
-        var footnote = Text("Локальный режим: публичные relay отключены. Для обмена файлами используйте защищённый ручной канал; live LAN пока недоступен.", 12, color: muted);
-        footnote.Margin = new Thickness(0, 19, 0, 0);
-        host.Children.Add(footnote);
-        return Scroll(host);
-    }
+    // BuildShareView lives in FriendsView.cs (Gate 2.5 local file exchange).
 
     // Lightweight Windows UI smoke gate used by the native CI job. The backend
     // never starts because the window is not shown. It catches WPF logical
@@ -1305,6 +1227,11 @@ public sealed partial class NativeWindow : Window
                  settingsBodyHost == null || saveSettingsButton == null ||
                  openDataFolderButton == null || reloadSettingsButton == null))
                 throw new InvalidOperationException("Settings maintain surface controls missing.");
+            if (target == "Друзья" &&
+                (friendsEvidenceBanner == null || friendsExportButton == null ||
+                 friendsImportPickButton == null || friendsImportConfirmButton == null ||
+                 friendsStatusText == null))
+                throw new InvalidOperationException("Friends local exchange surface controls missing.");
         }
     }
 

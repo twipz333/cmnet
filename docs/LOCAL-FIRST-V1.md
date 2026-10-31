@@ -59,9 +59,13 @@ receipt window does **not** guarantee cross-process exactly-once execution.
 
 Native WPF starts advisor.exe with `CMNET_LOCAL_ONLY=1`: legacy
 `/api/share/start`, receive, follow, automatic follow restoration and live
-relay mode are blocked. The native Friends screen reflects the disabled
-actions rather than accidentally invoking magic-wormhole or ppng.io. This is
-a fail-closed boundary, **not** a finished LAN sharing implementation.
+relay mode are blocked. The approved Friends exchange path is **local file
+import/export**: `POST /api/share/export` writes a portable `CMNETPACK1`
+package (bundle and/or scout snapshot) to a user-chosen path; `POST
+/api/share/import` previews then applies with an `import-backup/` copy of
+prior files before overwrite. The native Friends screen is built around that
+path. This remains a fail-closed boundary against public relays — not a LAN
+live-share implementation.
 The older standalone Electron release retains legacy public relay sharing
 during its migration window; do not use it when strict no-relay operation
 is required.

@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -14,17 +16,25 @@ import (
 	"cmnet/internal/share"
 )
 
-// shareDTO is the sharing panel: the host's open code, or the guest's last
-// receive. Guest reports which app this is, so the page shows the right one.
+// shareDTO is the sharing panel: local file exchange under CMNET_LOCAL_ONLY,
+// or legacy host code / guest receive when relays are allowed.
 type shareDTO struct {
 	LocalOnly bool `json:"localOnly"`
 	Guest     bool              `json:"guest"`
 	CanHost   bool              `json:"canHost"`
+	CanExport bool              `json:"canExport"`
+	CanImport bool              `json:"canImport"`
 	Host      *share.HostStatus `json:"host,omitempty"`
 	Receiving bool              `json:"receiving"`
 	LastCode  string            `json:"lastCode,omitempty"`
 	Received  *receivedDTO      `json:"received,omitempty"`
 	Error     string            `json:"error,omitempty"`
+
+	// Local intentional file exchange (Gate 2.5). Primary path when LocalOnly.
+	FileMode      bool          `json:"fileMode"`
+	ImportPreview *fileXferDTO  `json:"importPreview,omitempty"`
+	LastExport    *fileXferDTO  `json:"lastExport,omitempty"`
+	LastImport    *fileXferDTO  `json:"lastImport,omitempty"`
 
 	// Host: whether the live draft goes out with the code, and how many guests
 	// are following it right now.
@@ -36,6 +46,15 @@ type shareDTO struct {
 	Follow      bool   `json:"follow"`
 	FollowState string `json:"followState,omitempty"`
 	FollowVia   string `json:"followVia,omitempty"`
+}
+
+// fileXferDTO describes a local package import/export for the Friends UI.
+type fileXferDTO struct {
+	Path       string     `json:"path,omitempty"`
+	Bytes      int64      `json:"bytes,omitempty"`
+	BackupNote string     `json:"backupNote,omitempty"`
+	Meta       share.Meta `json:"meta"`
+	At         time.Time  `json:"at,omitempty"`
 }
 
 type receivedDTO struct {
@@ -70,6 +89,10 @@ type shareState struct {
 	memo      guestMemo
 	hostPrefs hostMemo
 	loaded    bool
+
+	importPreview *fileXferDTO
+	lastExport    *fileXferDTO
+	lastImport    *fileXferDTO
 
 	// host side of the live draft
 	live       *share.LiveHost
@@ -106,8 +129,15 @@ func (s *Server) shareView() shareDTO {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.loadLocked()
-	out := shareDTO{LocalOnly: s.localOnly, Guest: s.shell.Guest, CanHost: s.shell.SharePayload != nil && !s.localOnly,
-		Receiving: st.receiving, Error: st.err, Live: st.hostPrefs.Live}
+	out := shareDTO{
+		LocalOnly: s.localOnly, Guest: s.shell.Guest,
+		CanHost:   s.shell.SharePayload != nil && !s.localOnly,
+		CanExport: s.shell.SharePayload != nil,
+		CanImport: s.shell.ApplyShare != nil,
+		FileMode:  s.localOnly,
+		Receiving: st.receiving, Error: st.err, Live: st.hostPrefs.Live,
+		ImportPreview: st.importPreview, LastExport: st.lastExport, LastImport: st.lastImport,
+	}
 	if s.shell.Guest {
 		out.LastCode = st.memo.Code
 		out.Received = st.memo.Received
@@ -132,6 +162,8 @@ func (s *Server) routeShare(mux *http.ServeMux) {
 	mux.HandleFunc("/api/share/mode", s.mutate(s.shareMode))
 	mux.HandleFunc("/api/share/receive", s.mutate(s.shareReceive))
 	mux.HandleFunc("/api/share/follow", s.mutate(s.shareFollow))
+	mux.HandleFunc("/api/share/export", s.mutate(s.shareExport))
+	mux.HandleFunc("/api/share/import", s.mutate(s.shareImport))
 }
 
 func (s *Server) lifetime() context.Context {
@@ -287,6 +319,137 @@ func (s *Server) shareStop(*http.Request) (string, error) {
 	}
 	s.stopLive()
 	return "раздача закрыта", nil
+}
+
+// shareExport writes a portable CMNETPACK1 file to a user-chosen path.
+// Works under CMNET_LOCAL_ONLY (this is the approved Friends exchange path).
+func (s *Server) shareExport(r *http.Request) (string, error) {
+	if s.shell.SharePayload == nil {
+		return "", errors.New("экспорт недоступен в этой сборке")
+	}
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", errors.New("нужен путь к файлу")
+	}
+	path := strings.TrimSpace(req.Path)
+	if path == "" {
+		return "", errors.New("укажи куда сохранить пакет")
+	}
+	if !filepath.IsAbs(path) {
+		return "", errors.New("путь к пакету должен быть абсолютным")
+	}
+	p, err := s.sharePayload()
+	if err != nil {
+		return "", err
+	}
+	p.Meta.Live = false // file packages never imply live relay
+	p.Meta.SharedAt = time.Now().UTC()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", fmt.Errorf("не удалось создать папку: %w", err)
+	}
+	if err := share.WritePackFile(path, p); err != nil {
+		return "", err
+	}
+	info, _ := os.Stat(path)
+	xfer := &fileXferDTO{Path: path, Meta: p.Meta, At: time.Now()}
+	if info != nil {
+		xfer.Bytes = info.Size()
+	}
+	st := &s.shareSt
+	st.mu.Lock()
+	st.lastExport = xfer
+	st.err = ""
+	st.mu.Unlock()
+	parts := []string{"пакет сохранён"}
+	if p.Meta.BundleVersion != "" {
+		parts = append(parts, "бандл "+truncateID(p.Meta.BundleVersion, 12))
+	}
+	if p.Meta.HasSnapshot {
+		if p.Meta.Scouted > 0 {
+			parts = append(parts, fmt.Sprintf("разведка %d", p.Meta.Scouted))
+		} else {
+			parts = append(parts, "разведка")
+		}
+	}
+	return strings.Join(parts, " · ") + " → " + filepath.Base(path), nil
+}
+
+// shareImport previews or applies a portable local package.
+// confirm=false (default): inspect meta only. confirm=true: backup + apply.
+func (s *Server) shareImport(r *http.Request) (string, error) {
+	if s.shell.ApplyShare == nil {
+		return "", errors.New("импорт недоступен в этой сборке")
+	}
+	var req struct {
+		Path    string `json:"path"`
+		Confirm bool   `json:"confirm"`
+	}
+	if err := decode(r, &req); err != nil {
+		return "", errors.New("нужен путь к файлу")
+	}
+	path := strings.TrimSpace(req.Path)
+	if path == "" {
+		return "", errors.New("укажи файл пакета")
+	}
+	if !filepath.IsAbs(path) {
+		return "", errors.New("путь к пакету должен быть абсолютным")
+	}
+	p, err := share.ReadPackFile(path)
+	if err != nil {
+		return "", err
+	}
+	info, _ := os.Stat(path)
+	xfer := &fileXferDTO{Path: path, Meta: p.Meta, At: time.Now()}
+	if info != nil {
+		xfer.Bytes = info.Size()
+	}
+	if !req.Confirm {
+		st := &s.shareSt
+		st.mu.Lock()
+		st.importPreview = xfer
+		st.err = ""
+		st.mu.Unlock()
+		msg := "пакет прочитан — подтверди импорт"
+		if p.Meta.BundleVersion != "" {
+			msg += " · бандл " + truncateID(p.Meta.BundleVersion, 12)
+		}
+		if p.Meta.HasSnapshot {
+			msg += " · есть разведка"
+		}
+		if p.Meta.PatchTag != "" {
+			msg += " · патч " + p.Meta.PatchTag
+		}
+		return msg, nil
+	}
+	msg, err := s.shell.ApplyShare(p)
+	if err != nil {
+		return "", err
+	}
+	if rerr := s.reloadSession(); rerr != nil {
+		return "", rerr
+	}
+	if strings.Contains(msg, "резервная копия:") {
+		if i := strings.Index(msg, "резервная копия:"); i >= 0 {
+			xfer.BackupNote = strings.TrimSpace(msg[i:])
+		}
+	}
+	st := &s.shareSt
+	st.mu.Lock()
+	st.lastImport = xfer
+	st.importPreview = nil
+	st.err = ""
+	st.memo.Received = &receivedDTO{At: time.Now(), Via: "file", Meta: p.Meta}
+	st.mu.Unlock()
+	return msg, nil
+}
+
+func truncateID(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 // shareRefresh tells an open offer that the model or scouting changed.
