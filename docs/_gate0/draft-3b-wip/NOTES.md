@@ -23,6 +23,7 @@
 - **D6** Three-column IA retained (`DraftRecommendations` | `DraftCatalog` | `DraftContext`) under the board, with intel row beneath.
 - Shared `Theme.xaml` tokens reused (Scout #33). Go recommendation engine untouched.
 - Scout capture regression included in the same `--capture-ui` run.
+- `draft-empty/loading/error.png` are captured for review evidence but **not** counted in `geometry.json` (CI matrix stays **33** = Draft×5×3 + Scout×5×3 + scout empty/loading/error).
 
 ## Remaining gaps vs `draft-approved.png`
 
