@@ -1,0 +1,2924 @@
+[
+  {
+    "file": "scout-1920x1080-layout100.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1920,
+    "height": 1080,
+    "simulatedScale": 1,
+    "logicalWidth": 1920,
+    "logicalHeight": 1080,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 952,
+        "height": 601
+      },
+      "ScoutDetailsViewport": {
+        "x": 1141,
+        "y": 388,
+        "width": 756,
+        "height": 601
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1764,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 347,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 497,
+        "y": 181,
+        "width": 346,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 849,
+        "y": 181,
+        "width": 347,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 1202,
+        "y": 181,
+        "width": 347,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1555,
+        "y": 181,
+        "width": 353,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1920x1080-layout125.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1920,
+    "height": 1080,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1536,
+    "logicalHeight": 864,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 739,
+        "height": 385
+      },
+      "ScoutDetailsViewport": {
+        "x": 928,
+        "y": 388,
+        "width": 585,
+        "height": 385
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1380,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 270,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 420,
+        "y": 181,
+        "width": 270,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 696,
+        "y": 181,
+        "width": 270,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 972,
+        "y": 181,
+        "width": 270,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1248,
+        "y": 181,
+        "width": 276,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1920x1080-layout150.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1920,
+    "height": 1080,
+    "simulatedScale": 1.5,
+    "logicalWidth": 1280,
+    "logicalHeight": 720,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 596,
+        "height": 241
+      },
+      "ScoutDetailsViewport": {
+        "x": 785,
+        "y": 388,
+        "width": 472,
+        "height": 241
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1124,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 218,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 368,
+        "y": 181,
+        "width": 219,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 593,
+        "y": 181,
+        "width": 219,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 818,
+        "y": 181,
+        "width": 219,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1043,
+        "y": 181,
+        "width": 225,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1600x900-layout100.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1600,
+    "height": 900,
+    "simulatedScale": 1,
+    "logicalWidth": 1600,
+    "logicalHeight": 900,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 774,
+        "height": 421
+      },
+      "ScoutDetailsViewport": {
+        "x": 963,
+        "y": 388,
+        "width": 614,
+        "height": 421
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1444,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 283,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 433,
+        "y": 181,
+        "width": 283,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 722,
+        "y": 181,
+        "width": 282,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 1010,
+        "y": 181,
+        "width": 283,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1299,
+        "y": 181,
+        "width": 289,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1600x900-layout125.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1600,
+    "height": 900,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1280,
+    "logicalHeight": 720,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 596,
+        "height": 241
+      },
+      "ScoutDetailsViewport": {
+        "x": 785,
+        "y": 388,
+        "width": 472,
+        "height": 241
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1124,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 218,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 368,
+        "y": 181,
+        "width": 219,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 593,
+        "y": 181,
+        "width": 219,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 818,
+        "y": 181,
+        "width": 219,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1043,
+        "y": 181,
+        "width": 225,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1600x900-layout150.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1600,
+    "height": 900,
+    "simulatedScale": 1.5,
+    "logicalWidth": 1066.6666666666667,
+    "logicalHeight": 600,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 272,
+        "width": 478,
+        "height": 243
+      },
+      "ScoutDetailsViewport": {
+        "x": 667,
+        "y": 272,
+        "width": 377,
+        "height": 243
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 153,
+        "width": 911,
+        "height": 87
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 153,
+        "width": 177,
+        "height": 87
+      },
+      "Opponent 1": {
+        "x": 327,
+        "y": 153,
+        "width": 176,
+        "height": 87
+      },
+      "Opponent 2": {
+        "x": 509,
+        "y": 153,
+        "width": 176,
+        "height": 87
+      },
+      "Opponent 3": {
+        "x": 691,
+        "y": 153,
+        "width": 176,
+        "height": 87
+      },
+      "Opponent 4": {
+        "x": 873,
+        "y": 153,
+        "width": 182,
+        "height": 87
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1440x900-layout100.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1440,
+    "height": 900,
+    "simulatedScale": 1,
+    "logicalWidth": 1440,
+    "logicalHeight": 900,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 685,
+        "height": 421
+      },
+      "ScoutDetailsViewport": {
+        "x": 874,
+        "y": 388,
+        "width": 543,
+        "height": 421
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1284,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 401,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 658,
+        "y": 181,
+        "width": 250,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 914,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1171,
+        "y": 181,
+        "width": 257,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1440x900-layout125.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1440,
+    "height": 900,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1152,
+    "logicalHeight": 720,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 525,
+        "height": 241
+      },
+      "ScoutDetailsViewport": {
+        "x": 714,
+        "y": 388,
+        "width": 415,
+        "height": 241
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 996,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 194,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 344,
+        "y": 181,
+        "width": 193,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 543,
+        "y": 181,
+        "width": 193,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 742,
+        "y": 181,
+        "width": 193,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 941,
+        "y": 181,
+        "width": 199,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1440x900-layout150.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1440,
+    "height": 900,
+    "simulatedScale": 1.5,
+    "logicalWidth": 960,
+    "logicalHeight": 600,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 87,
+        "y": 272,
+        "width": 456,
+        "height": 243
+      },
+      "ScoutDetailsViewport": {
+        "x": 577,
+        "y": 272,
+        "width": 360,
+        "height": 243
+      },
+      "OpponentCards": {
+        "x": 76,
+        "y": 153,
+        "width": 872,
+        "height": 87
+      },
+      "Opponent 0": {
+        "x": 76,
+        "y": 153,
+        "width": 168,
+        "height": 87
+      },
+      "Opponent 1": {
+        "x": 250,
+        "y": 153,
+        "width": 168,
+        "height": 87
+      },
+      "Opponent 2": {
+        "x": 424,
+        "y": 153,
+        "width": 169,
+        "height": 87
+      },
+      "Opponent 3": {
+        "x": 599,
+        "y": 153,
+        "width": 169,
+        "height": 87
+      },
+      "Opponent 4": {
+        "x": 774,
+        "y": 153,
+        "width": 174,
+        "height": 87
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 64,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 103,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 166,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 205,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 244,
+        "width": 48,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1366x768-layout100.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1366,
+    "height": 768,
+    "simulatedScale": 1,
+    "logicalWidth": 1366,
+    "logicalHeight": 768,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 644,
+        "height": 289
+      },
+      "ScoutDetailsViewport": {
+        "x": 833,
+        "y": 388,
+        "width": 510,
+        "height": 289
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1210,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 236,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 386,
+        "y": 181,
+        "width": 236,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 628,
+        "y": 181,
+        "width": 236,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 870,
+        "y": 181,
+        "width": 236,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1112,
+        "y": 181,
+        "width": 242,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1366x768-layout125.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1366,
+    "height": 768,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1092.8,
+    "logicalHeight": 614.4,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 272,
+        "width": 493,
+        "height": 257
+      },
+      "ScoutDetailsViewport": {
+        "x": 682,
+        "y": 272,
+        "width": 388,
+        "height": 257
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 153,
+        "width": 937,
+        "height": 87
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 153,
+        "width": 181,
+        "height": 87
+      },
+      "Opponent 1": {
+        "x": 331,
+        "y": 153,
+        "width": 181,
+        "height": 87
+      },
+      "Opponent 2": {
+        "x": 518,
+        "y": 153,
+        "width": 182,
+        "height": 87
+      },
+      "Opponent 3": {
+        "x": 706,
+        "y": 153,
+        "width": 182,
+        "height": 87
+      },
+      "Opponent 4": {
+        "x": 894,
+        "y": 153,
+        "width": 187,
+        "height": 87
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1366x768-layout150.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1366,
+    "height": 768,
+    "simulatedScale": 1.5,
+    "logicalWidth": 910.6666666666666,
+    "logicalHeight": 512,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 87,
+        "y": 272,
+        "width": 429,
+        "height": 155
+      },
+      "ScoutDetailsViewport": {
+        "x": 550,
+        "y": 272,
+        "width": 338,
+        "height": 155
+      },
+      "OpponentCards": {
+        "x": 76,
+        "y": 153,
+        "width": 823,
+        "height": 87
+      },
+      "Opponent 0": {
+        "x": 76,
+        "y": 153,
+        "width": 159,
+        "height": 87
+      },
+      "Opponent 1": {
+        "x": 241,
+        "y": 153,
+        "width": 159,
+        "height": 87
+      },
+      "Opponent 2": {
+        "x": 406,
+        "y": 153,
+        "width": 158,
+        "height": 87
+      },
+      "Opponent 3": {
+        "x": 570,
+        "y": 153,
+        "width": 158,
+        "height": 87
+      },
+      "Opponent 4": {
+        "x": 734,
+        "y": 153,
+        "width": 165,
+        "height": 87
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 64,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 103,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 166,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 205,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 244,
+        "width": 48,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1280x720-layout100.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1280,
+    "height": 720,
+    "simulatedScale": 1,
+    "logicalWidth": 1280,
+    "logicalHeight": 720,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 596,
+        "height": 241
+      },
+      "ScoutDetailsViewport": {
+        "x": 785,
+        "y": 388,
+        "width": 472,
+        "height": 241
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1124,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 218,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 368,
+        "y": 181,
+        "width": 219,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 593,
+        "y": 181,
+        "width": 219,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 818,
+        "y": 181,
+        "width": 219,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1043,
+        "y": 181,
+        "width": 225,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1280x720-layout125.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1280,
+    "height": 720,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1024,
+    "logicalHeight": 576,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 272,
+        "width": 454,
+        "height": 219
+      },
+      "ScoutDetailsViewport": {
+        "x": 643,
+        "y": 272,
+        "width": 358,
+        "height": 219
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 153,
+        "width": 868,
+        "height": 87
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 153,
+        "width": 168,
+        "height": 87
+      },
+      "Opponent 1": {
+        "x": 318,
+        "y": 153,
+        "width": 168,
+        "height": 87
+      },
+      "Opponent 2": {
+        "x": 492,
+        "y": 153,
+        "width": 167,
+        "height": 87
+      },
+      "Opponent 3": {
+        "x": 665,
+        "y": 153,
+        "width": 167,
+        "height": 87
+      },
+      "Opponent 4": {
+        "x": 838,
+        "y": 153,
+        "width": 174,
+        "height": 87
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-1280x720-layout150.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1280,
+    "height": 720,
+    "simulatedScale": 1.5,
+    "logicalWidth": 853.3333333333334,
+    "logicalHeight": 480,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 87,
+        "y": 272,
+        "width": 397,
+        "height": 123
+      },
+      "ScoutDetailsViewport": {
+        "x": 518,
+        "y": 272,
+        "width": 312,
+        "height": 123
+      },
+      "OpponentCards": {
+        "x": 76,
+        "y": 153,
+        "width": 765,
+        "height": 87
+      },
+      "Opponent 0": {
+        "x": 76,
+        "y": 153,
+        "width": 147,
+        "height": 87
+      },
+      "Opponent 1": {
+        "x": 229,
+        "y": 153,
+        "width": 147,
+        "height": 87
+      },
+      "Opponent 2": {
+        "x": 382,
+        "y": 153,
+        "width": 147,
+        "height": 87
+      },
+      "Opponent 3": {
+        "x": 535,
+        "y": 153,
+        "width": 147,
+        "height": 87
+      },
+      "Opponent 4": {
+        "x": 688,
+        "y": 153,
+        "width": 153,
+        "height": 87
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 64,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 103,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 166,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 205,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 244,
+        "width": 48,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "draft-1920x1080-layout100.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1920,
+    "height": 1080,
+    "simulatedScale": 1,
+    "logicalWidth": 1920,
+    "logicalHeight": 1080,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 813
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 1318,
+        "height": 813
+      },
+      "DraftContext": {
+        "x": 1678,
+        "y": 230,
+        "width": 230,
+        "height": 813
+      },
+      "ApplyHero": {
+        "x": 1689,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 999,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 999,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 120,
+    "visibleImages": 120
+  },
+  {
+    "file": "draft-1920x1080-layout125.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1920,
+    "height": 1080,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1536,
+    "logicalHeight": 864,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 597
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 934,
+        "height": 597
+      },
+      "DraftContext": {
+        "x": 1294,
+        "y": 230,
+        "width": 230,
+        "height": 597
+      },
+      "ApplyHero": {
+        "x": 1305,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 783,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 783,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 114,
+    "visibleImages": 114
+  },
+  {
+    "file": "draft-1920x1080-layout150.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1920,
+    "height": 1080,
+    "simulatedScale": 1.5,
+    "logicalWidth": 1280,
+    "logicalHeight": 720,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 453
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 678,
+        "height": 453
+      },
+      "DraftContext": {
+        "x": 1038,
+        "y": 230,
+        "width": 230,
+        "height": 453
+      },
+      "ApplyHero": {
+        "x": 1049,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 639,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 639,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 71,
+    "visibleImages": 71
+  },
+  {
+    "file": "draft-1600x900-layout100.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1600,
+    "height": 900,
+    "simulatedScale": 1,
+    "logicalWidth": 1600,
+    "logicalHeight": 900,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 633
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 998,
+        "height": 633
+      },
+      "DraftContext": {
+        "x": 1358,
+        "y": 230,
+        "width": 230,
+        "height": 633
+      },
+      "ApplyHero": {
+        "x": 1369,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 819,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 819,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 120,
+    "visibleImages": 120
+  },
+  {
+    "file": "draft-1600x900-layout125.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1600,
+    "height": 900,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1280,
+    "logicalHeight": 720,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 453
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 678,
+        "height": 453
+      },
+      "DraftContext": {
+        "x": 1038,
+        "y": 230,
+        "width": 230,
+        "height": 453
+      },
+      "ApplyHero": {
+        "x": 1049,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 639,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 639,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 71,
+    "visibleImages": 71
+  },
+  {
+    "file": "draft-1600x900-layout150.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1600,
+    "height": 900,
+    "simulatedScale": 1.5,
+    "logicalWidth": 1066.6666666666667,
+    "logicalHeight": 600,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 333
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 465,
+        "height": 333
+      },
+      "DraftContext": {
+        "x": 825,
+        "y": 230,
+        "width": 230,
+        "height": 333
+      },
+      "ApplyHero": {
+        "x": 836,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 519,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 519,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 40,
+    "visibleImages": 40
+  },
+  {
+    "file": "draft-1440x900-layout100.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1440,
+    "height": 900,
+    "simulatedScale": 1,
+    "logicalWidth": 1440,
+    "logicalHeight": 900,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 633
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 838,
+        "height": 633
+      },
+      "DraftContext": {
+        "x": 1198,
+        "y": 230,
+        "width": 230,
+        "height": 633
+      },
+      "ApplyHero": {
+        "x": 1209,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 819,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 819,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 105,
+    "visibleImages": 105
+  },
+  {
+    "file": "draft-1440x900-layout125.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1440,
+    "height": 900,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1152,
+    "logicalHeight": 720,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 453
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 550,
+        "height": 453
+      },
+      "DraftContext": {
+        "x": 910,
+        "y": 230,
+        "width": 230,
+        "height": 453
+      },
+      "ApplyHero": {
+        "x": 921,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 639,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 639,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 57,
+    "visibleImages": 57
+  },
+  {
+    "file": "draft-1440x900-layout150.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1440,
+    "height": 900,
+    "simulatedScale": 1.5,
+    "logicalWidth": 960,
+    "logicalHeight": 600,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 76,
+        "y": 230,
+        "width": 204,
+        "height": 333
+      },
+      "DraftCatalog": {
+        "x": 286,
+        "y": 230,
+        "width": 426,
+        "height": 333
+      },
+      "DraftContext": {
+        "x": 718,
+        "y": 230,
+        "width": 230,
+        "height": 333
+      },
+      "ApplyHero": {
+        "x": 729,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 87,
+        "y": 519,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 178,
+        "y": 519,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 64,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 103,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 166,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 205,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 244,
+        "width": 48,
+        "height": 36
+      }
+    },
+    "loadedImages": 40,
+    "visibleImages": 40
+  },
+  {
+    "file": "draft-1366x768-layout100.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1366,
+    "height": 768,
+    "simulatedScale": 1,
+    "logicalWidth": 1366,
+    "logicalHeight": 768,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 501
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 764,
+        "height": 501
+      },
+      "DraftContext": {
+        "x": 1124,
+        "y": 230,
+        "width": 230,
+        "height": 501
+      },
+      "ApplyHero": {
+        "x": 1135,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 687,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 687,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 78,
+    "visibleImages": 78
+  },
+  {
+    "file": "draft-1366x768-layout125.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1366,
+    "height": 768,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1092.8,
+    "logicalHeight": 614.4,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 347
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 491,
+        "height": 347
+      },
+      "DraftContext": {
+        "x": 851,
+        "y": 230,
+        "width": 230,
+        "height": 347
+      },
+      "ApplyHero": {
+        "x": 862,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 533,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 533,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 45,
+    "visibleImages": 45
+  },
+  {
+    "file": "draft-1366x768-layout150.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1366,
+    "height": 768,
+    "simulatedScale": 1.5,
+    "logicalWidth": 910.6666666666666,
+    "logicalHeight": 512,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 76,
+        "y": 230,
+        "width": 160,
+        "height": 245
+      },
+      "DraftCatalog": {
+        "x": 242,
+        "y": 230,
+        "width": 471,
+        "height": 245
+      },
+      "DraftContext": {
+        "x": 719,
+        "y": 230,
+        "width": 180,
+        "height": 245
+      },
+      "ApplyHero": {
+        "x": 730,
+        "y": 420,
+        "width": 158,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 87,
+        "y": 431,
+        "width": 69,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 156,
+        "y": 431,
+        "width": 69,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 64,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 103,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 166,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 205,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 244,
+        "width": 48,
+        "height": 36
+      }
+    },
+    "loadedImages": 35,
+    "visibleImages": 35
+  },
+  {
+    "file": "draft-1280x720-layout100.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1280,
+    "height": 720,
+    "simulatedScale": 1,
+    "logicalWidth": 1280,
+    "logicalHeight": 720,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 453
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 678,
+        "height": 453
+      },
+      "DraftContext": {
+        "x": 1038,
+        "y": 230,
+        "width": 230,
+        "height": 453
+      },
+      "ApplyHero": {
+        "x": 1049,
+        "y": 503,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 639,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 639,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 71,
+    "visibleImages": 71
+  },
+  {
+    "file": "draft-1280x720-layout125.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1280,
+    "height": 720,
+    "simulatedScale": 1.25,
+    "logicalWidth": 1024,
+    "logicalHeight": 576,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 144,
+        "y": 230,
+        "width": 204,
+        "height": 309
+      },
+      "DraftCatalog": {
+        "x": 354,
+        "y": 230,
+        "width": 422,
+        "height": 309
+      },
+      "DraftContext": {
+        "x": 782,
+        "y": 230,
+        "width": 230,
+        "height": 309
+      },
+      "ApplyHero": {
+        "x": 793,
+        "y": 484,
+        "width": 208,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 155,
+        "y": 495,
+        "width": 91,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 246,
+        "y": 495,
+        "width": 91,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 40,
+    "visibleImages": 40
+  },
+  {
+    "file": "draft-1280x720-layout150.png",
+    "page": "\u0414\u0440\u0430\u0444\u0442",
+    "width": 1280,
+    "height": 720,
+    "simulatedScale": 1.5,
+    "logicalWidth": 853.3333333333334,
+    "logicalHeight": 480,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "DraftRecommendations": {
+        "x": 76,
+        "y": 230,
+        "width": 160,
+        "height": 213
+      },
+      "DraftCatalog": {
+        "x": 242,
+        "y": 230,
+        "width": 413,
+        "height": 213
+      },
+      "DraftContext": {
+        "x": 661,
+        "y": 230,
+        "width": 180,
+        "height": 213
+      },
+      "ApplyHero": {
+        "x": 672,
+        "y": 388,
+        "width": 158,
+        "height": 33
+      },
+      "History \u21B6": {
+        "x": 87,
+        "y": 399,
+        "width": 69,
+        "height": 33
+      },
+      "History \u21B7": {
+        "x": 156,
+        "y": 399,
+        "width": 69,
+        "height": 33
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 64,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 103,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 166,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 205,
+        "width": 48,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 244,
+        "width": 48,
+        "height": 36
+      }
+    },
+    "loadedImages": 27,
+    "visibleImages": 27
+  },
+  {
+    "file": "scout-empty.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1440,
+    "height": 900,
+    "simulatedScale": 1,
+    "logicalWidth": 1440,
+    "logicalHeight": 900,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 685,
+        "height": 421
+      },
+      "ScoutDetailsViewport": {
+        "x": 874,
+        "y": 388,
+        "width": 543,
+        "height": 421
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1284,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 401,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 658,
+        "y": 181,
+        "width": 250,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 914,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1171,
+        "y": 181,
+        "width": 257,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 0,
+    "visibleImages": 0
+  },
+  {
+    "file": "scout-loading.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1440,
+    "height": 900,
+    "simulatedScale": 1,
+    "logicalWidth": 1440,
+    "logicalHeight": 900,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 685,
+        "height": 421
+      },
+      "ScoutDetailsViewport": {
+        "x": 874,
+        "y": 388,
+        "width": 543,
+        "height": 421
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1284,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 401,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 658,
+        "y": 181,
+        "width": 250,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 914,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1171,
+        "y": 181,
+        "width": 257,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 10,
+    "visibleImages": 10
+  },
+  {
+    "file": "scout-error.png",
+    "page": "\u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430",
+    "width": 1440,
+    "height": 900,
+    "simulatedScale": 1,
+    "logicalWidth": 1440,
+    "logicalHeight": 900,
+    "nativeDpiX": 96,
+    "dpiMode": "simulated layout and raster scale; not native monitor DPI",
+    "sampleData": true,
+    "bounds": {
+      "ScoutAnalyticsViewport": {
+        "x": 155,
+        "y": 388,
+        "width": 685,
+        "height": 421
+      },
+      "ScoutDetailsViewport": {
+        "x": 874,
+        "y": 388,
+        "width": 543,
+        "height": 421
+      },
+      "OpponentCards": {
+        "x": 144,
+        "y": 181,
+        "width": 1284,
+        "height": 163
+      },
+      "Opponent 0": {
+        "x": 144,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 1": {
+        "x": 401,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 2": {
+        "x": 658,
+        "y": 181,
+        "width": 250,
+        "height": 163
+      },
+      "Opponent 3": {
+        "x": 914,
+        "y": 181,
+        "width": 251,
+        "height": 163
+      },
+      "Opponent 4": {
+        "x": 1171,
+        "y": 181,
+        "width": 257,
+        "height": 163
+      },
+      "Navigation \u0420\u0430\u0437\u0432\u0435\u0434\u043A\u0430": {
+        "x": 9,
+        "y": 89,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0430\u0444\u0442": {
+        "x": 9,
+        "y": 128,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0430\u043D\u043D\u044B\u0435": {
+        "x": 9,
+        "y": 216,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": {
+        "x": 9,
+        "y": 255,
+        "width": 116,
+        "height": 36
+      },
+      "Navigation \u0414\u0440\u0443\u0437\u044C\u044F": {
+        "x": 9,
+        "y": 294,
+        "width": 116,
+        "height": 36
+      }
+    },
+    "loadedImages": 4,
+    "visibleImages": 4
+  }
+]

@@ -139,19 +139,21 @@ public sealed partial class NativeWindow
 
         var found = ids.Count(id => id > 0);
         var ready = 0;
-        var limited = 0;
+        var hidden = 0;
         var errors = 0;
         foreach (var id in ids.Where(id => id > 0))
         {
             var source = reports.FirstOrDefault(p => p.At("accountId").L() == id)
                 ?.At("scoutStatus").S("pending") ?? "pending";
             if (source == "ok") ready++;
-            else if (source is "no_stats" or "stale" or "unresolved") limited++;
+            else if (source is "no_stats" or "unresolved") hidden++;
             else if (source == "error") errors++;
+            else if (source == "stale") hidden++; // stale is incomplete evidence, not invented intel
         }
         if (scoutFoundCount != null) scoutFoundCount.Text = found + " / 5";
-        if (scoutReadyCount != null) scoutReadyCount.Text = ready + " / " + found;
-        if (scoutLimitedCount != null) scoutLimitedCount.Text = limited.ToString();
+        if (scoutReadyCount != null)
+            scoutReadyCount.Text = found == 0 ? "0 / 0" : ready + " / " + found;
+        if (scoutLimitedCount != null) scoutLimitedCount.Text = hidden.ToString();
         if (scoutFailureCount != null) scoutFailureCount.Text = errors.ToString();
 
         scoutSignalHost.Children.Clear();
@@ -165,7 +167,7 @@ public sealed partial class NativeWindow
                 reports.FirstOrDefault(p => p.At("accountId").L() == id);
             var source = id == 0 ? "empty" :
                 report?.At("scoutStatus").S("pending") ?? "pending";
-            
+
             bool selected = id > 0 && selectedScoutId == id &&
                 selectedScoutSide == "enemy";
             var tone = source switch {
@@ -175,29 +177,30 @@ public sealed partial class NativeWindow
                 _ => muted
             };
             var statusLabel = source switch {
-                "ok" => "ГОТОВО",
-                "no_stats" => "НЕТ СТАТИСТИКИ",
-                "stale" => "УСТАРЕЛО",
-                "error" => "ОШИБКА",
-                "unresolved" => "НЕ ОПОЗНАН",
-                "empty" => "НЕТ ИГРОКА",
-                _ => "ОЖИДАНИЕ"
+                "ok" => "Готов",
+                "no_stats" => "Скрыто",
+                "stale" => "Частично",
+                "error" => "Ошибка",
+                "unresolved" => "Не опознан",
+                "empty" => "Пусто",
+                _ => "Ожидание"
             };
             var content = new StackPanel();
-            var statusRow = new DockPanel { LastChildFill = true };
-            var seat = Text("#" + (i + 1), 10, FontWeights.Bold, muted);
-            DockPanel.SetDock(seat, Dock.Right);
-            statusRow.Children.Add(seat);
-            var statusText = Text("● " + statusLabel, 9, FontWeights.SemiBold, tone);
-            statusText.TextWrapping = TextWrapping.NoWrap;
-            statusText.TextTrimming = TextTrimming.CharacterEllipsis;
-            statusText.ToolTip = statusLabel;
-            statusRow.Children.Add(statusText);
-            content.Children.Add(statusRow);
+            var statusBadge = new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Background = (Brush)FindResource("RaisedBrush"),
+                BorderBrush = tone,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(99),
+                Padding = new Thickness(8, 2, 8, 2),
+                Child = Text(statusLabel, 9, FontWeights.SemiBold, tone)
+            };
+            content.Children.Add(statusBadge);
 
-            var portrait = new Grid { Width = 42, Height = 42, Margin = new Thickness(0, 8, 0, 7) };
+            var portrait = new Grid { Width = 44, Height = 44, Margin = new Thickness(0, 10, 0, 8) };
             portrait.Children.Add(new Border {
-                Background = (Brush)FindResource("RaisedBrush"), CornerRadius = new CornerRadius(21),
+                Background = (Brush)FindResource("RaisedBrush"), CornerRadius = new CornerRadius(22),
                 Child = new TextBlock {
                     Text = id == 0 ? "?" :
                         (PlayerName(id).Length > 0 ? PlayerName(id).Substring(0, 1).ToUpperInvariant() : "?"),
@@ -208,14 +211,12 @@ public sealed partial class NativeWindow
             });
             if (id > 0 && core.BaseUri != null)
             {
-                var image = new Image { Width = 42, Height = 42, Stretch = Stretch.UniformToFill };
+                var image = new Image { Width = 44, Height = 44, Stretch = Stretch.UniformToFill };
                 try
                 {
                     image.Source = new System.Windows.Media.Imaging.BitmapImage(
                         new Uri(core.BaseUri, "assets/avatars/" + id + ".jpg"));
-                    var clip = new System.Windows.Media.EllipseGeometry(
-                        new Point(21, 21), 21, 21);
-                    image.Clip = clip;
+                    image.Clip = new System.Windows.Media.EllipseGeometry(new Point(22, 22), 22, 22);
                 }
                 catch (Exception) { /* fallback initials */ }
                 portrait.Children.Add(image);
@@ -233,39 +234,33 @@ public sealed partial class NativeWindow
             name.ToolTip = name.Text;
             content.Children.Add(name);
 
-            var strong = report?.At("topHeroes").Items().Take(2).ToArray() ??
-                Array.Empty<System.Text.Json.Nodes.JsonNode?>();
-            var heroList = new StackPanel { Orientation = Orientation.Horizontal, MinHeight = 26,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, compactScout ? 4 : 7, 0, 4) };
-            foreach (var hero in strong)
-            {
-                var heroId = hero.At("id").I();
-                if (heroId <= 0) continue;
-                var thumb = HeroPortrait(heroId, 46, 26);
-                thumb.Margin = new Thickness(0, 0, 5, 0);
-                thumb.ToolTip = HeroName(heroId);
-                heroList.Children.Add(thumb);
-            }
-            if (heroList.Children.Count == 0)
-                heroList.Children.Add(Text("Нет героев в выборке", 10, color: muted));
-            content.Children.Add(heroList);
-            var top = strong.FirstOrDefault();
-            var observed = top == null ? "Статистика недоступна" :
-                $"{top.At("games").I()} игр · {top.At("winRate").D():P0} побед";
-            var summary = Text(observed, 10, color: muted);
-            summary.TextAlignment = TextAlignment.Center;
-            summary.TextTrimming = TextTrimming.CharacterEllipsis;
-            summary.TextWrapping = TextWrapping.NoWrap;
-            summary.ToolTip = "Статистика первого известного героя: " + observed;
-            content.Children.Add(summary);
+            var heroes = report?.At("topHeroes").Items()
+                .Where(h => h.At("id").I() > 0).ToArray()
+                ?? Array.Empty<System.Text.Json.Nodes.JsonNode?>();
+            int observedGames = heroes.Sum(h => h!.At("games").I());
+            double weightedWins = heroes.Sum(h => h!.At("games").I() * h!.At("winRate").D());
+            // error/stale may retain prior topHeroes — never present as fresh ok WR.
+            bool retainedCache = (source is "error" or "stale") && observedGames > 0;
+            string wrText = observedGames > 0 ? (weightedWins / observedGames).ToString("P0") : "—";
+            string gamesText = observedGames == 0 ? "нет игр"
+                : retainedCache
+                    ? (source == "stale" ? "устарело · " : "кэш · ") + observedGames + " игр"
+                    : observedGames + " игр";
+            var wr = Text(wrText, compactScout ? 14 : 18, FontWeights.Bold,
+                observedGames > 0 && !retainedCache ? foreground : muted);
+            wr.TextAlignment = TextAlignment.Center;
+            wr.Margin = new Thickness(0, compactScout ? 4 : 8, 0, 0);
+            wr.ToolTip = retainedCache
+                ? "Сохранённая выборка при ошибке/устаревании источника — не свежий WR"
+                : observedGames > 0
+                    ? "Взвешенный WR по известным героям источника (не модель силы)"
+                    : "WR недоступен: источник не отдал героев";
+            content.Children.Add(wr);
+            var games = Text(gamesText, 10, color: retainedCache ? gold : muted);
+            games.TextAlignment = TextAlignment.Center;
+            games.ToolTip = wr.ToolTip;
+            content.Children.Add(games);
 
-            var hint = Text(id > 0 ? "Подробнее  ›" : "Назначить в составах",
-                10, FontWeights.SemiBold, id > 0 ? accent : muted);
-            hint.HorizontalAlignment = HorizontalAlignment.Center;
-            hint.Margin = new Thickness(0, 5, 0, 0);
-            hint.Visibility = compactScout ? Visibility.Collapsed : Visibility.Visible;
-            content.Children.Add(hint);
             var account = id;
             var button = Btn("", async () =>
             {
@@ -276,7 +271,7 @@ public sealed partial class NativeWindow
             button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             button.VerticalContentAlignment = VerticalAlignment.Top;
             button.MinWidth = 0;
-            button.Padding = new Thickness(7, compactScout ? 6 : 9, 7, compactScout ? 6 : 10);
+            button.Padding = new Thickness(8, compactScout ? 5 : 9, 8, compactScout ? 5 : 10);
             button.Margin = new Thickness(0, 0, i == 4 ? 0 : 6, 0);
             button.Background = selected ? (Brush)FindResource("SelectedBrush") : (Brush)FindResource("PanelBrush");
             button.BorderBrush = selected ? accent : border;
@@ -286,36 +281,264 @@ public sealed partial class NativeWindow
             Grid.SetColumn(button, i); cards.Children.Add(button);
         }
         scoutSignalHost.Children.Add(cards);
+        RenderScoutThreatModules(ids, reports, found, ready, hidden, errors);
+    }
+
+    private void RenderScoutThreatModules(
+        long[] ids,
+        System.Text.Json.Nodes.JsonNode?[] reports,
+        int found, int ready, int hidden, int errors)
+    {
         if (tacticalInsights == null) return;
         tacticalInsights.Children.Clear();
-        var visible = ids.Where(id => id > 0).Select(id =>
-            reports.FirstOrDefault(p => p.At("accountId").L() == id))
+
+        var visible = ids.Where(id => id > 0)
+            .Select(id => reports.FirstOrDefault(p => p.At("accountId").L() == id))
             .Where(p => p != null).ToArray();
-        var favorites = visible.Where(p => p!.At("scoutStatus").S() == "ok")
-            .Select(p => p!.At("topHeroes").Items().FirstOrDefault()?.At("id").I() ?? 0)
-            .Where(id => id > 0).ToArray();
-        TacticalInsightRow("◎", "Источники разведки",
-            ready + " подтверждено · " + limited + " ограничено · " + errors + " ошибок",
-            accent);
-        TacticalInsightRow("◇", "Сильнейшие известные герои",
-            favorites.Length == 0 ? "Статистика героев не получена" :
-            string.Join(", ", favorites.Distinct().Take(4).Select(HeroName)),
-            gold);
-        TacticalInsightRow("▤", "Неполные профили",
-            (found - ready) == 0 ? "Для всех назначенных есть ответ источника" :
-            "Без подтверждённых данных: " + (found - ready) +
-            ". Не считай отсутствие статистики слабостью игрока.",
-            muted);
-        var overlaps = visible.SelectMany(p => p!.At("topHeroes").Items()
-                .Select(h => h.At("id").I()).Where(id => id > 0).Distinct())
-            .GroupBy(id => id).Where(g => g.Count() > 1).OrderByDescending(g => g.Count())
-            .Select(g => HeroName(g.Key) + " · " + g.Count() + " игроков").Take(3).ToArray();
-        TacticalInsightRow("↔", "Пересечения пулов",
-            overlaps.Length == 0 ? "В доступной выборке общие герои не найдены" : string.Join(", ", overlaps), accent);
-        var notice = Text("Статистика ограничена доступной выборкой источника.",
+        var readyReports = visible.Where(p => p!.At("scoutStatus").S() == "ok").ToArray();
+        var heroRows = readyReports
+            .SelectMany(p => p!.At("topHeroes").Items()
+                .Select(h => new {
+                    Id = h.At("id").I(),
+                    Games = h.At("games").I(),
+                    WinRate = h.At("winRate").D(),
+                    Account = p!.At("accountId").L()
+                }))
+            .Where(h => h.Id > 0 && h.Games > 0)
+            .ToArray();
+
+        var grid = new Grid { Name = "ScoutThreatGrid" };
+        bool stacked = compactScout;
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        if (!stacked)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        if (stacked)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        }
+
+        // Signature heroes — distinct top heroes by observed games.
+        var signatures = heroRows
+            .GroupBy(h => h.Id)
+            .Select(g => new { Id = g.Key, Games = g.Sum(x => x.Games), Players = g.Select(x => x.Account).Distinct().Count() })
+            .OrderByDescending(x => x.Games).ThenBy(x => x.Id)
+            .Take(5).ToArray();
+        var signatureBody = new StackPanel();
+        if (signatures.Length == 0)
+        {
+            signatureBody.Children.Add(HonestEmpty(
+                "Сигнатурные герои недоступны",
+                "Нужны подтверждённые ответы источника с topHeroes."));
+        }
+        else
+        {
+            var strip = new StackPanel { Orientation = Orientation.Horizontal };
+            foreach (var hero in signatures)
+            {
+                var cell = new StackPanel { Margin = new Thickness(0, 0, 8, 0), Width = 54 };
+                var portrait = HeroPortrait(hero.Id, 54, 32);
+                portrait.ToolTip = HeroName(hero.Id) + " · " + hero.Games + " игр в выборке";
+                cell.Children.Add(portrait);
+                var label = Text(hero.Games + "и", 9, color: muted);
+                label.TextAlignment = TextAlignment.Center;
+                label.Margin = new Thickness(0, 4, 0, 0);
+                cell.Children.Add(label);
+                strip.Children.Add(cell);
+            }
+            signatureBody.Children.Add(strip);
+            signatureBody.Children.Add(Text("По сумме игр в подтверждённых пулах, не рейтинг силы.",
+                10, color: muted));
+        }
+        var signatureCard = ThreatModule("Сигнатурные герои", signatureBody);
+        grid.Children.Add(signatureCard);
+
+        // Dangerous combos — only real pool overlaps (same hero on 2+ players).
+        var overlaps = heroRows
+            .GroupBy(h => h.Id)
+            .Select(g => new {
+                Id = g.Key,
+                Players = g.Select(x => x.Account).Distinct().Count(),
+                Games = g.Sum(x => x.Games)
+            })
+            .Where(x => x.Players > 1)
+            .OrderByDescending(x => x.Players).ThenByDescending(x => x.Games).ThenBy(x => x.Id)
+            .Take(4).ToArray();
+        var comboBody = new StackPanel();
+        if (overlaps.Length == 0)
+        {
+            comboBody.Children.Add(HonestEmpty(
+                "Общие герои не найдены",
+                "Не выдумываем связки: покажем пересечения пулов, когда они есть."));
+        }
+        else
+        {
+            foreach (var hit in overlaps)
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8), LastChildFill = true };
+                var portrait = HeroPortrait(hit.Id, 42, 24);
+                portrait.Margin = new Thickness(0, 0, 8, 0);
+                DockPanel.SetDock(portrait, Dock.Left);
+                row.Children.Add(portrait);
+                var count = Text(hit.Players + " игрока", 11, FontWeights.SemiBold, gold);
+                DockPanel.SetDock(count, Dock.Right);
+                row.Children.Add(count);
+                row.Children.Add(Text(HeroName(hit.Id) + " в нескольких пулах", 12, FontWeights.SemiBold));
+                comboBody.Children.Add(row);
+            }
+            comboBody.Children.Add(Text("Это пересечение известных героев, не предсказанная связка.",
+                10, color: muted));
+        }
+        var comboCard = ThreatModule("Опасные пересечения", comboBody);
+        if (stacked) { Grid.SetRow(comboCard, 1); comboCard.Margin = new Thickness(0, 8, 0, 0); }
+        else { Grid.SetColumn(comboCard, 1); comboCard.Margin = new Thickness(6, 0, 0, 0); }
+        grid.Children.Add(comboCard);
+
+        // Key risks — only observable source/sample signals.
+        var risks = new System.Collections.Generic.List<string>();
+        if (found == 0) risks.Add("Состав противников пуст — назначь игроков в «Составы».");
+        if (hidden > 0) risks.Add(hidden + " профиль(я) без публичной статистики или устарели.");
+        if (errors > 0) risks.Add(errors + " ошибка(и) источника — не трактуй как слабость игрока.");
+        if (found > 0 && ready == 0) risks.Add("Нет ни одного подтверждённого ответа разведки.");
+        var thin = heroRows.Where(h => h.Games < 8).Select(h => h.Account).Distinct().Count();
+        if (thin > 0 && ready > 0)
+            risks.Add(thin + " игрок(а) с тонкой выборкой (<8 игр на героя) — выводы хрупкие.");
+        foreach (var player in readyReports)
+        {
+            var smurf = player!.At("smurf");
+            if (smurf == null) continue;
+            var level = smurf.At("level").S();
+            var label = smurf.At("label").S();
+            if (string.IsNullOrWhiteSpace(level) && string.IsNullOrWhiteSpace(label)) continue;
+            risks.Add(PlayerName(player.At("accountId").L()) + ": метка smurf от ядра — " +
+                (string.IsNullOrWhiteSpace(label) ? level : label));
+        }
+        var riskBody = new StackPanel();
+        if (risks.Count == 0)
+        {
+            riskBody.Children.Add(HonestEmpty(
+                "Явных рисков в данных нет",
+                "Нет скрытых профилей, ошибок источника или тонкой выборки."));
+        }
+        else
+        {
+            foreach (var risk in risks.Take(5))
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8), LastChildFill = true };
+                var mark = Text("!", 12, FontWeights.Bold, gold);
+                mark.Margin = new Thickness(0, 0, 8, 0);
+                DockPanel.SetDock(mark, Dock.Left);
+                row.Children.Add(mark);
+                var text = Text(risk, 12, color: foreground);
+                text.TextWrapping = TextWrapping.Wrap;
+                row.Children.Add(text);
+                riskBody.Children.Add(row);
+            }
+        }
+        var riskCard = ThreatModule("Ключевые риски", riskBody);
+        if (stacked) { Grid.SetRow(riskCard, 2); riskCard.Margin = new Thickness(0, 8, 0, 0); }
+        else { Grid.SetRow(riskCard, 1); riskCard.Margin = new Thickness(0, 8, 6, 0); }
+        grid.Children.Add(riskCard);
+
+        // Recommended ban — highest observed comfort hero with enough games; never invent.
+        var banCandidate = heroRows
+            .GroupBy(h => h.Id)
+            .Select(g => new {
+                Id = g.Key,
+                Games = g.Sum(x => x.Games),
+                WinRate = g.Sum(x => x.Games * x.WinRate) / Math.Max(1, g.Sum(x => x.Games)),
+                Players = g.Select(x => x.Account).Distinct().Count()
+            })
+            .Where(x => x.Games >= 12)
+            .OrderByDescending(x => x.Players)
+            .ThenByDescending(x => x.Games)
+            .ThenByDescending(x => x.WinRate)
+            .ThenBy(x => x.Id)
+            .FirstOrDefault();
+        var banBody = new StackPanel();
+        if (banCandidate == null)
+        {
+            banBody.Children.Add(HonestEmpty(
+                "Рекомендованный бан недоступен",
+                "Нужно ≥12 подтверждённых игр по герою в выборке. Модель бана здесь не подставляется."));
+        }
+        else
+        {
+            var row = new DockPanel { LastChildFill = true };
+            var portrait = HeroPortrait(banCandidate.Id, 72, 42);
+            portrait.Margin = new Thickness(0, 0, 12, 0);
+            DockPanel.SetDock(portrait, Dock.Left);
+            row.Children.Add(portrait);
+            var info = new StackPanel();
+            info.Children.Add(Text(HeroName(banCandidate.Id), 15, FontWeights.Bold));
+            info.Children.Add(Text(
+                banCandidate.Games + " игр · " + banCandidate.WinRate.ToString("P0") +
+                " · у " + banCandidate.Players + " игрока(ов)",
+                11, color: muted));
+            info.Children.Add(Text("По частоте в подтверждённых пулах, не сила драфта.",
+                10, FontWeights.SemiBold, accent));
+            row.Children.Add(info);
+            banBody.Children.Add(row);
+            var priority = new Border
+            {
+                Margin = new Thickness(0, 10, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Background = (Brush)FindResource("RaisedBrush"),
+                BorderBrush = accent,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(99),
+                Padding = new Thickness(10, 3, 10, 3),
+                Child = Text("Наблюдаемый приоритет", 10, FontWeights.SemiBold, accent)
+            };
+            banBody.Children.Add(priority);
+        }
+        var banCard = ThreatModule("Рекомендованный бан", banBody);
+        if (stacked) { Grid.SetRow(banCard, 3); banCard.Margin = new Thickness(0, 8, 0, 0); }
+        else
+        {
+            Grid.SetRow(banCard, 1);
+            Grid.SetColumn(banCard, 1);
+            banCard.Margin = new Thickness(6, 8, 0, 0);
+        }
+        grid.Children.Add(banCard);
+
+        if (!stacked) signatureCard.Margin = new Thickness(0, 0, 6, 0);
+
+        tacticalInsights.Children.Add(grid);
+        var notice = Text("Статистика ограничена доступной выборкой источника. Пустые модули — честный пробел, не заглушка.",
             11, color: muted);
         notice.Margin = new Thickness(0, 12, 0, 0);
         tacticalInsights.Children.Add(notice);
+    }
+
+    private Border ThreatModule(string title, UIElement body)
+    {
+        var host = new StackPanel();
+        host.Children.Add(Text(title.ToUpperInvariant(), 10, FontWeights.Bold, muted));
+        var content = new Border { Child = body, Margin = new Thickness(0, compactScout ? 4 : 8, 0, 0) };
+        host.Children.Add(content);
+        return new Border
+        {
+            Child = host,
+            Background = (Brush)FindResource("RaisedBrush"),
+            BorderBrush = border,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(compactScout ? 8 : 12, compactScout ? 6 : 10, compactScout ? 8 : 12, compactScout ? 8 : 12)
+        };
+    }
+
+    private StackPanel HonestEmpty(string title, string detail)
+    {
+        var host = new StackPanel();
+        host.Children.Add(Text(title, 12, FontWeights.SemiBold, muted));
+        var line = Text(detail, 11, color: muted);
+        line.Margin = new Thickness(0, 4, 0, 0);
+        line.TextWrapping = TextWrapping.Wrap;
+        host.Children.Add(line);
+        return host;
     }
 
     private void TacticalInsightRow(string glyph, string heading, string message, Brush tone)
@@ -336,3 +559,4 @@ public sealed partial class NativeWindow
         tacticalInsights.Children.Add(line);
     }
 }
+

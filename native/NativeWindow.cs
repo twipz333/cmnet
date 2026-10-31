@@ -306,6 +306,11 @@ public sealed partial class NativeWindow : Window
                 scoutLive.Text = active.Count == 0 ? "Разведка не выполняется" :
                     string.Join("    ·    ", active.Select(j =>
                     $"{(j.At("kind").S() == "scout" ? "Враги" : "Союзники")}: {j.At("lastLine").S("ожидание")}"));
+            if (cancelScoutButton != null)
+            {
+                cancelScoutButton.IsEnabled = active.Count > 0;
+                cancelScoutButton.Opacity = active.Count > 0 ? 1 : 0.45;
+            }
         }
         if (page == "Драфт") UpdateDraft();
         if (page == "Данные" && dataActivity != null)
@@ -613,14 +618,16 @@ public sealed partial class NativeWindow : Window
         scoutDetails.Children.Clear();
         if (selectedScoutId <= 0)
         {
-            scoutDetails.Children.Add(Text("Нет выбранного игрока", 17, FontWeights.SemiBold));
-            scoutDetails.Children.Add(Text("Здесь появятся герои, количество игр, винрейт и статус источника.",
+            scoutDetails.Children.Add(Text("Игрок не выбран", 16, FontWeights.SemiBold));
+            scoutDetails.Children.Add(Text(
+                "Выбери карточку противника выше. Здесь будут только факты из ответа источника: статус, герои, игры и WR.",
                 12, color: muted));
             return;
         }
         var side = selectedScoutSide;
         var entry = stats.At("stats", side == "our" ? "allyPlayers" : "enemyPlayers")
             .Items().FirstOrDefault(p => p.At("accountId").L() == selectedScoutId);
+
         var head = new DockPanel { LastChildFill = true };
         var rescout = Btn("↻", async () =>
         {
@@ -635,53 +642,172 @@ public sealed partial class NativeWindow : Window
         title.Children.Add(Text(side == "our" ? "НАШ ИГРОК" : "ПРОТИВНИК", 10, FontWeights.Bold,
             side == "our" ? accent : gold));
         title.Children.Add(Text(PlayerName(selectedScoutId), 16, FontWeights.Bold));
-        title.Children.Add(Text("Steam account: " + selectedScoutId, 11, color: muted));
+        title.Children.Add(Text("Steam · " + selectedScoutId, 11, color: muted));
         head.Children.Add(title);
         scoutDetails.Children.Add(head);
 
         if (entry == null)
         {
-            var missing = Text("Данные героя ещё не загружены. Проверь публичность профиля или запусти разведку.",
+            var missing = Text("Данные ещё не загружены. Проверь публичность профиля или запусти разведку.",
                 13, color: muted);
-            missing.Margin = new Thickness(0, 17, 0, 0);
+            missing.Margin = new Thickness(0, 14, 0, 0);
             scoutDetails.Children.Add(missing);
             return;
         }
+
         var current = entry.At("scoutStatus").S("unknown");
         var friendly = current switch
         {
             "ok" => "Данные получены",
             "no_stats" => "Нет публичной статистики",
-            "error" => "Ошибка источника · доступна только сохранённая выборка",
+            "error" => "Ошибка источника",
             "stale" => "Данные могут быть устаревшими",
             "unresolved" => "Steam ID не определён",
             _ => "Статус: " + current
         };
-        var status = Text(friendly, 12, FontWeights.SemiBold, current == "ok" ? good : gold);
-        status.Margin = new Thickness(0, 14, 0, 14);
+        var statusTone = current == "ok" ? good :
+            current == "error" ? (Brush)FindResource("ErrorBrush") : gold;
+        var status = new Border
+        {
+            Margin = new Thickness(0, 12, 0, 10),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Background = ThemeBrush("RaisedBrush"),
+            BorderBrush = statusTone,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(99),
+            Padding = new Thickness(10, 3, 10, 3),
+            Child = Text(friendly, 11, FontWeights.SemiBold, statusTone)
+        };
         scoutDetails.Children.Add(status);
 
-        var heroes = entry.At("topHeroes").Items().Take(8).ToArray();
+        var heroes = entry.At("topHeroes").Items().Where(h => h.At("id").I() > 0).Take(8).ToArray();
+        int games = heroes.Sum(h => h.At("games").I());
+        double weighted = heroes.Sum(h => h.At("games").I() * h.At("winRate").D());
+        // Same honesty gate as opponent cards: retained heroes under error/stale are cache.
+        bool retainedCache = (current is "error" or "stale") && games > 0;
+        var wrLine = Text(games > 0
+                ? (retainedCache ? "Кэш · " : "") +
+                  (weighted / games).ToString("P0") + " WR · " + games +
+                  (retainedCache ? " игр (не свежие)" : " игр в выборке")
+                : "WR недоступен — источник не отдал героев",
+            13, FontWeights.SemiBold, games > 0 && !retainedCache ? foreground : muted);
+        wrLine.ToolTip = retainedCache
+            ? "Сохранённая выборка при ошибке/устаревании источника — не свежий WR"
+            : "Агрегат только по известным topHeroes, без модели силы.";
+        scoutDetails.Children.Add(wrLine);
+
+        if (heroes.Length > 0)
+        {
+            if (retainedCache)
+            {
+                var cacheCaption = Text(current == "stale" ? "ГЕРОИ · УСТАРЕЛО" : "ГЕРОИ · КЭШ",
+                    10, FontWeights.Bold, gold);
+                cacheCaption.Margin = new Thickness(0, 12, 0, 4);
+                scoutDetails.Children.Add(cacheCaption);
+            }
+            var strip = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, retainedCache ? 0 : 12, 0, 0)
+            };
+            foreach (var hero in heroes.Take(6))
+            {
+                var id = hero.At("id").I();
+                var thumb = HeroPortrait(id, 48, 28);
+                thumb.Margin = new Thickness(0, 0, 6, 0);
+                thumb.ToolTip = (retainedCache ? "Кэш · " : "") + HeroName(id) + " · " +
+                    hero.At("games").I() + " игр · " + hero.At("winRate").D().ToString("P0");
+                strip.Children.Add(thumb);
+            }
+            scoutDetails.Children.Add(strip);
+        }
+
+        var insightsTitle = Text("НАБЛЮДЕНИЯ", 10, FontWeights.Bold, muted);
+        insightsTitle.Margin = new Thickness(0, 14, 0, 0);
+        scoutDetails.Children.Add(insightsTitle);
+        var notes = new System.Collections.Generic.List<(string Text, Brush Tone)>();
         if (heroes.Length == 0)
+            notes.Add(("Нет статистики по героям для этого аккаунта.", muted));
+        else if (retainedCache)
         {
-            scoutDetails.Children.Add(Text("Нет статистики по героям для этого аккаунта.", 13, color: muted));
-            return;
+            notes.Add(("Показана сохранённая выборка; источник сейчас в статусе «" +
+                friendly + "» — цифры не свежие.", gold));
         }
-        var gallery = new StackPanel();
-        foreach (var hero in heroes)
+        else
         {
-            var id = hero.At("id").I();
-            if (id <= 0) continue;
-            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-            var portrait = HeroPortrait(id, 64, 38);
-            portrait.Margin = new Thickness(0, 0, 10, 0);
-            DockPanel.SetDock(portrait, Dock.Left); row.Children.Add(portrait);
-            var details = new StackPanel();
-            details.Children.Add(Text(HeroName(id), 12, FontWeights.SemiBold));
-            details.Children.Add(Text($"{hero.At("games").I()} игр · {hero.At("winRate").D():P0} побед", 11, color: muted));
-            row.Children.Add(details); gallery.Children.Add(row);
+            var top = heroes.OrderByDescending(h => h.At("games").I()).ThenBy(h => h.At("id").I()).First();
+            notes.Add(("Чаще всего в выборке: " + HeroName(top.At("id").I()) +
+                " (" + top.At("games").I() + " игр, " + top.At("winRate").D().ToString("P0") + ").", foreground));
+            var highWr = heroes.Where(h => h.At("games").I() >= 10)
+                .OrderByDescending(h => h.At("winRate").D()).ThenByDescending(h => h.At("games").I())
+                .FirstOrDefault();
+            if (highWr != null && highWr.At("winRate").D() >= 0.65)
+                notes.Add(("Высокий WR на " + HeroName(highWr.At("id").I()) + " при ≥10 играх: " +
+                    highWr.At("winRate").D().ToString("P0") + ".", accent));
+            if (heroes.Length <= 2)
+                notes.Add(("Узкий подтверждённый пул (" + heroes.Length + " героя) — размер выборки, не вердикт о скилле.", gold));
         }
-        scoutDetails.Children.Add(gallery);
+        var smurf = entry.At("smurf");
+        if (smurf != null)
+        {
+            var label = smurf.At("label").S();
+            var level = smurf.At("level").S();
+            if (!string.IsNullOrWhiteSpace(label) || !string.IsNullOrWhiteSpace(level))
+                notes.Add(("Метка ядра: " + (string.IsNullOrWhiteSpace(label) ? level : label), gold));
+        }
+        if (current is "no_stats" or "unresolved")
+            notes.Add(("Источник ограничил ответ (" + friendly + "). Пробел не заполняем выдумкой.", gold));
+        else if ((current is "error" or "stale") && !retainedCache)
+            notes.Add(("Источник ограничил ответ (" + friendly + "). Пробел не заполняем выдумкой.", gold));
+        foreach (var note in notes)
+        {
+            var line = Text("·  " + note.Text, 12, color: note.Tone);
+            line.TextWrapping = TextWrapping.Wrap;
+            line.Margin = new Thickness(0, 8, 0, 0);
+            scoutDetails.Children.Add(line);
+        }
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 0) };
+        var again = Btn("Повторить разведку", async () =>
+        {
+            await RunAction(side == "our" ? "/api/ops/scout-allies" : "/api/ops/scout",
+                new { players = selectedScoutId.ToString() });
+        }, true);
+        again.Margin = new Thickness(0, 0, 8, 0);
+        actions.Children.Add(again);
+        var openBook = Btn("Составы", async () =>
+        {
+            toast.Text = "Открой «Составы и адресная книга» внизу экрана разведки.";
+            await Task.CompletedTask;
+        }, true);
+        actions.Children.Add(openBook);
+        scoutDetails.Children.Add(actions);
+
+        if (heroes.Length > 0)
+        {
+            var galleryTitle = Text(retainedCache
+                    ? (current == "stale" ? "ГЕРОИ ИСТОЧНИКА · УСТАРЕЛО" : "ГЕРОИ ИСТОЧНИКА · КЭШ")
+                    : "ГЕРОИ ИСТОЧНИКА",
+                10, FontWeights.Bold, retainedCache ? gold : muted);
+            galleryTitle.Margin = new Thickness(0, 14, 0, 8);
+            scoutDetails.Children.Add(galleryTitle);
+            foreach (var hero in heroes)
+            {
+                var id = hero.At("id").I();
+                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+                var portrait = HeroPortrait(id, 56, 32);
+                portrait.Margin = new Thickness(0, 0, 8, 0);
+                DockPanel.SetDock(portrait, Dock.Left);
+                row.Children.Add(portrait);
+                var details = new StackPanel();
+                details.Children.Add(Text(HeroName(id), 12, FontWeights.SemiBold));
+                var heroMeta = (retainedCache ? "кэш · " : "") +
+                    $"{hero.At("games").I()} игр · {hero.At("winRate").D():P0}";
+                details.Children.Add(Text(heroMeta, 11, color: retainedCache ? gold : muted));
+                row.Children.Add(details);
+                scoutDetails.Children.Add(row);
+            }
+        }
     }
 
     private void UpdateKnownPlayers()
