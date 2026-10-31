@@ -922,14 +922,27 @@ public sealed partial class NativeWindow : Window
         var options = players.At("players").Items().Select(p => new PlayerRow {
             Id = p.At("accountId").L(), Name = p.At("persona").S("Steam ID"), Role = p.At("role").S()
         }).Where(p => p.Id > 0).ToList();
-        var combo = new ComboBox { ItemsSource = options, DisplayMemberPath = "Label", Margin = new Thickness(0, 14, 0, 12), MinHeight = 35 };
-        host.Children.Add(combo);
+        // ListBox (not ComboBox): Theme.xaml styles ListBoxItem dark; ComboBox
+        // popup still used the system white background → white-on-white nicknames (#63).
+        var book = new ListBox
+        {
+            ItemsSource = options,
+            DisplayMemberPath = "Label",
+            Margin = new Thickness(0, 14, 0, 12),
+            MinHeight = 120,
+            MaxHeight = 180,
+            Background = soft,
+            Foreground = foreground,
+            BorderBrush = border,
+            BorderThickness = new Thickness(1)
+        };
+        host.Children.Add(book);
         host.Children.Add(Text("Или вставь account ID", 13, color: muted));
         var input = new TextBox { Margin = new Thickness(0, 6, 0, 12), Padding = new Thickness(8) };
         host.Children.Add(input);
         var place = Btn("Назначить", async () =>
         {
-            var id = long.TryParse(input.Text.Trim(), out var parsed) ? parsed : (combo.SelectedItem as PlayerRow)?.Id ?? 0;
+            var id = long.TryParse(input.Text.Trim(), out var parsed) ? parsed : (book.SelectedItem as PlayerRow)?.Id ?? 0;
             if (id <= 0) return;
             await RunAction("/api/team/seat", new { side, position, accountId = id });
             dialog.Close();

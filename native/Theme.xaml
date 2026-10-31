@@ -120,6 +120,91 @@
     <Setter Property="FontSize" Value="13"/>
     <Setter Property="Padding" Value="10,7"/>
     <Setter Property="MinHeight" Value="32"/>
+    <!-- Popup defaults to system white; force dark chrome so light TextBrush stays readable. -->
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type ComboBox}">
+          <Grid>
+            <ToggleButton x:Name="Toggle" Focusable="False" ClickMode="Press"
+                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+              <ToggleButton.Template>
+                <ControlTemplate TargetType="{x:Type ToggleButton}">
+                  <Border x:Name="Chrome" Background="{StaticResource HoverBrush}"
+                          BorderBrush="{StaticResource PrimaryBrush}" BorderThickness="1" CornerRadius="4"
+                          Padding="10,7">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="18"/>
+                      </Grid.ColumnDefinitions>
+                      <ContentPresenter Grid.Column="0" Content="{TemplateBinding Content}"
+                                        ContentTemplate="{TemplateBinding ContentTemplate}"
+                                        HorizontalAlignment="Left" VerticalAlignment="Center"
+                                        RecognizesAccessKey="True"/>
+                      <Path Grid.Column="1" Data="M 0 0 L 6 6 L 12 0" Stroke="{StaticResource TextBrush}"
+                            StrokeThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+                  </Border>
+                  <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                      <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                    </Trigger>
+                  </ControlTemplate.Triggers>
+                </ControlTemplate>
+              </ToggleButton.Template>
+            </ToggleButton>
+            <ContentPresenter x:Name="ContentSite" IsHitTestVisible="False" Margin="10,7,28,7"
+                              VerticalAlignment="Center" HorizontalAlignment="Left"
+                              Content="{TemplateBinding SelectionBoxItem}"
+                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"/>
+            <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
+                   IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="Slide">
+              <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource PrimaryBrush}"
+                      BorderThickness="1" CornerRadius="4" MinWidth="{Binding ActualWidth, ElementName=Toggle}"
+                      MaxHeight="{TemplateBinding MaxDropDownHeight}" Padding="4">
+                <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto">
+                  <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                </ScrollViewer>
+              </Border>
+            </Popup>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="HasItems" Value="False">
+              <Setter TargetName="PART_Popup" Property="MinHeight" Value="40"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="{x:Type ComboBoxItem}">
+    <Setter Property="Background" Value="{StaticResource HoverBrush}"/>
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    <Setter Property="Padding" Value="8,7"/>
+    <Setter Property="Margin" Value="0,0,0,2"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type ComboBoxItem}">
+          <Border x:Name="Frame" Background="{TemplateBinding Background}" CornerRadius="4"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+              <Setter TargetName="Frame" Property="Background" Value="{StaticResource SelectedBrush}"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="Frame" Property="Background" Value="{StaticResource SelectedBrush}"/>
+              <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
 
   <Style TargetType="{x:Type ListBox}">
