@@ -1,0 +1,17 @@
+CMNET crash breadcrumb (local-only, Gate 3.4)
+utc=2026-10-31T20:24:04.5661414Z
+source=self-test
+terminating=False
+app=CMNET 0.4.0-native
+core=не размечена (dev / без ldflags)
+os=Microsoft Windows NT 10.0.26200.0
+runtime=10.0.14
+baseDir=C:\Users\dimag\orca\workspaces\cmnet\cmnet-gate34-diagnostics\native\out-diag-fix\
+dataHint=%APPDATA%\cmnet (path omitted if it embeds secrets)
+---
+System.InvalidOperationException: core fault CMNET_IPC_TOKEN=[REDACTED] account_id=[REDACTED]
+---
+Gate 3.4 redaction: PEM private keys, Authorization/Bearer,
+CMNET_IPC_TOKEN / STRATZ / OPENDOTA / API keys, JSON token fields,
+JWT blobs, ≥32-char hex, labeled account_id / steam_id.
+Replacement marker: [REDACTED]

@@ -70,6 +70,7 @@ tmp-*
 # Native build and local visual QA
 native/obj/
 native/out/
+native/out-diag/
 native/dist/
 .artifacts/
 native/ui-snapshots/

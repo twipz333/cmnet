@@ -1,0 +1,18 @@
+PASS  redact-bearer-auth
+PASS  redact-ipc-env
+PASS  redact-stratz-env
+PASS  redact-opendota-env
+PASS  redact-json-token
+PASS  redact-yaml-token
+PASS  redact-jwt
+PASS  redact-hex-blob
+PASS  redact-account-labeled
+PASS  redact-account-json
+PASS  redact-pem-private
+PASS  redact-clean-passthrough
+PASS  ensure-layout
+PASS  readme
+PASS  breadcrumb-redacted
+PASS  evidence-sample-crash
+PASS  nsis-preserve-contract
+RESULT OK — Gate 3.4 diagnostics fixtures
