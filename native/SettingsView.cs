@@ -27,11 +27,17 @@ public sealed partial class NativeWindow
     private TextBlock? settingsSaveBanner;
     private TextBlock? settingsPathLine;
     private TextBlock? aboutFacts;
+    private TextBlock? migrateStatusText;
     private Button? saveSettingsButton;
     private Button? reloadSettingsButton;
     private Button? openDataFolderButton;
+    private Button? migrateRefreshButton;
+    private Button? migrateBackupButton;
+    private Button? migrateRunButton;
+    private Button? migrateRollbackButton;
     private string settingsTab = "app";
     private EvidenceKind lastSettingsEvidence = EvidenceKind.Ready;
+    private string? lastMigrateBackupPath;
     private bool settingsLoading;
     private string? settingsLoadError;
     private JsonObject? previewConfig;
@@ -105,6 +111,7 @@ public sealed partial class NativeWindow
         };
         settingsTabBar.Children.Add(SettingsTabButton("app", "Приложение"));
         settingsTabBar.Children.Add(SettingsTabButton("gsi", "GSI"));
+        settingsTabBar.Children.Add(SettingsTabButton("migrate", "Миграция"));
         settingsTabBar.Children.Add(SettingsTabButton("about", "О программе"));
         settingsTabBar.Children.Add(SettingsTabButton("deferred", "Вне объёма"));
         host.Children.Add(settingsTabBar);
@@ -155,17 +162,156 @@ public sealed partial class NativeWindow
             "about" => BuildAboutPane(),
             "deferred" => BuildDeferredPane(),
             "gsi" => BuildGsiPane(),
+            "migrate" => BuildMigratePane(),
             _ => BuildAppPaneShell()
         };
         if (id == "app" && configHost != null && configHost.Children.Count == 0 && !settingsLoading)
             _ = LoadSettingsAsync();
         if (id == "gsi")
             _ = RefreshGsiStatusAsync();
+        if (id == "migrate")
+            _ = RefreshMigrateStatusAsync();
         RefreshSettingsEvidence();
         if (saveSettingsButton != null)
             saveSettingsButton.Visibility = id == "app" ? Visibility.Visible : Visibility.Collapsed;
         if (reloadSettingsButton != null)
             reloadSettingsButton.Visibility = id == "app" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private UIElement BuildMigratePane()
+    {
+        var box = new StackPanel();
+        box.Children.Add(Text("ELECTRON → NATIVE", 10, FontWeights.Bold, muted));
+        box.Children.Add(Text(
+            "Честный статус папок данных, timestamped backup и откат. Ничего не выдумываем: только то, что лежит на диске. Не открывайте Electron и native на одной cmnet.db одновременно.",
+            12, color: muted));
+
+        migrateStatusText ??= new TextBlock();
+        migrateStatusText.Name = "MigrateStatusText";
+        migrateStatusText.FontSize = 13;
+        migrateStatusText.TextWrapping = TextWrapping.Wrap;
+        migrateStatusText.LineHeight = 22;
+        migrateStatusText.Margin = new Thickness(0, 14, 0, 0);
+        migrateStatusText.Text = "Читаю статус…";
+        // Tab rebuilds reparent the same TextBlock — detach first (WPF logical child rule).
+        if (migrateStatusText.Parent is Panel prevPanel)
+            prevPanel.Children.Remove(migrateStatusText);
+        else if (migrateStatusText.Parent is ContentControl prevCc)
+            prevCc.Content = null;
+        box.Children.Add(migrateStatusText);
+
+        var actions = new WrapPanel { Margin = new Thickness(0, 16, 0, 0) };
+        migrateRefreshButton = Btn("Обновить статус", RefreshMigrateStatusAsync, true);
+        migrateRefreshButton.Margin = new Thickness(0, 0, 8, 8);
+        System.Windows.Automation.AutomationProperties.SetName(migrateRefreshButton, "Обновить статус миграции");
+        actions.Children.Add(migrateRefreshButton);
+
+        migrateBackupButton = Btn("Показать команду backup", async () =>
+        {
+            var cmd = $"advisor migrate backup --from \"{core.DataDirectory}\" --to \"{core.DataDirectory}\"";
+            ShowSaveBanner("Закройте Electron и это окно, затем:\n" + cmd);
+            toast.Text = "Команда backup скопирована в баннер (CLI при закрытых клиентах)";
+            await Task.CompletedTask;
+        }, true);
+        migrateBackupButton.Margin = new Thickness(0, 0, 8, 8);
+        migrateBackupButton.ToolTip = "Пока ядро держит БД, backup только через CLI после закрытия приложения";
+        System.Windows.Automation.AutomationProperties.SetName(migrateBackupButton, "Показать команду backup");
+        actions.Children.Add(migrateBackupButton);
+
+        migrateRunButton = Btn("Показать команду migrate run", async () =>
+        {
+            var dest = DesktopSettings.DefaultDataDirectory();
+            var cmd = $"advisor migrate run --from \"{core.DataDirectory}\" --to \"{dest}\" --update-desktop";
+            ShowSaveBanner("Закройте Electron и это окно, затем:\n" + cmd);
+            toast.Text = "Команда migrate run в баннере";
+            await Task.CompletedTask;
+        }, true);
+        migrateRunButton.Margin = new Thickness(0, 0, 8, 8);
+        migrateRunButton.ToolTip = "advisor migrate run — backup + copy; не из живой сессии с открытой БД";
+        System.Windows.Automation.AutomationProperties.SetName(migrateRunButton, "Показать команду migrate run");
+        actions.Children.Add(migrateRunButton);
+
+        migrateRollbackButton = Btn("Показать команду rollback", async () =>
+        {
+            if (string.IsNullOrWhiteSpace(lastMigrateBackupPath))
+            {
+                toast.Text = "Нет backup — сначала advisor migrate backup при закрытых клиентах";
+                return;
+            }
+            var cmd = $"advisor migrate rollback --backup \"{lastMigrateBackupPath}\" --to \"{core.DataDirectory}\"";
+            ShowSaveBanner("Закройте Electron и это окно, затем:\n" + cmd);
+            toast.Text = "Команда rollback в баннере";
+            await Task.CompletedTask;
+        }, true);
+        migrateRollbackButton.Margin = new Thickness(0, 0, 8, 8);
+        migrateRollbackButton.ToolTip = "advisor migrate rollback из migration-backup/<stamp>";
+        System.Windows.Automation.AutomationProperties.SetName(migrateRollbackButton, "Показать команду rollback");
+        actions.Children.Add(migrateRollbackButton);
+        box.Children.Add(actions);
+
+        var cli = Text(
+            "CLI: advisor migrate status | backup | run --update-desktop | rollback --backup <path>\n" +
+            "Документация и демо: docs/_gate0/migration-2b-wip/NOTES.md",
+            11, color: muted);
+        cli.Margin = new Thickness(0, 18, 0, 0);
+        box.Children.Add(cli);
+        return Surface(box, new Thickness(0));
+    }
+
+    private async Task RefreshMigrateStatusAsync()
+    {
+        if (migrateStatusText == null) return;
+        migrateStatusText.Text = "Читаю статус…";
+        try
+        {
+            if (isVisualPreview)
+            {
+                migrateStatusText.Text =
+                    "SAMPLE · источник %APPDATA%\\cmnet\\data\n" +
+                    "SAMPLE · назначение то же (одна папка)\n" +
+                    "SAMPLE · ядро держит БД · backup (нет)\n" +
+                    "SAMPLE · совет: закройте Electron перед migrate run";
+                lastSettingsEvidence = EvidenceKind.Ready;
+                SetEvidenceBanner(settingsEvidenceBanner, EvidenceKind.Ready,
+                    "SAMPLE · миграция",
+                    "Превью не читает ваш cmnet.db и не запускает migrate.",
+                    forceShow: true);
+                return;
+            }
+            var st = DataMigrate.InspectFilesystem(core.DataDirectory, coreOnline);
+            migrateStatusText.Text = DataMigrate.FormatStatus(st);
+            lastMigrateBackupPath = st.Backups.Length > 0 ? st.Backups[0] : null;
+            if (st.NeedsMigrate)
+            {
+                lastSettingsEvidence = EvidenceKind.Partial;
+                SetEvidenceBanner(settingsEvidenceBanner, EvidenceKind.Partial,
+                    "Нужна миграция в native-папку",
+                    st.Advice, forceShow: true);
+            }
+            else if (st.Backups.Length == 0)
+            {
+                lastSettingsEvidence = EvidenceKind.Empty;
+                SetEvidenceBanner(settingsEvidenceBanner, EvidenceKind.Empty,
+                    "Backup ещё не создавался",
+                    st.Advice, forceShow: true);
+            }
+            else
+            {
+                lastSettingsEvidence = EvidenceKind.Ready;
+                SetEvidenceBanner(settingsEvidenceBanner, EvidenceKind.Ready,
+                    "Есть migration-backup",
+                    st.Advice, forceShow: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            migrateStatusText.Text = "Статус недоступен: " + ex.Message;
+            lastSettingsEvidence = EvidenceKind.Error;
+            SetEvidenceBanner(settingsEvidenceBanner, EvidenceKind.Error,
+                "Не удалось прочитать статус миграции",
+                ex.Message, forceShow: true);
+        }
+        await Task.CompletedTask;
     }
 
     private UIElement BuildAppPaneShell()

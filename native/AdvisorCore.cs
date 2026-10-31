@@ -65,6 +65,8 @@ public sealed class AdvisorCore : IAsyncDisposable
         var executable = Path.Combine(AppContext.BaseDirectory, "advisor.exe");
         if (!File.Exists(executable))
             throw new FileNotFoundException("Missing advisor.exe next to Cmnet.Native.exe. Install the complete native build.", executable);
+        // Refuse concurrent Electron/native use of the same SQLite file.
+        await DataMigrate.EnsureNotLockedAsync(DataDirectory);
         int port;
         using (var listener = new TcpListener(IPAddress.Loopback, 0))
         {

@@ -802,4 +802,49 @@ public sealed partial class NativeWindow
 
         toast.Text = "SAMPLE DATA · settings-" + scenario;
     }
+
+    /// <summary>
+    /// Gate 2.6 migration Settings tab fixtures. Outside geometry.json (CI Count==33).
+    /// </summary>
+    internal void LoadMigratePreviewScenario(string scenario)
+    {
+        coreOnline = true;
+        ApplyConnectionChrome("Go-ядро подключено");
+        settingsLoading = false;
+        settingsLoadError = null;
+        previewConfig = SampleSettingsConfig(true);
+        HideSaveBanner();
+        LoadVisualFixture("Настройки");
+        state!["meta"]!["previewOffline"] = false;
+        ShowSettingsTab("migrate");
+        if (migrateStatusText != null)
+        {
+            migrateStatusText.Text = scenario switch
+            {
+                "empty" => "SAMPLE · backup (нет)\nSAMPLE · одна папка · совет: advisor migrate backup",
+                "partial" => "SAMPLE · нужен copy Electron→native\nSAMPLE · backup (нет)",
+                "error" => "SAMPLE · статус недоступен (fixture)",
+                "offline" => "SAMPLE · ядро офлайн · папки с диска",
+                _ => "SAMPLE · источник %APPDATA%\\cmnet\\data\nSAMPLE · есть migration-backup\\…\nSAMPLE · закройте Electron перед CLI"
+            };
+        }
+        lastSettingsEvidence = scenario switch
+        {
+            "empty" => EvidenceKind.Empty,
+            "partial" => EvidenceKind.Partial,
+            "error" => EvidenceKind.Error,
+            "offline" => EvidenceKind.Offline,
+            _ => EvidenceKind.Ready
+        };
+        if (scenario == "offline")
+        {
+            coreOnline = false;
+            ApplyConnectionChrome("SAMPLE · офлайн");
+        }
+        SetEvidenceBanner(settingsEvidenceBanner, lastSettingsEvidence,
+            "SAMPLE · миграция · " + scenario,
+            "Превью не читает ваш cmnet.db и не запускает migrate.",
+            forceShow: true);
+        toast.Text = "SAMPLE DATA · migration-" + scenario;
+    }
 }
