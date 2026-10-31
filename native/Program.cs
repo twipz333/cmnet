@@ -66,13 +66,16 @@ public static class Program
                 {
                     window.LoadVisualFixture(screen);
                     window.UpdateLayout();
-                    window.WarmPreviewArtwork();
+                    // One full CDN/cache fill per screen; size/scale variants only settle.
+                    window.WarmPreviewArtwork(screen == "Драфт" ? 25 : 15);
                     var prefix = screen == "Разведка" ? "scout" : "draft";
                     foreach (var size in new[] { (1920,1080), (1600,900), (1440,900), (1366,768), (1280,720) })
                     foreach (var scale in new[] { 1d, 1.25d, 1.5d })
                     {
                         var filename = $"{prefix}-{size.Item1}x{size.Item2}-layout{scale * 100:0}.png";
-                        reports.Add(window.CaptureVisualPreview(Path.Combine(destination, filename), size.Item1, size.Item2, scale));
+                        reports.Add(window.CaptureVisualPreview(
+                            Path.Combine(destination, filename), size.Item1, size.Item2, scale,
+                            artworkWarmSeconds: 0));
                         if (size == (1440,900) && scale == 1) File.Copy(Path.Combine(destination, filename), Path.Combine(destination, prefix + ".png"), true);
                     }
                 }
@@ -80,7 +83,9 @@ public static class Program
                 foreach (var scenario in new[] { "empty", "loading", "error" })
                 {
                     window.LoadPreviewScenario(scenario);
-                    reports.Add(window.CaptureVisualPreview(Path.Combine(destination, "scout-" + scenario + ".png")));
+                    reports.Add(window.CaptureVisualPreview(
+                        Path.Combine(destination, "scout-" + scenario + ".png"),
+                        artworkWarmSeconds: 10));
                 }
                 // Gate1 close-out honesty PNGs are opt-in (--capture-honesty). They are
                 // review evidence only and must NOT enter geometry.json (CI Count==33).
@@ -91,12 +96,16 @@ public static class Program
                     foreach (var scenario in new[] { "partial", "stale", "offline" })
                     {
                         window.LoadPreviewScenario(scenario);
-                        window.CaptureVisualPreview(Path.Combine(destination, "scout-" + scenario + ".png"));
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, "scout-" + scenario + ".png"),
+                            artworkWarmSeconds: 10);
                     }
                     foreach (var scenario in new[] { "empty", "loading", "error", "partial", "stale", "offline" })
                     {
                         window.LoadDraftPreviewScenario(scenario);
-                        window.CaptureVisualPreview(Path.Combine(destination, "draft-" + scenario + ".png"));
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, "draft-" + scenario + ".png"),
+                            artworkWarmSeconds: 15);
                     }
                 }
                 File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
