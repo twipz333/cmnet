@@ -128,9 +128,15 @@ func newLegacyDB(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("create legacy db: %v", err)
 	}
-	defer db.Close()
 	if _, err := db.Exec(legacySchema); err != nil {
+		_ = releaseDB(db)
 		t.Fatalf("apply legacy schema: %v", err)
+	}
+	// Fold WAL before close — same Windows TempDir constraint as Store.Close.
+	_, _ = db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	_, _ = db.Exec(`PRAGMA journal_mode=DELETE`)
+	if err := releaseDB(db); err != nil {
+		t.Fatalf("close legacy db: %v", err)
 	}
 	return path
 }
