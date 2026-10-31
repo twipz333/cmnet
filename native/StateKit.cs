@@ -26,6 +26,7 @@ public sealed partial class NativeWindow
 {
     private Border? scoutEvidenceBanner;
     private Border? draftEvidenceBanner;
+    // dataEvidenceBanner lives with DataView fields; resolved here.
     private bool coreOnline = true;
     private string connectionMessage = "●  Соединение…";
     private EvidenceKind lastScoutEvidence = EvidenceKind.Ready;
@@ -263,6 +264,86 @@ public sealed partial class NativeWindow
         return EvidenceKind.Ready;
     }
 
+    private EvidenceKind ResolveDataEvidence(out string title, out string detail)
+    {
+        title = "";
+        detail = "";
+        if (!coreOnline)
+        {
+            title = "Ядро недоступно";
+            detail = "Статус sync/train и корпус не обновляются. Показанное — локальный снимок или SAMPLE, не живой успех.";
+            return EvidenceKind.Offline;
+        }
+
+        var active = state?.At("ops", "active").Items()
+            .Where(j => j.At("kind").S() is "sync" or "train")
+            .ToList() ?? [];
+        if (active.Count > 0)
+        {
+            title = "Идёт работа с данными";
+            detail = string.Join(" · ", active.Select(j =>
+                JobKindLabel(j.At("kind").S()) + ": " + j.At("lastLine").S(j.At("phase").S("ожидание"))));
+            return EvidenceKind.Loading;
+        }
+
+        var recentFail = state?.At("ops", "recent").Items()
+            .FirstOrDefault(j => (j.At("kind").S() is "sync" or "train") && j.At("state").S() == "failed");
+        if (recentFail != null && state?.At("meta", "draftReady").B() != true)
+        {
+            title = "Последняя задача завершилась ошибкой";
+            detail = recentFail.At("error").S("Смотри журнал задачи. Повтор — кнопкой «Повторить», без выдуманных метрик.");
+            return EvidenceKind.Error;
+        }
+
+        var draftReady = state?.At("meta", "draftReady").B() == true;
+        if (!draftReady)
+        {
+            var err = state?.At("meta", "draftError").S();
+            if (!string.IsNullOrWhiteSpace(err))
+            {
+                title = "Модель недоступна";
+                detail = err;
+                return EvidenceKind.Error;
+            }
+            if (dataCorpusMatches == 0)
+            {
+                title = "Корпус пуст";
+                detail = "Нет сохранённых матчей и нет обученной модели. Это пустое состояние, не готовность.";
+                return EvidenceKind.Empty;
+            }
+            title = "Модель ещё не обучена";
+            detail = dataCorpusMatches > 0
+                ? $"В кэше ~{dataCorpusMatches:N0} матчей, но бандл не готов. Запусти обучение."
+                : "Собери матчи, затем обучи модель. Пустой статус — не «всё хорошо».";
+            return dataCorpusMatches > 0 ? EvidenceKind.Partial : EvidenceKind.Empty;
+        }
+
+        if (state?.At("modelUpdatePending").B() == true)
+        {
+            title = "Есть более новая модель";
+            detail = "Обучение завершилось; текущий драфт может ещё держать прежний бандл до следующего /api/new-draft.";
+            return EvidenceKind.Stale;
+        }
+
+        if (recentFail != null)
+        {
+            title = "Модель есть, последняя задача с ошибкой";
+            detail = recentFail.At("error").S("Частичный статус: бандл на месте, но недавний sync/train упал.");
+            return EvidenceKind.Partial;
+        }
+
+        if (dataCorpusMatches == 0)
+        {
+            title = "Модель есть, корпус не посчитан";
+            detail = "Метрики кэша пусты или ещё не загружены. Не принимай «—» за нулевой успех сбора.";
+            return EvidenceKind.Partial;
+        }
+
+        title = "Данные в порядке";
+        detail = $"Модель готова · в окне корпуса ~{dataCorpusMatches:N0} матчей.";
+        return EvidenceKind.Ready;
+    }
+
     private void RefreshEvidenceBanners(bool forceShowReady = false)
     {
         if (page == "Разведка" && scoutEvidenceBanner != null)
@@ -275,6 +356,11 @@ public sealed partial class NativeWindow
             lastDraftEvidence = ResolveDraftEvidence(out var title, out var detail);
             SetEvidenceBanner(draftEvidenceBanner, lastDraftEvidence, title, detail, forceShowReady);
             EnsureDraftRecPlaceholder(lastDraftEvidence, title, detail);
+        }
+        if (page == "Данные" && dataEvidenceBanner != null)
+        {
+            lastDataEvidence = ResolveDataEvidence(out var title, out var detail);
+            SetEvidenceBanner(dataEvidenceBanner, lastDataEvidence, title, detail, forceShowReady);
         }
     }
 

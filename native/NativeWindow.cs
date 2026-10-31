@@ -91,9 +91,11 @@ public sealed partial class NativeWindow : Window
     private StackPanel? configHost;
     private readonly List<ConfigField> configEditors = new();
     private readonly TextBlock toast = new();
+    private readonly bool isVisualPreview;
 
     public NativeWindow(string? initialDataDirectory = null, bool visualPreview = false)
     {
+        isVisualPreview = visualPreview;
         artwork = new HeroArtwork(() => visualPreview ? Path.Combine(Path.GetTempPath(), "cmnet-visual-fixture") : core.DataDirectory);
         Title = "CMNET · Match Intelligence";
         Width = 1460;
@@ -337,12 +339,7 @@ public sealed partial class NativeWindow : Window
             RefreshEvidenceBanners();
         }
         if (page == "Драфт") UpdateDraft();
-        if (page == "Данные" && dataActivity != null)
-        {
-            var jobs = state.At("ops","active").Items().ToList();
-            dataActivity.Text = jobs.Count == 0 ? "Активных заданий нет" :
-                string.Join("\n", jobs.Select(j => $"{j.At("kind").S()} · {j.At("lastLine").S()}"));
-        }
+        if (page == "Данные") UpdateDataView();
         if (page == "Друзья" && shareStatus != null)
             shareStatus.Text = $"Режим: {state.At("share","live").S("—")}  ·  Подключений: {state.At("share","followers").I()}  ·  Код: {state.At("share","host","code").S("—")}";
     }
@@ -1100,93 +1097,6 @@ public sealed partial class NativeWindow : Window
         RefreshSelectedHeroDetail();
     }
 
-    private UIElement BuildDataView()
-    {
-        corpusMatches = new TextBlock();
-        corpusDrafts = new TextBlock();
-        corpusCoverage = new TextBlock();
-        corpusHeroes = new TextBlock();
-        var host = new StackPanel();
-        host.Children.Add(Text("Данные и обучение модели", 24, FontWeights.Bold));
-        var note = Text("Следи за корпусом матчей, запускай синхронизацию и обучение без ожидания на главном экране.", 13, color: muted);
-        note.Margin = new Thickness(0, 7, 0, 20);
-        host.Children.Add(note);
-
-        var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 22) };
-        var sync = Btn("↻  Собрать матчи", async () => await RunAction("/api/ops/sync"));
-        sync.Margin = new Thickness(0, 0, 8, 8);
-        actions.Children.Add(sync);
-        var train = Btn("◇  Обучить модель", async () => await RunAction("/api/ops/train"));
-        train.Margin = new Thickness(0, 0, 8, 8);
-        actions.Children.Add(train);
-        actions.Children.Add(Btn("Обновить метрики", LoadDataAsync, true));
-        host.Children.Add(actions);
-
-        var tiles = new WrapPanel();
-        tiles.Children.Add(MetricTile("Всего матчей", corpusMatches, accent));
-        tiles.Children.Add(MetricTile("Драфтов CM", corpusDrafts, gold));
-        tiles.Children.Add(MetricTile("С позициями", corpusCoverage, good));
-        tiles.Children.Add(MetricTile("Героев", corpusHeroes, muted));
-        host.Children.Add(tiles);
-
-        Header(host, "Очередь задач");
-        var job = Surface(Stack(
-            Text("АКТИВНОСТЬ СБОРЩИКА", 10, FontWeights.Bold, muted),
-            Text("Процесс выполняется локально, в Go-ядре", 12, color: muted)
-        ), new Thickness(0, 0, 0, 12));
-        host.Children.Add(job);
-        dataActivity = Text("Активных заданий нет", 13, color: accent);
-        var activityBox = new Border { Child = dataActivity, Background = ThemeBrush("RaisedBrush"),
-            BorderBrush = ThemeBrush("PrimaryBrush"), BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10), Padding = new Thickness(18, 15, 18, 15) };
-        host.Children.Add(activityBox);
-
-        Header(host, "Популярные герои в корпусе");
-        var heading = Text("Топ пиков по сохранённым матчам", 12, color: muted);
-        heading.Margin = new Thickness(0, 0, 0, 10);
-        host.Children.Add(heading);
-        var top = new ListBox { Name = "CorpusPicks", MaxHeight = 370, MinHeight = 120 };
-        VirtualizingStackPanel.SetIsVirtualizing(top, true);
-        host.Children.Add(top);
-        return Scroll(host);
-    }
-
-    private async Task LoadDataAsync()
-    {
-        if (page != "Данные" || core.BaseUri == null) return;
-        try
-        {
-            var result = await core.GetAsync("/api/corpus");
-            var corpus = result.At("corpus");
-            if (corpus == null)
-            {
-                toast.Text = result.At("error").S("Корпус пока недоступен");
-                return;
-            }
-            if (page != "Данные") return; // stale response after navigation
-            corpusMatches.Text = corpus.At("matches").L().ToString("N0");
-            corpusDrafts.Text = corpus.At("cmDrafts").L().ToString("N0");
-            corpusCoverage.Text = corpus.At("withPositions").L().ToString("N0");
-            corpusHeroes.Text = corpus.At("heroes").L().ToString("N0");
-            var top = FindNamedList(body.Content as DependencyObject, "CorpusPicks");
-            if (top != null)
-                top.ItemsSource = corpus.At("topPicks").Items().Take(12)
-                    .Select((h, i) => $"{i + 1:D2}    {h.At("name").S("Герой")}    ·    {h.At("count").L():N0} пиков")
-                    .ToList();
-        }
-        catch (Exception ex)
-        {
-            // A slow corpus refresh from a previous page must not leave an
-            // unrelated error in the permanent footer of another view.
-            if (page == "Данные")
-            {
-                toast.Text = ex is TimeoutException
-                    ? "Данные временно заняты. Повтори обновление метрик."
-                    : "Корпус: " + ex.Message;
-            }
-        }
-    }
-
     private static ListBox? FindNamedList(DependencyObject? node, string name)
     {
         if (node == null) return null;
@@ -1425,6 +1335,11 @@ public sealed partial class NativeWindow : Window
                  tacticalInsights == null ||
                  scoutedPlayers == null || scoutDetails == null))
                 throw new InvalidOperationException("Scouting overview or detail drill-down missing.");
+            if (target == "Данные" &&
+                (dataEvidenceBanner == null || syncDataButton == null ||
+                 trainDataButton == null || cancelDataButton == null ||
+                 dataJobsHost == null || dataLogList == null || dataTopPicks == null))
+                throw new InvalidOperationException("Data maintain surface controls missing.");
         }
     }
 

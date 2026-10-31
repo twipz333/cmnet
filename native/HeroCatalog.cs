@@ -11,6 +11,11 @@ internal sealed class HeroCatalog : ListBox
     private int[] heroes = [];
     private Func<int, Button>? createTile;
     private int columns = 1;
+    // --capture-ui size/scale matrix resizes the window repeatedly. Rebuilding
+    // rows clears Image.Source and re-queues CDN binds; on windows-latest that
+    // floods the dispatcher and blows the 180s WaitForExit. Freeze after the
+    // per-screen artwork warm so geometry stays Count==33 without re-warm cost.
+    internal bool FreezeColumnLayout { get; set; }
 
     public HeroCatalog()
     {
@@ -24,6 +29,7 @@ internal sealed class HeroCatalog : ListBox
         KeyboardNavigation.SetDirectionalNavigation(this, KeyboardNavigationMode.Contained);
         SizeChanged += (_, _) =>
         {
+            if (FreezeColumnLayout) return;
             var next = Math.Max(1, (int)((ActualWidth - 18) / 75));
             if (next == columns) return;
             columns = next;
