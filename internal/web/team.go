@@ -2,8 +2,11 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
+	"cmnet/internal/scout"
 	"cmnet/internal/session"
 )
 
@@ -59,11 +62,23 @@ func (s *Server) setSeat(r *http.Request) (string, error) {
 		Side      string `json:"side"`
 		Position  int    `json:"position"`
 		AccountID int64  `json:"accountId"`
+		// Ref accepts a raw Steam/OpenDota/STRATZ URL or vanity
+		// (steamcommunity.com/id/…). When set, it overrides accountId after
+		// ResolveAccountID — same path scout already uses for paste fields.
+		Ref string `json:"ref"`
 	}
 	if err := decode(r, &req); err != nil {
 		return "", err
 	}
-	t, err := s.shell.SetSeat(req.Side, req.Position, req.AccountID)
+	accountID := req.AccountID
+	if ref := strings.TrimSpace(req.Ref); ref != "" {
+		id, err := scout.ResolveAccountID(r.Context(), nil, ref)
+		if err != nil {
+			return "", fmt.Errorf("не удалось распознать игрока: %w", err)
+		}
+		accountID = id
+	}
+	t, err := s.shell.SetSeat(req.Side, req.Position, accountID)
 	if err != nil {
 		return "", err
 	}
@@ -76,7 +91,7 @@ func (s *Server) setSeat(r *http.Request) (string, error) {
 		pinSide(sess, req.Side, *seats)
 	}
 	s.shareRefresh()
-	if req.AccountID == 0 {
+	if accountID == 0 {
 		return "место освобождено", nil
 	}
 	return "состав обновлён", nil
