@@ -1,0 +1,6 @@
+# Test-only private key — never commit. Public PEM + signed fixtures are enough for CI.
+fixtures/test-private.pem
+*.partial
+capture-error.txt
+capture.err.txt
+capture.out.txt

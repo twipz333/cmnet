@@ -1,0 +1,17 @@
+{
+  "publishedUtc": "2026-10-31T20:00:00Z",
+  "channel": "native",
+  "version": "0.4.1",
+  "minClientVersion": "0.4.0",
+  "released": false,
+  "informational": "0.4.1-native",
+  "schema": "cmnet-native-update/v1",
+  "artifact": {
+    "sizeBytes": 51219242,
+    "kind": "nsis-setup",
+    "fileName": "cmnet-native-setup-0.4.1.exe",
+    "url": "https://example.invalid/cmnet/native/cmnet-native-setup-0.4.1.exe",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "notes": "Fixture unsigned manifest — apply must stay fail-closed."
+}

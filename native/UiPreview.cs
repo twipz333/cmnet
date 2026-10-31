@@ -787,10 +787,51 @@ public sealed partial class NativeWindow
         else if (scenario == "about")
         {
             previewConfig = SampleSettingsConfig(true);
+            lastUpdateCheck = null;
             ShowSettingsTab("about");
             RefreshAboutFacts();
             RefreshSettingsEvidence();
             toast.Text = "SAMPLE DATA · naming-about · " + ProductIdentity.AppVersionLabel();
+            return;
+        }
+        else if (scenario is "about-updates-unsigned" or "updates-unsigned")
+        {
+            previewConfig = SampleSettingsConfig(true);
+            lastUpdateCheck = UpdateChannel.Evaluate(
+                "0.4.0-native",
+                UpdateManifest.Parse("""
+                    {
+                      "schema": "cmnet-native-update/v1",
+                      "channel": "native",
+                      "version": "0.4.1",
+                      "informational": "0.4.1-native",
+                      "released": false,
+                      "artifact": {
+                        "kind": "nsis-setup",
+                        "fileName": "cmnet-native-setup-0.4.1.exe",
+                        "url": "https://example.invalid/cmnet-native-setup-0.4.1.exe",
+                        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "sizeBytes": 1
+                      }
+                    }
+                    """),
+                trust: null);
+            ShowSettingsTab("about");
+            RefreshAboutFacts();
+            RefreshUpdateStatusUi();
+            RefreshSettingsEvidence();
+            toast.Text = "SAMPLE DATA · about-updates-unsigned";
+            return;
+        }
+        else if (scenario is "about-updates-unavailable" or "updates-unavailable")
+        {
+            previewConfig = SampleSettingsConfig(true);
+            lastUpdateCheck = UpdateChannel.Evaluate("0.4.0-native", null, trust: null);
+            ShowSettingsTab("about");
+            RefreshAboutFacts();
+            RefreshUpdateStatusUi();
+            RefreshSettingsEvidence();
+            toast.Text = "SAMPLE DATA · about-updates-unavailable";
             return;
         }
         else if (scenario == "deferred")

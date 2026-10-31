@@ -38,7 +38,7 @@ Artifacts (distinct from Electron `cmnet-setup-*.exe`):
 - `native/dist/cmnet-native-setup-0.4.0.exe` — NSIS per-user installer + Start Menu/Desktop «CMNET»
 - `native/dist/cmnet-native-0.4.0-win-x64.zip` — portable fallback
 
-End users need neither Go nor .NET SDK. Package is **unsigned**; signing/update channel is Gate 3.3. Not Released. Electron `desktop.yml` / v0.3.x channel is unchanged.
+End users need neither Go nor .NET SDK. Package is **unsigned**; Gate 3.3 adds a fail-closed native update *check* (manifest + optional RSA trust). Not Released. Electron `desktop.yml` / v0.3.x channel is unchanged.
 
 ## Implemented in this preview
 

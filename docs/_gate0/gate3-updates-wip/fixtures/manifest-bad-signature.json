@@ -1,0 +1,22 @@
+{
+  "schema": "cmnet-native-update/v1",
+  "channel": "native",
+  "version": "0.4.1",
+  "informational": "0.4.1-native",
+  "released": false,
+  "publishedUtc": "2026-10-31T20:00:00Z",
+  "minClientVersion": "0.4.0",
+  "notes": "Fixture signed with test RSA key — NOT production trust.",
+  "artifact": {
+    "kind": "nsis-setup",
+    "fileName": "cmnet-native-setup-0.4.1.exe",
+    "url": "https://example.invalid/cmnet/native/cmnet-native-setup-0.4.1.exe",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sizeBytes": 51219242
+  },
+  "signature": {
+    "alg": "rsa-sha256",
+    "keyId": "cmnet-native-test-2026",
+    "value": "DAFsiMRJAbs0H0BErFTGtaMk/bLICUOwokpkXDL+tLdwCALc1FB6LAdz+3BCO/RZP0+4QXKI0esIyQtL8UOR99AQNF8hC49CNMVHi/d9xQq3VNKzNmO3gholUWZ/Bn7geH06x2tuxWwcTMUJ9oCuLe8xGQ651v2Hkme4F9USOBiJAwXY1VubAM1kTN2Pz0HGaAohFIKVtluITDUoBG56jbwldcA40VNZ3oV9ttKJ00Jok96EndWst9tZEsclKYUEVWO/SL0woAR/DydcPuDKxWGpWwdglsn3q7fhh6V3b8w4CMO7SD7/OQbZ8PBBu5RA7hlNd+4LyqrTFak7KfKH3g=="
+  }
+}
