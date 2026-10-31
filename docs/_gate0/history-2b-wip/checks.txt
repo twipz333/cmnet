@@ -1,0 +1,2 @@
+Gate 2.4 History-only capture (--capture-history-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33).
+Gate 2.4 History kit (--capture-history): history ready/empty/partial/loading/error/offline/detail (outside geometry.json).

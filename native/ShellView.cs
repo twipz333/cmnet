@@ -120,6 +120,7 @@ public sealed partial class NativeWindow
             sidebar.Children.Add(slot);
         }
 
+        // Flat 3B rail: Scout/Draft (match) → Data/History/Settings/Friends (maintain).
         AddNavigation("Разведка", "◎", "Ctrl+1");
         AddNavigation("Драфт", "◇", "Ctrl+2");
         sidebar.Children.Add(new Border {
@@ -127,8 +128,9 @@ public sealed partial class NativeWindow
             Margin = new Thickness(10, 10, 10, 10)
         });
         AddNavigation("Данные", "▤", "Ctrl+3");
-        AddNavigation("Настройки", "⚙", "Ctrl+4");
-        AddNavigation("Друзья", "♧", "Ctrl+5");
+        AddNavigation("История", "☰", "Ctrl+4");
+        AddNavigation("Настройки", "⚙", "Ctrl+5");
+        AddNavigation("Друзья", "♧", "Ctrl+6");
 
         sidebar.Children.Add(new Border {
             Height = 1, Background = border,
@@ -136,7 +138,7 @@ public sealed partial class NativeWindow
         });
         var tip = new StackPanel();
         tip.Children.Add(Text("GO CORE · ЛОКАЛЬНО", 9, FontWeights.Bold, accent));
-        var tipText = Text("Без облака\nCtrl+1…5", 10, color: muted);
+        var tipText = Text("Без облака\nCtrl+1…6", 10, color: muted);
         tipText.Margin = new Thickness(0, 8, 0, 0);
         tip.Children.Add(tipText);
         var tipCard = new Border {
@@ -189,12 +191,26 @@ public sealed partial class NativeWindow
         layout.SizeChanged += (_, _) =>
         {
             bool compact = layout.ActualWidth < 1000;
-            content.ColumnDefinitions[0].Width = top.ColumnDefinitions[0].Width = new GridLength(compact ? 64 : 132);
+            if (content.ColumnDefinitions.Count > 0)
+                content.ColumnDefinitions[0].Width = new GridLength(compact ? 64 : 132);
+            if (top.ColumnDefinitions.Count > 0)
+                top.ColumnDefinitions[0].Width = new GridLength(compact ? 64 : 132);
             wordmark.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
             tipCard.Visibility = compact || layout.ActualHeight < 650 ? Visibility.Collapsed : Visibility.Visible;
-            var glyphs = new[] { "◎", "◇", "▤", "⚙", "♧" };
-            int i = 0;
-            foreach (var pair in navigation) pair.Value.Content = compact ? glyphs[i++] : glyphs[i++] + "    " + pair.Key;
+            var glyphByPage = new Dictionary<string, string>
+            {
+                ["Разведка"] = "◎",
+                ["Драфт"] = "◇",
+                ["Данные"] = "▤",
+                ["История"] = "☰",
+                ["Настройки"] = "⚙",
+                ["Друзья"] = "♧"
+            };
+            foreach (var pair in navigation)
+            {
+                if (!glyphByPage.TryGetValue(pair.Key, out var glyph)) glyph = "·";
+                pair.Value.Content = compact ? glyph : glyph + "    " + pair.Key;
+            }
             subtitle.Visibility = layout.ActualHeight < 600 ? Visibility.Collapsed : Visibility.Visible;
         };
     }
