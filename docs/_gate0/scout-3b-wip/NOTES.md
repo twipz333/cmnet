@@ -28,10 +28,11 @@ When `scoutStatus` is `error` or `stale` but prior `topHeroes` remain, opponent 
 
 ## Remaining gaps (honest)
 
-1. **Not pixel-identical to the mock** — sidebar glyphs, metric icons, and bottom full-width player strip from the board are approximated (side split kept for viewport acceptance at 1280@150%).
+1. **Not pixel-identical to the mock** — sidebar glyphs, metric icons, and bottom full-width player strip from the board are approximated (side split kept for viewport acceptance at 1280@150%). **Deferred** in Gate 1 close-out (#38) — craft polish.
 2. **“Опасные пересечения” ≠ invented combos** — only shared heroes across pools; mock-style duo names are not fabricated.
-3. **“Рекомендованный бан” is observational** (≥12 games in confirmed pools), not a draft-model ban score.
-4. **Cancel** is present and API-backed; not proven under a live long scout job in this PR (fixture shows disabled when idle).
-5. **Draft IA** intentionally untouched beyond shared tokens (parallel Gate 1 Draft issue).
+3. ~~**“Рекомендованный бан”**~~ → **«Наблюдаемый бан-кандидат»** (≥12 games in confirmed pools), not a draft-model ban score. **Fixed** in #38.
+4. **Cancel** is present and API-backed; not proven under a live long scout job in this PR (fixture shows disabled when idle). **Deferred** — live QA.
+5. **Draft IA** intentionally untouched beyond shared tokens (parallel Gate 1 Draft issue). **Closed** by #37.
 6. **Independent review** landed in `REVIEW.md` (ACCEPT_WITH_GAPS); P1 honesty labeling addressed in this follow-up — still needs user visual OK before merge.
 7. Full DPI matrix PNGs in this folder are local WIP; git keeps a small sample via `.gitignore` exceptions.
+8. **Whole-app state kit** (empty/loading/offline/partial/error/stale banners) — **Fixed** in Gate 1 close-out; evidence `docs/_gate0/gate1-closeout/`.

@@ -427,18 +427,64 @@ public sealed partial class NativeWindow
     internal void LoadPreviewScenario(string scenario)
     {
         LoadVisualFixture("Разведка");
-        if (scenario == "empty") {
-            state!["team"]!["enemy"] = new JsonArray(); stats!["stats"]!["enemyPlayers"] = new JsonArray(); selectedScoutId = 0;
+        // Reset connection chrome; scenarios may flip offline.
+        state!["meta"]!["previewOffline"] = false;
+        coreOnline = true;
+        ApplyConnectionChrome("Go-ядро подключено");
+
+        if (scenario == "empty")
+        {
+            state!["team"]!["enemy"] = new JsonArray();
+            stats!["stats"]!["enemyPlayers"] = new JsonArray();
+            selectedScoutId = 0;
         }
-        else if (scenario == "loading") state!["ops"]!["active"] = new JsonArray(new JsonObject { ["kind"] = "scout", ["lastLine"] = "SAMPLE · 2 / 5 · ожидание источника" });
-        else if (scenario == "error") foreach (var player in stats!["stats"]!["enemyPlayers"]!.AsArray()) player!["scoutStatus"] = "error";
+        else if (scenario == "loading")
+        {
+            state!["ops"]!["active"] = new JsonArray(new JsonObject
+            {
+                ["kind"] = "scout",
+                ["lastLine"] = "SAMPLE · 2 / 5 · ожидание источника"
+            });
+        }
+        else if (scenario == "error")
+        {
+            foreach (var player in stats!["stats"]!["enemyPlayers"]!.AsArray())
+                player!["scoutStatus"] = "error";
+        }
+        else if (scenario == "partial")
+        {
+            var players = stats!["stats"]!["enemyPlayers"]!.AsArray();
+            if (players.Count > 0) players[0]!["scoutStatus"] = "ok";
+            if (players.Count > 1) players[1]!["scoutStatus"] = "no_stats";
+            if (players.Count > 2) players[2]!["scoutStatus"] = "pending";
+            if (players.Count > 3) players[3]!["scoutStatus"] = "ok";
+            if (players.Count > 4) players[4]!["scoutStatus"] = "unresolved";
+        }
+        else if (scenario == "stale")
+        {
+            foreach (var player in stats!["stats"]!["enemyPlayers"]!.AsArray())
+                player!["scoutStatus"] = "stale";
+        }
+        else if (scenario == "offline")
+        {
+            state!["meta"]!["previewOffline"] = true;
+            coreOnline = false;
+            ApplyConnectionChrome("SAMPLE · офлайн");
+        }
         scoutVersion = ""; scoutSignalKey = "";
-        UpdateLiveState(); RenderScoutDetails(); toast.Text = "SAMPLE DATA · " + scenario;
+        UpdateLiveState(); RenderScoutDetails();
+        toast.Text = "SAMPLE DATA · " + scenario;
     }
 
     internal void LoadDraftPreviewScenario(string scenario)
     {
         LoadVisualFixture("Драфт");
+        state!["meta"]!["previewOffline"] = false;
+        state["meta"]!.AsObject().Remove("draftError");
+        state["modelUpdatePending"] = false;
+        coreOnline = true;
+        ApplyConnectionChrome("Go-ядро подключено");
+
         if (scenario == "empty")
         {
             state!["board"] = new JsonObject
@@ -451,6 +497,7 @@ public sealed partial class NativeWindow
             state["result"]!["recs"] = new JsonArray();
             state["team"]!["enemy"] = new JsonArray();
             stats!["stats"]!["enemyPlayers"] = new JsonArray();
+            state["meta"]!.AsObject().Remove("previewDraftTimerSec");
             selectedHeroId = 0;
         }
         else if (scenario == "loading")
@@ -470,7 +517,30 @@ public sealed partial class NativeWindow
             state["result"]!["recs"] = new JsonArray();
             selectedHeroId = 0;
         }
-        draftBoardKey = recommendationKey = heroCatalogKey = tacticalSelectedKey = draftIntelKey = "";
+        else if (scenario == "partial")
+        {
+            // Keep draftReady + board; degrade enemy scout only.
+            var players = stats!["stats"]!["enemyPlayers"]!.AsArray();
+            if (players.Count > 1) players[1]!["scoutStatus"] = "no_stats";
+            if (players.Count > 2) players[2]!["scoutStatus"] = "error";
+            if (players.Count > 4) players[4]!["scoutStatus"] = "pending";
+        }
+        else if (scenario == "stale")
+        {
+            state!["modelUpdatePending"] = true;
+        }
+        else if (scenario == "offline")
+        {
+            state!["meta"]!["previewOffline"] = true;
+            coreOnline = false;
+            ApplyConnectionChrome("SAMPLE · офлайн");
+            state["result"]!["recs"] = new JsonArray();
+            selectedHeroId = 0;
+        }
+        // Force list rebuild: empty recKey "" would otherwise equal a cleared
+        // recommendationKey and leave the previous fixture rows on screen.
+        draftBoardKey = heroCatalogKey = tacticalSelectedKey = draftIntelKey = "";
+        recommendationKey = "scenario-reset";
         UpdateDraft();
         toast.Text = "SAMPLE DATA · draft-" + scenario;
     }

@@ -1,0 +1,4 @@
+PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.
+DPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.
+Actual WPF SAMPLE DATA fixtures; no Go process or user database.
+Gate1 state kit: empty/loading/error/partial/stale/offline captured for Scout+Draft (extra scenarios outside geometry.json).

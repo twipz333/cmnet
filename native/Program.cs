@@ -73,21 +73,28 @@ public static class Program
                         if (size == (1440,900) && scale == 1) File.Copy(Path.Combine(destination, filename), Path.Combine(destination, prefix + ".png"), true);
                     }
                 }
+                // Historical geometry matrix keeps scout empty/loading/error (33 entries total).
                 foreach (var scenario in new[] { "empty", "loading", "error" })
                 {
                     window.LoadPreviewScenario(scenario);
                     reports.Add(window.CaptureVisualPreview(Path.Combine(destination, "scout-" + scenario + ".png")));
                 }
+                // Gate1 close-out evidence only — NOT counted in geometry.json.
+                foreach (var scenario in new[] { "partial", "stale", "offline" })
+                {
+                    window.LoadPreviewScenario(scenario);
+                    window.CaptureVisualPreview(Path.Combine(destination, "scout-" + scenario + ".png"));
+                }
                 // Draft honesty fixtures for Gate1 review evidence only. Do NOT add them to
                 // geometry.json — native.yml requires the historical 33-entry matrix
                 // (Draft×5×3 + Scout×5×3 + scout empty/loading/error).
-                foreach (var scenario in new[] { "empty", "loading", "error" })
+                foreach (var scenario in new[] { "empty", "loading", "error", "partial", "stale", "offline" })
                 {
                     window.LoadDraftPreviewScenario(scenario);
                     window.CaptureVisualPreview(Path.Combine(destination, "draft-" + scenario + ".png"));
                 }
                 File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                File.WriteAllText(Path.Combine(destination, "checks.txt"), "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.");
+                File.WriteAllText(Path.Combine(destination, "checks.txt"), "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\nGate1 state kit: empty/loading/error/partial/stale/offline captured for Scout+Draft (extra scenarios outside geometry.json).");
             }
             catch (Exception ex)
             {
