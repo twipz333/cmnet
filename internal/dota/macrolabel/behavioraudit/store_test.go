@@ -4,12 +4,18 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"cmnet/internal/dota/macrolabel"
 )
 
 func TestSaveLoadMergeResume(t *testing.T) {
 	dir := t.TempDir()
+	// SaveReviewedNDJSON writes via CreateTemp+Rename; on Windows a just-written
+	// file can stay briefly locked by the scanner, so testing.TempDir RemoveAll
+	// false-fails with "directory is not empty". Empty the dir first (Cleanup is
+	// LIFO, so this runs before TempDir's own RemoveAll). Assertions unchanged.
+	t.Cleanup(func() { releaseTempDirFiles(dir) })
 	out := filepath.Join(dir, "reviewed.ndjson")
 	cases := []AuditCase{
 		{ID: "a1", AutoStatus: macrolabel.LabelStatusLabeled, StartGameTime: 1, EndGameTime: 2,
@@ -51,5 +57,24 @@ func TestSaveLoadMergeResume(t *testing.T) {
 	merged := MergeReviews(fresh, existing)
 	if merged[0].Review == nil || merged[0].Review.Status != ReviewConfirmed {
 		t.Fatalf("resume failed: %+v", merged[0].Review)
+	}
+}
+
+// releaseTempDirFiles deletes everything in dir so testing.TempDir RemoveAll only
+// has to remove an empty directory. Retries cover transient Windows file locks.
+func releaseTempDirFiles(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		p := filepath.Join(dir, e.Name())
+		for i := 0; i < 40; i++ {
+			err := os.RemoveAll(p)
+			if err == nil {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
 	}
 }

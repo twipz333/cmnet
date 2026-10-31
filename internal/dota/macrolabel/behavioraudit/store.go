@@ -56,6 +56,15 @@ func SaveReviewedNDJSON(outputPath string, items []ReviewedItem) error {
 		return err
 	}
 	tmpName := tmp.Name()
+	// Always dispose the handle before return. On Windows a still-open temp
+	// blocks rename/delete and makes testing.TempDir RemoveAll false-fail.
+	closed := false
+	defer func() {
+		if !closed {
+			_ = tmp.Close()
+			_ = os.Remove(tmpName)
+		}
+	}()
 	enc := json.NewEncoder(tmp)
 	for _, it := range items {
 		if it.AuditID == "" {
@@ -65,15 +74,13 @@ func SaveReviewedNDJSON(outputPath string, items []ReviewedItem) error {
 			it.Review = it.Case.Review
 		}
 		if err := enc.Encode(it); err != nil {
-			tmp.Close()
-			_ = os.Remove(tmpName)
 			return err
 		}
 	}
 	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
 		return err
 	}
+	closed = true
 	if err := os.Rename(tmpName, outputPath); err != nil {
 		_ = os.Remove(tmpName)
 		return err

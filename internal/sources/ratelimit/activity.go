@@ -267,6 +267,7 @@ func Snapshot() []Activity {
 // the operations banner shows.
 func Busiest() (source string, waited time.Duration) {
 	var best Activity
+	bestScore := int64(-1) // -1 = nothing selected yet
 	for _, a := range Snapshot() {
 		// A deliberate backoff counts as waiting too, and outranks a young request:
 		// "rate-limited for 40s" is more informative than "a request is 2s old".
@@ -274,15 +275,15 @@ func Busiest() (source string, waited time.Duration) {
 		if a.WaitingUntilMs > score {
 			score = a.WaitingUntilMs
 		}
-		if score == 0 {
+		// InFlight with age truncated to 0ms is still outstanding. Skipping it
+		// raced TestActivityReportsInFlight (and the ops banner) whenever the
+		// open request was younger than one millisecond.
+		if score == 0 && a.InFlight == 0 {
 			continue
 		}
-		bestScore := best.OldestMs
-		if best.WaitingUntilMs > bestScore {
-			bestScore = best.WaitingUntilMs
-		}
-		if score > bestScore {
+		if bestScore < 0 || score > bestScore {
 			best = a
+			bestScore = score
 		}
 	}
 	if best.Source == "" {

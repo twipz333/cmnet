@@ -118,6 +118,23 @@ func TestBusiestIgnoresIdleSources(t *testing.T) {
 	}
 }
 
+// A request whose age truncates to 0ms must still be named: OldestMs is integer
+// milliseconds, so a just-started InFlight used to disappear from Busiest and
+// flake TestActivityReportsInFlight under a fast scheduler.
+func TestBusiestNamesSubMillisecondInFlight(t *testing.T) {
+	ResetForTest()
+	id := beginRequest("FreshAPI")
+	defer endRequest("FreshAPI", id, http.StatusOK, nil)
+
+	src, waited := Busiest()
+	if src != "FreshAPI" {
+		t.Fatalf("Busiest = %q/%v right after beginRequest, want FreshAPI", src, waited)
+	}
+	if waited < 0 {
+		t.Fatalf("waited = %v, want >= 0", waited)
+	}
+}
+
 func activityFor(t *testing.T, source string) Activity {
 	t.Helper()
 	for _, a := range Snapshot() {
