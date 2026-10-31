@@ -48,7 +48,7 @@ Maps to PRODUCT-BAR journeys **Scout** + **Draft** (before / during match).
 | 2.2 | Settings: remaining useful tabs OR explicit cut-list with UX copy; welcome/first-run | 1.5 | Maintain / Install | **not started** |
 | 2.3 | GSI: spawn path, install UX, readonly/live reconciliation | 1.4 | Draft (live) | **not started** |
 | 2.4 | After-match / decision history UI | 1.4 | After match | **not started** |
-| 2.5 | Friends: secure local-only share **or** agreed import/export (no public relay) | PRODUCT-BAR decision | Friends | **not started** |
+| 2.5 | Friends: secure local-only share **or** agreed import/export (no public relay) | PRODUCT-BAR decision | Friends | **in progress** (PR for #49) |
 | 2.6 | Electron→native data migration + backup/rollback demo | LOCAL-FIRST-V1 | Data integrity | **not started** |
 | 2.7 | Keyboard/a11y/DPI 100/125/150 real monitors; suspend/resume; cancel under load | 1.5 | UI resilience | **not started** |
 

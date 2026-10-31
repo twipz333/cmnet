@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"cmnet/internal/cache"
 	"cmnet/internal/scout"
@@ -50,25 +51,35 @@ func applyGuest(cfg *tui.ShellConfig, h *homeFlags) {
 	h.auto.enabled = false
 }
 
-// sharePayload collects what a guest needs from the host's data folder.
+// sharePayload collects what a guest/friend needs from the host's data folder.
+// Bundle and/or scout snapshot are enough for a portable local package.
 func sharePayload(h homeFlags) func() (share.Payload, error) {
 	return func() (share.Payload, error) {
-		bundleData, err := os.ReadFile(h.bundlePath)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return share.Payload{}, errors.New("модель ещё не обучена: делиться нечем")
-			}
-			return share.Payload{}, err
+		bundleData, bundleErr := os.ReadFile(h.bundlePath)
+		if bundleErr != nil && !errors.Is(bundleErr, fs.ErrNotExist) {
+			return share.Payload{}, bundleErr
 		}
-		var head struct {
-			BundleVersion string `json:"bundle_version"`
-			PatchTag      string `json:"patch_tag"`
+		snapData, snapErr := os.ReadFile(h.snapshotPath)
+		if snapErr != nil && !errors.Is(snapErr, fs.ErrNotExist) {
+			return share.Payload{}, snapErr
 		}
-		_ = json.Unmarshal(bundleData, &head)
-		p := share.Payload{Meta: share.Meta{BundleVersion: head.BundleVersion, PatchTag: head.PatchTag, HostVersion: version}}
-		p.Files = append(p.Files, share.File{Name: "bundle.json", Data: bundleData})
+		if len(bundleData) == 0 && len(snapData) == 0 {
+			return share.Payload{}, errors.New("нечем делиться: нет модели (bundle.json) и нет разведки (snapshot.json)")
+		}
 
-		if snapData, err := os.ReadFile(h.snapshotPath); err == nil {
+		p := share.Payload{Meta: share.Meta{HostVersion: version}}
+		if len(bundleData) > 0 {
+			var head struct {
+				BundleVersion string `json:"bundle_version"`
+				PatchTag      string `json:"patch_tag"`
+			}
+			_ = json.Unmarshal(bundleData, &head)
+			p.Meta.BundleVersion = head.BundleVersion
+			p.Meta.PatchTag = head.PatchTag
+			p.Files = append(p.Files, share.File{Name: "bundle.json", Data: bundleData})
+		}
+
+		if len(snapData) > 0 {
 			p.Files = append(p.Files, share.File{Name: "snapshot.json", Data: snapData})
 			p.Meta.HasSnapshot = true
 			if snap, err := scout.LoadSnapshot(h.snapshotPath); err == nil && snap.Layer2 != nil {
@@ -114,22 +125,35 @@ func sharePayload(h homeFlags) func() (share.Payload, error) {
 	}
 }
 
-// applyShared writes a received payload into the guest's data folder.
+// applyShared writes a received/imported payload into the local data folder.
+// Bundle-only, scout-only, or both are accepted; never silently wipes the other
+// side when the package intentionally omits it (scout-only keeps local model).
+// Existing targets are copied to import-backup/<stamp>/ before overwrite.
 func applyShared(h homeFlags) func(share.Payload) (string, error) {
 	return func(p share.Payload) (string, error) {
-		bundleData := p.File("bundle.json")
-		if len(bundleData) == 0 {
-			return "", errors.New("хост не прислал модель")
-		}
-		if err := writeAtomic(h.bundlePath, bundleData); err != nil {
+		backupNote, err := backupBeforeImport(h)
+		if err != nil {
 			return "", err
 		}
-		if snap := p.File("snapshot.json"); len(snap) > 0 {
+		bundleData := p.File("bundle.json")
+		snap := p.File("snapshot.json")
+		if len(bundleData) == 0 && len(snap) == 0 {
+			return "", errors.New("в пакете нет ни модели, ни разведки")
+		}
+		if len(bundleData) > 0 {
+			if err := writeAtomic(h.bundlePath, bundleData); err != nil {
+				return "", err
+			}
+		}
+		if len(snap) > 0 {
 			if err := writeAtomic(h.snapshotPath, snap); err != nil {
 				return "", err
 			}
-		} else if err := os.Remove(h.snapshotPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return "", err // the host has no scouting; old scouting would mislead
+		} else if len(bundleData) > 0 {
+			// Full model package without scouting: clear stale scout so it cannot mislead.
+			if err := os.Remove(h.snapshotPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return "", err
+			}
 		}
 		if team := p.File(teamFileName); len(team) > 0 {
 			if err := writeAtomic(teamPath(h), team); err != nil {
@@ -160,14 +184,22 @@ func applyShared(h homeFlags) func(share.Payload) (string, error) {
 				_ = writeAtomic(filepath.Join(dir, filepath.FromSlash(name)), f.Data)
 			}
 		}
-		msg := "получено от хоста: модель"
-		if p.Meta.PatchTag != "" {
-			msg += " патча " + p.Meta.PatchTag
+		parts := make([]string, 0, 3)
+		if len(bundleData) > 0 {
+			part := "модель"
+			if p.Meta.PatchTag != "" {
+				part += " патча " + p.Meta.PatchTag
+			}
+			parts = append(parts, part)
 		}
 		if p.Meta.Scouted > 0 {
-			msg += fmt.Sprintf(", разведка %d соперников", p.Meta.Scouted)
-		} else if p.Meta.HasSnapshot {
-			msg += " и разведка"
+			parts = append(parts, fmt.Sprintf("разведка %d соперников", p.Meta.Scouted))
+		} else if len(snap) > 0 || p.Meta.HasSnapshot {
+			parts = append(parts, "разведка")
+		}
+		msg := "импортировано: " + strings.Join(parts, ", ")
+		if backupNote != "" {
+			msg += ". " + backupNote
 		}
 		return msg, nil
 	}
@@ -186,11 +218,44 @@ func writeAtomic(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// shareShell wires sharing into the shell: hosts can share, guests receive.
+// backupBeforeImport copies existing share targets into import-backup/<stamp>/
+// so an intentional import never silently destroys prior local evidence.
+func backupBeforeImport(h homeFlags) (string, error) {
+	candidates := []string{h.bundlePath, h.snapshotPath, teamPath(h)}
+	var existing []string
+	for _, p := range candidates {
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
+			existing = append(existing, p)
+		}
+	}
+	if len(existing) == 0 {
+		return "", nil
+	}
+	stamp := time.Now().UTC().Format("20060102-150405")
+	destRoot := filepath.Join(filepath.Dir(h.bundlePath), "import-backup", stamp)
+	if err := os.MkdirAll(destRoot, 0o755); err != nil {
+		return "", fmt.Errorf("резервная копия перед импортом: %w", err)
+	}
+	for _, src := range existing {
+		dst := filepath.Join(destRoot, filepath.Base(src))
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return "", fmt.Errorf("резервная копия %s: %w", filepath.Base(src), err)
+		}
+		if err := writeAtomic(dst, data); err != nil {
+			return "", fmt.Errorf("резервная копия %s: %w", filepath.Base(src), err)
+		}
+	}
+	return "резервная копия: " + destRoot, nil
+}
+
+// shareShell wires sharing into the shell. Hosts export payloads; everyone can
+// import a local package (ApplyShare). Guests remain receive-capable for legacy
+// relay builds outside CMNET_LOCAL_ONLY.
 func shareShell(cfg *session.ShellConfig, h homeFlags) {
 	teamOps(cfg, h)
+	cfg.ApplyShare = applyShared(h)
 	if cfg.Guest {
-		cfg.ApplyShare = applyShared(h)
 		return
 	}
 	cfg.SharePayload = sharePayload(h)
