@@ -64,10 +64,10 @@ Each ticket: one user-visible outcome, non-overlapping ownership, automated acce
 | 3.2 | Self-contained Windows installer (no SDK for friends) | 3.1 | **verified** (merged #57) |
 | 3.3 | Update channel: manifest, signature, failure recovery, rollback | 3.2 | **verified** (merged #59) — fail-closed unsigned; not Released |
 | 3.4 | Crash/diagnostics without secrets; uninstall preserves data | 3.2 | **verified** (merged #61) |
-| 3.5 | Clean-VM install/upgrade/uninstall script + **two friend tests** | 3.3 | **in progress** (#62) — script+NOTES; human trials BLOCKED pending friends |
-| 3.6 | Release review vs full PRODUCT-BAR matrix | 3.5 | **not started** |
+| 3.5 | Clean-VM install/upgrade/uninstall script + **two friend tests** | 3.3 | Script **verified** (merged #64, `gate3-friend-trial-wip/` + `script-evidence.json` pass); **human friend trials BLOCKED** pending two real friends (#62). **Not Released.** |
+| 3.6 | Release review vs full PRODUCT-BAR matrix | 3.5 | **in progress** (#68) — matrix in `gate3-release-review-wip/MATRIX.md` @ master `86544a9` + Desktop drop; Release QA **blocked** on friends + unsigned Authenticode. **Released = NO.** |
 
-Maps to PRODUCT-BAR journey **Install & open** + Release QA. Do **not** declare Released until 3.6 **verified**.
+Maps to PRODUCT-BAR journey **Install & open** + Release QA. Do **not** declare Released until 3.6 **verified** (all hard gates + friend trials).
 
 ---
 
