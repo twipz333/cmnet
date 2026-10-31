@@ -229,10 +229,21 @@ public sealed partial class NativeWindow
             .SelectMany(k => state?.At("board", k).Items().Select(x => x.I()) ?? Array.Empty<int>())
             .Count(id => id > 0);
         var recCount = state?.At("result", "recs").Items().Count(r => r.At("heroId").I() > 0) ?? 0;
+        var gsiMode = state?.At("meta", "gsiMode").B() == true;
+        var gsiSeen = state?.At("meta", "gsiSeen").B() == true;
+        if (gsiMode && !gsiSeen)
+        {
+            title = "GSI · ожидание события";
+            detail = "Доска только для чтения. Это не live-успех, пока Dota не прислала первый POST.";
+            return EvidenceKind.Loading;
+        }
+
         if (picks == 0 && recCount == 0)
         {
             title = "Драфт ещё не начат";
-            detail = "Пустая доска и нет рекомендаций — это пустое состояние, не «модель ничего не нашла».";
+            detail = gsiMode
+                ? "GSI активен, но пиков/банов ещё нет — пустая доска, не выдуманный драфт."
+                : "Пустая доска и нет рекомендаций — это пустое состояние, не «модель ничего не нашла».";
             return EvidenceKind.Empty;
         }
 
@@ -257,9 +268,18 @@ public sealed partial class NativeWindow
             }
         }
 
+        if (gsiMode && gsiSeen)
+        {
+            title = "GSI live · только чтение";
+            detail = recCount > 0
+                ? $"Доска из Dota · рекомендаций: {recCount}."
+                : "Доска из Dota; список рекомендаций пуст для текущего шага.";
+            return EvidenceKind.Ready;
+        }
+
         title = "Драфт готов";
         detail = recCount > 0
-            ? $"Рекомендаций: {recCount}."
+            ? $"Ручной режим · рекомендаций: {recCount}."
             : "Модель готова; список рекомендаций пуст для текущего шага.";
         return EvidenceKind.Ready;
     }

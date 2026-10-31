@@ -38,6 +38,10 @@ public static class Program
         var captureSettings = Array.Exists(args, a => a == "--capture-settings");
         var captureSettingsOnly = Array.Exists(args, a => a == "--capture-settings-only");
         if (captureSettingsOnly) captureSettings = true;
+        // Gate 2.3 GSI install + live/readonly Draft chrome — outside geometry.json.
+        var captureGsi = Array.Exists(args, a => a == "--capture-gsi");
+        var captureGsiOnly = Array.Exists(args, a => a == "--capture-gsi-only");
+        if (captureGsiOnly) captureGsi = true;
         var app = new Application
         {
             ShutdownMode = smoke || capture >= 0 ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose
@@ -72,7 +76,7 @@ public static class Program
             var reports = new JsonArray();
             try
             {
-                if (!captureDataOnly && !captureSettingsOnly)
+                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly)
                 {
                     window.AssertPreviewInteractions();
                     foreach (var screen in new[] { "Разведка", "Драфт" })
@@ -162,22 +166,50 @@ public static class Program
                         }
                     }
                 }
-                // Data/Settings-only must not wipe a prior CI matrix geometry.json (Count==33).
-                if (!captureDataOnly && !captureSettingsOnly)
+                // Gate 2.3 GSI — review evidence only; must NOT enter geometry.json.
+                if (captureGsi)
+                {
+                    foreach (var scenario in new[] { "missing", "installed", "waiting", "live", "offline" })
+                    {
+                        window.LoadGsiPreviewScenario(scenario);
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, "gsi-" + scenario + ".png"),
+                            artworkWarmSeconds: 0);
+                        if (scenario == "installed")
+                        {
+                            File.Copy(
+                                Path.Combine(destination, "gsi-installed.png"),
+                                Path.Combine(destination, "gsi.png"), true);
+                        }
+                    }
+                    foreach (var scenario in new[] { "draft-manual", "draft-waiting", "draft-live" })
+                    {
+                        window.LoadGsiPreviewScenario(scenario);
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, "gsi-" + scenario + ".png"),
+                            artworkWarmSeconds: 0);
+                    }
+                }
+                // Data/Settings/GSI-only must not wipe a prior CI matrix geometry.json (Count==33).
+                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly)
                 {
                     File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 }
-                var checks = captureSettingsOnly
+                var checks = captureGsiOnly
+                    ? "Gate 2.3 GSI-only capture (--capture-gsi-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
+                    : captureSettingsOnly
                     ? "Gate 2.2 Settings-only capture (--capture-settings-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
                     : captureDataOnly
                     ? "Gate 2.1 Data-only capture (--capture-data-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
                     : "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\ngeometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).";
-                if (captureHonesty && !captureDataOnly && !captureSettingsOnly)
+                if (captureHonesty && !captureDataOnly && !captureSettingsOnly && !captureGsiOnly)
                     checks += "\nGate1 honesty kit (--capture-honesty): scout partial/stale/offline + draft empty/loading/error/partial/stale/offline (outside geometry.json).";
                 if (captureData)
                     checks += "\nGate 2.1 Data kit (--capture-data): data ready/empty/loading/error/partial/stale/offline (outside geometry.json).";
                 if (captureSettings)
                     checks += "\nGate 2.2 Settings kit (--capture-settings): settings ready/empty/loading/error/offline/about/deferred/welcome (outside geometry.json).";
+                if (captureGsi)
+                    checks += "\nGate 2.3 GSI kit (--capture-gsi): settings missing/installed/waiting/live/offline + draft-manual/waiting/live (outside geometry.json).";
                 File.WriteAllText(Path.Combine(destination, "checks.txt"), checks);
             }
             catch (Exception ex)

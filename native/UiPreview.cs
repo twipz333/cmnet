@@ -253,6 +253,9 @@ public sealed partial class NativeWindow
         state["meta"]!["canTrain"] = true;
         state["meta"]!["bundleVersion"] = "demo-bundle01";
         state["meta"]!["hasMatrices"] = true;
+        // Default SAMPLE draft is manual; GSI capture scenarios flip these explicitly.
+        state["meta"]!["gsiMode"] = false;
+        state["meta"]!["gsiSeen"] = false;
         state["ops"] = new JsonObject
         {
             ["active"] = new JsonArray(),
@@ -454,6 +457,22 @@ public sealed partial class NativeWindow
         state["meta"]!["draftReady"] = false; UpdateDraft(); SelectTacticalHero(1);
         if (selectedHeroId != 1) throw new InvalidOperationException("Hero selection blocked when model is not ready.");
         if (applyDraftButton?.IsEnabled == true) throw new InvalidOperationException("Apply enabled without ready model.");
+        // GSI readonly must never look editable.
+        state["meta"]!["draftReady"] = true;
+        state["meta"]!["gsiMode"] = true;
+        state["meta"]!["gsiSeen"] = true;
+        state["board"]!["radiantPicks"] = new JsonArray(1, 2);
+        UpdateDraft();
+        SelectTacticalHero(3);
+        if (applyDraftButton?.IsEnabled == true)
+            throw new InvalidOperationException("Apply enabled under gsiMode.");
+        if (draftGsiBadge == null || !draftGsiBadge.Text.Contains("live", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("GSI live badge missing.");
+        state["meta"]!["gsiMode"] = false;
+        state["meta"]!["gsiSeen"] = false;
+        UpdateDraft();
+        if (draftGsiBadge == null || !draftGsiBadge.Text.Contains("Ручной", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Manual GSI badge missing after leaving gsiMode.");
     }
 
     internal void LoadPreviewScenario(string scenario)

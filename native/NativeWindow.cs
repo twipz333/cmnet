@@ -1039,13 +1039,22 @@ public sealed partial class NativeWindow : Window
         if (state == null || page != "Драфт") return;
         var m = state.At("meta");
         var step = state.At("step");
+        var gsiReadonly = IsGsiReadonly();
         if (draftSummary != null)
         {
-            draftSummary.Text = !m.At("draftReady").B()
+            var baseText = !m.At("draftReady").B()
                 ? m.At("draftError").S("Модель ещё не обучена. Открой раздел «Данные».")
                 : $"Сторона: {m.At("ourTeam").S()}\nХод: {step.At("team").S("—")} · {step.At("action").S("—")}\nПатч: {m.At("patchTag").S("—")}" +
                   (state.At("modelUpdatePending").B() ? "\nНовая модель активируется в следующем драфте" : "");
+            if (gsiReadonly)
+            {
+                baseText += m.At("gsiSeen").B()
+                    ? "\nGSI live · доска только для чтения"
+                    : "\nGSI · ждём событие от Dota · только чтение";
+            }
+            draftSummary.Text = baseText;
         }
+        RefreshDraftGsiBadge();
         RefreshDraftBoard();
         var recNodes = state.At("result", "recs").Items()
             .Where(x => x.At("heroId").I() > 0).Take(6).ToList();
@@ -1054,10 +1063,20 @@ public sealed partial class NativeWindow : Window
             string.Join(",", DeriveRecTags(x))));
         if (draftRecommendations != null && recKey != recommendationKey)
         {
+            // Preserve scroll offset across GSI ticks that only change scores.
+            double? offset = null;
+            if (FindVisualScroll(draftRecommendations) is { } sv)
+                offset = sv.VerticalOffset;
             draftRecommendations.Items.Clear();
             for (int i = 0; i < recNodes.Count; i++)
                 draftRecommendations.Items.Add(RecommendationRow(recNodes[i], i + 1));
             recommendationKey = recKey;
+            if (offset is double keep)
+                draftRecommendations.Dispatcher.BeginInvoke(() =>
+                {
+                    if (FindVisualScroll(draftRecommendations) is { } restore)
+                        restore.ScrollToVerticalOffset(keep);
+                }, System.Windows.Threading.DispatcherPriority.Loaded);
         }
         RefreshEvidenceBanners();
         var key = state.At("heroes")?.ToJsonString() + "|" + state.At("board")?.ToJsonString()
@@ -1067,11 +1086,41 @@ public sealed partial class NativeWindow : Window
             heroCatalogKey = key;
             UpdateHeroes(heroSearchText);
         }
-        if (applyDraftButton != null) applyDraftButton.IsEnabled = CanApplyHero(selectedHeroId);
+        if (applyDraftButton != null)
+        {
+            applyDraftButton.IsEnabled = CanApplyHero(selectedHeroId);
+            applyDraftButton.Content = gsiReadonly ? "Только чтение (GSI)" : "Выбрать героя";
+            applyDraftButton.ToolTip = gsiReadonly
+                ? "Доской управляет Dota через GSI — ручной apply отключён"
+                : "Применить выбранного героя к текущему шагу";
+        }
+        void GateManual(Button? btn, string enabledTip, string blockedTip)
+        {
+            if (btn == null) return;
+            btn.IsEnabled = !gsiReadonly;
+            btn.Opacity = gsiReadonly ? 0.45 : 1;
+            btn.ToolTip = gsiReadonly ? blockedTip : enabledTip;
+        }
+        GateManual(draftNewButton, "Сбросить доску и начать новый ручной драфт",
+            "Новый драфт недоступен, пока GSI ведёт доску");
+        GateManual(draftUndoButton, "Отменить ход", "Undo недоступен в режиме GSI");
+        GateManual(draftRedoButton, "Повторить ход", "Redo недоступен в режиме GSI");
         RefreshSelectedHeroDetail();
         RefreshDraftEnemyIntel();
         HighlightDraftSelection();
         SyncDraftFilterChips();
+    }
+
+    private static ScrollViewer? FindVisualScroll(DependencyObject? node)
+    {
+        if (node == null) return null;
+        if (node is ScrollViewer sv) return sv;
+        if (node is ListBox list && list.Template?.FindName("PART_ScrollViewer", list) is ScrollViewer part)
+            return part;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++)
+            if (FindVisualScroll(VisualTreeHelper.GetChild(node, i)) is { } found)
+                return found;
+        return null;
     }
 
     private string HeroName(int id) => state.At("names",id.ToString()).S("Неизвестный герой");

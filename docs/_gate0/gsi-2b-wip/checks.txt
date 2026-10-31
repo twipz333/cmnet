@@ -1,0 +1,5 @@
+PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.
+DPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.
+Actual WPF SAMPLE DATA fixtures; no Go process or user database.
+geometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).
+Gate 2.3 GSI kit (--capture-gsi): settings missing/installed/waiting/live/offline + draft-manual/waiting/live (outside geometry.json).
