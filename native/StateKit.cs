@@ -362,6 +362,12 @@ public sealed partial class NativeWindow
             lastDataEvidence = ResolveDataEvidence(out var title, out var detail);
             SetEvidenceBanner(dataEvidenceBanner, lastDataEvidence, title, detail, forceShowReady);
         }
+        if (page == "Настройки" && settingsEvidenceBanner != null)
+        {
+            lastSettingsEvidence = ResolveSettingsEvidence(out var title, out var detail);
+            SetEvidenceBanner(settingsEvidenceBanner, lastSettingsEvidence, title, detail,
+                forceShow: forceShowReady || lastSettingsEvidence != EvidenceKind.Ready);
+        }
     }
 
     private void EnsureDraftRecPlaceholder(EvidenceKind kind, string title, string detail)

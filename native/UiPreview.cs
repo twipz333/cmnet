@@ -671,4 +671,107 @@ public sealed partial class NativeWindow
         UpdateDataView();
         toast.Text = "SAMPLE DATA · data-" + scenario;
     }
+
+    /// <summary>
+    /// Gate 2.2 Settings + first-run honesty fixtures. Outside geometry.json (CI Count==33).
+    /// </summary>
+    internal void LoadSettingsPreviewScenario(string scenario)
+    {
+        coreOnline = true;
+        ApplyConnectionChrome("Go-ядро подключено");
+        settingsLoading = false;
+        settingsLoadError = null;
+        previewConfig = SampleSettingsConfig(true);
+        HideSaveBanner();
+
+        if (scenario == "welcome")
+        {
+            // First-run overlay without touching desktop.json or starting Go.
+            body.Content = BuildWelcomeView();
+            heading.Text = "Первый запуск";
+            subtitle.Text = "SAMPLE · выбор папки данных";
+            if (welcomeList != null)
+            {
+                welcomeList.Children.Clear();
+                welcomeList.Children.Add(Text(
+                    "SAMPLE · найденная папка C:\\Users\\…\\cmnet\\data · 42 МБ, обновлено сегодня, модель обучена",
+                    13, color: muted));
+            }
+            toast.Text = "SAMPLE DATA · settings-welcome";
+            return;
+        }
+
+        LoadVisualFixture("Настройки");
+        state!["meta"]!["previewOffline"] = false;
+        state["meta"]!["draftReady"] = true;
+        state["meta"]!["patchTag"] = "7.39";
+        state["meta"]!["bundleVersion"] = "samplebundle01";
+
+        if (scenario == "ready" || scenario == "happy")
+        {
+            previewConfig = SampleSettingsConfig(true);
+            ShowSettingsTab("app");
+            ApplyPreviewConfig(previewConfig);
+            ShowSaveBanner("SAMPLE · настройки сохранены (fixture).");
+        }
+        else if (scenario == "empty")
+        {
+            previewConfig = SampleSettingsConfig(false);
+            ShowSettingsTab("app");
+            ApplyPreviewConfig(previewConfig);
+        }
+        else if (scenario == "loading")
+        {
+            ShowSettingsTab("app");
+            if (configHost != null)
+            {
+                configHost.Children.Clear();
+                configHost.Children.Add(Text("SAMPLE · загружаю config.yaml…", 13, color: muted));
+            }
+            settingsLoading = true;
+            configEditors.Clear();
+            RefreshSettingsEvidence();
+        }
+        else if (scenario == "error")
+        {
+            ShowSettingsTab("app");
+            settingsLoadError = "SAMPLE · /api/config недоступен (fixture)";
+            if (configHost != null)
+            {
+                configHost.Children.Clear();
+                configEditors.Clear();
+                configHost.Children.Add(Text(settingsLoadError, 14, color: (Brush)FindResource("ErrorBrush")));
+            }
+            RefreshSettingsEvidence();
+        }
+        else if (scenario == "offline")
+        {
+            state!["meta"]!["previewOffline"] = true;
+            coreOnline = false;
+            ApplyConnectionChrome("SAMPLE · офлайн");
+            ShowSettingsTab("app");
+            previewConfig = SampleSettingsConfig(true);
+            ApplyPreviewConfig(previewConfig);
+            RefreshSettingsEvidence();
+        }
+        else if (scenario == "about")
+        {
+            previewConfig = SampleSettingsConfig(true);
+            ShowSettingsTab("about");
+            RefreshSettingsEvidence();
+        }
+        else if (scenario == "deferred")
+        {
+            ShowSettingsTab("deferred");
+            RefreshSettingsEvidence();
+        }
+        else
+        {
+            previewConfig = SampleSettingsConfig(true);
+            ShowSettingsTab("app");
+            ApplyPreviewConfig(previewConfig);
+        }
+
+        toast.Text = "SAMPLE DATA · settings-" + scenario;
+    }
 }

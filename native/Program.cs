@@ -34,6 +34,10 @@ public static class Program
         // is still written with Count==0 here; use default --capture-ui for CI 33.
         var captureDataOnly = Array.Exists(args, a => a == "--capture-data-only");
         if (captureDataOnly) captureData = true;
+        // Gate 2.2 Settings + first-run PNGs — outside geometry.json (Count stays 33).
+        var captureSettings = Array.Exists(args, a => a == "--capture-settings");
+        var captureSettingsOnly = Array.Exists(args, a => a == "--capture-settings-only");
+        if (captureSettingsOnly) captureSettings = true;
         var app = new Application
         {
             ShutdownMode = smoke || capture >= 0 ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose
@@ -68,7 +72,7 @@ public static class Program
             var reports = new JsonArray();
             try
             {
-                if (!captureDataOnly)
+                if (!captureDataOnly && !captureSettingsOnly)
                 {
                     window.AssertPreviewInteractions();
                     foreach (var screen in new[] { "Разведка", "Драфт" })
@@ -141,18 +145,39 @@ public static class Program
                         }
                     }
                 }
-                // Data-only must not wipe a prior CI matrix geometry.json (Count==33).
-                if (!captureDataOnly)
+                // Gate 2.2 Settings + welcome — review evidence only; must NOT enter geometry.json.
+                if (captureSettings)
+                {
+                    foreach (var scenario in new[] { "ready", "empty", "loading", "error", "offline", "about", "deferred", "welcome" })
+                    {
+                        window.LoadSettingsPreviewScenario(scenario);
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, "settings-" + scenario + ".png"),
+                            artworkWarmSeconds: 0);
+                        if (scenario == "ready")
+                        {
+                            File.Copy(
+                                Path.Combine(destination, "settings-ready.png"),
+                                Path.Combine(destination, "settings.png"), true);
+                        }
+                    }
+                }
+                // Data/Settings-only must not wipe a prior CI matrix geometry.json (Count==33).
+                if (!captureDataOnly && !captureSettingsOnly)
                 {
                     File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 }
-                var checks = captureDataOnly
+                var checks = captureSettingsOnly
+                    ? "Gate 2.2 Settings-only capture (--capture-settings-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
+                    : captureDataOnly
                     ? "Gate 2.1 Data-only capture (--capture-data-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
                     : "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\ngeometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).";
-                if (captureHonesty && !captureDataOnly)
+                if (captureHonesty && !captureDataOnly && !captureSettingsOnly)
                     checks += "\nGate1 honesty kit (--capture-honesty): scout partial/stale/offline + draft empty/loading/error/partial/stale/offline (outside geometry.json).";
                 if (captureData)
                     checks += "\nGate 2.1 Data kit (--capture-data): data ready/empty/loading/error/partial/stale/offline (outside geometry.json).";
+                if (captureSettings)
+                    checks += "\nGate 2.2 Settings kit (--capture-settings): settings ready/empty/loading/error/offline/about/deferred/welcome (outside geometry.json).";
                 File.WriteAllText(Path.Combine(destination, "checks.txt"), checks);
             }
             catch (Exception ex)
