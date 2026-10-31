@@ -1,0 +1,135 @@
+{
+  "machine": {
+    "CsName": "HOMESTATION",
+    "Os": "Microsoft Windows NT 10.0.26200.0",
+    "Cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+    "RamGb": 63.1,
+    "Dotnet": "10.0.403",
+    "Go": "go version go1.27.1 windows/amd64",
+    "BuildSha": "fba7271b9a3b5fe534d3442b459c684695a1f235",
+    "MeasuredAt": "2026-10-31T17:42:28.9191214+03:00"
+  },
+  "commands": {
+    "interactive": "native\\out\\Cmnet.Native.exe --data-dir <temp>",
+    "go_build": "CGO_ENABLED=0 go build -trimpath -ldflags \"-s -w\" -o native/out/advisor.exe ./cmd/advisor",
+    "measure_script": "pwsh docs/_gate0/scripts/Measure-PerfBaseline.ps1",
+    "dotnet_publish": "dotnet publish native/Cmnet.Native.csproj -c Release -r win-x64 --self-contained true -o native/out -p:PublishSingleFile=true",
+    "smoke_ui": "native\\out\\Cmnet.Native.exe --smoke-ui",
+    "scout_local": "go run ./tools/perfbaseline",
+    "capture_ui": "native\\out\\Cmnet.Native.exe --capture-ui <dir>"
+  },
+  "smoke_ui": {
+    "elapsed_ms": {
+      "n": 3,
+      "min": 768.9,
+      "max": 2143.8,
+      "median": 771.4,
+      "mean": 1228.0
+    },
+    "runs": [
+      {
+        "ExitCode": 0,
+        "ElapsedMs": 2143.8,
+        "PeakWorkingSetMb": 0.0,
+        "PeakPrivateMb": 0.0
+      },
+      {
+        "ExitCode": 0,
+        "ElapsedMs": 768.9,
+        "PeakWorkingSetMb": 0.0,
+        "PeakPrivateMb": 0.0
+      },
+      {
+        "ExitCode": 0,
+        "ElapsedMs": 771.4,
+        "PeakWorkingSetMb": 0.0,
+        "PeakPrivateMb": 0.0
+      }
+    ]
+  },
+  "capture_ui": {
+    "ExitCode": 0,
+    "ElapsedMs": 88856.3,
+    "PeakWorkingSetMb": 295.5,
+    "PeakPrivateMb": 290.8
+  },
+  "interactive_startup": {
+    "idle_advisor_ws_mb": {
+      "n": 3,
+      "min": 28.5,
+      "max": 87.9,
+      "median": 87.7,
+      "mean": 68.0
+    },
+    "runs": [
+      {
+        "Run": 1,
+        "ToMainWindowMs": 587.3,
+        "ToAdvisorChildMs": 842.5,
+        "IdleNativeWsMb": 138.6,
+        "IdleNativePrivateMb": 94.9,
+        "IdleAdvisorWsMb": 87.7,
+        "Note": "interactive = MainWindow visible; core ready approximated by advisor.exe child spawn (BootAsync)"
+      },
+      {
+        "Run": 2,
+        "ToMainWindowMs": 712.2,
+        "ToAdvisorChildMs": 901.1,
+        "IdleNativeWsMb": 137.4,
+        "IdleNativePrivateMb": 95.2,
+        "IdleAdvisorWsMb": 87.9,
+        "Note": "interactive = MainWindow visible; core ready approximated by advisor.exe child spawn (BootAsync)"
+      },
+      {
+        "Run": 3,
+        "ToMainWindowMs": 763.0,
+        "ToAdvisorChildMs": 913.3,
+        "IdleNativeWsMb": 137.3,
+        "IdleNativePrivateMb": 101.4,
+        "IdleAdvisorWsMb": 28.5,
+        "Note": "interactive = MainWindow visible; core ready approximated by advisor.exe child spawn (BootAsync)"
+      }
+    ],
+    "to_main_window_ms": {
+      "n": 3,
+      "min": 587.3,
+      "max": 763.0,
+      "median": 712.2,
+      "mean": 687.5
+    },
+    "to_advisor_child_ms": {
+      "n": 3,
+      "min": 842.5,
+      "max": 913.3,
+      "median": 901.1,
+      "mean": 885.6
+    },
+    "idle_native_ws_mb": {
+      "n": 3,
+      "min": 137.3,
+      "max": 138.6,
+      "median": 137.4,
+      "mean": 137.8
+    }
+  },
+  "scout_local_fixture": {
+    "cold_ms": 0.528,
+    "cold_us": 528,
+    "methodology": "in-memory fixture Source; no HTTP/disk. cold=first Fetch in process; warm=mean per-call over batched repeats. Product live scout always calls OpenDotaSource (no warm SQLite short-circuit in Fetch).",
+    "not_measured": [
+      "live OpenDota /players/{id}/heroes latency",
+      "STRATZ (token / paid-adjacent)",
+      "SQLite-backed warm scout (opScout Fetch path does not read affinity cache)"
+    ],
+    "players": 5,
+    "warm_iters": 500,
+    "warm_ms": 0.026459,
+    "warm_us": 26.459
+  },
+  "not_measured": [
+    "Live OpenDota network scout cold/warm (avoid unbounded free-API load in Gate 0.6 harness)",
+    "STRATZ scout (requires token)",
+    "Redraw/scroll FPS under user input (needs interactive Computer Use / manual QA)",
+    "Cancellation latency under live scout"
+  ]
+}

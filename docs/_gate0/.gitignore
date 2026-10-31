@@ -1,4 +1,5 @@
 # Keep reports, 3B references, logs, and a small screenshot sample in git.
+logs/perf-baseline/capture-ui/
 ci-screenshots/*
 !ci-screenshots/checks.txt
 !ci-screenshots/geometry.json

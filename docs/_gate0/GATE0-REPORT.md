@@ -23,7 +23,7 @@
 | 3 | `go test` / `go vet` / `dotnet publish` with exact failures | **verified** (honest: tests not green) | `build-evidence.md`; `docs/_gate0/logs/go-test.txt`; `docs/_gate0/logs/dotnet-publish.txt`; `go-test.log` / `dotnet-publish.log` mirrors. `go vet` exit 0; `go test ./...` exit **1** (Windows TempDir cleanup in `cache`/`declog`) |
 | 4 | Electron → native parity matrix | **verified** | `docs/_gate0/parity-and-gaps.md` (Draft/Scout/Data/Settings/GSI/History/Friends/Install) |
 | 5 | Approved 3B Draft+Scout reference images + visual sign-off | **verified** | User-supplied boards; `docs/_gate0/3b-reference/scout-approved.png`, `draft-approved.png`, `SIGN-OFF.md` |
-| 6 | Measurable performance baseline (startup, cold/warm scout, UI, memory) | **not started** | No timed runs recorded in Gate 0 evidence; PRODUCT-BAR Performance gate open |
+| 6 | Measurable performance baseline (startup, cold/warm scout, UI, memory) | **verified** (single-host fixtures) | `perf-baseline.md`; live network scout + scroll FPS still open |
 
 **Gate 0 stop rule:** deliverable **5** must become **verified** before Gate 1 UI craft. Do not invent 3B geometry from prose.
 
@@ -170,7 +170,7 @@ Electron remains production until native installer + parity tickets land.
 | *(queued)* | Parity tickets ranks 3–8 | after visual lock |
 | *(queued)* | Installer / update / friend trial | after journeys pass |
 | *(hygiene)* | Stabilize Windows `go test` TempDir flakes | **not started** (non-blocking for UI) |
-| *(hygiene)* | Performance baseline measurements | **not started** (Gate 0 item 6) |
+| *(hygiene)* | Performance baseline measurements | **verified** locally — `perf-baseline.md` / #39 |
 
 ---
 

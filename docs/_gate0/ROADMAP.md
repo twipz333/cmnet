@@ -18,7 +18,7 @@ Status vocabulary: **not started** / **in progress** / **verified** / **blocked*
 | 0B Electron↔WPF parity matrix | **verified** | `parity-and-gaps.md` |
 | 0C Synthesis + roadmap | **verified** | `GATE0-REPORT.md`, this file |
 | 0.5 Approved 3B Draft+Scout images + sign-off | **verified** | User boards 2026-10-30 → `3b-reference/` + `SIGN-OFF.md` |
-| 0.6 Performance baseline timings | **not started** | Parallel hygiene; required before Release QA |
+| 0.6 Performance baseline timings | **verified** (single-host) | `perf-baseline.md` + harness; live network scout / scroll FPS still gaps |
 
 **Phase 1 unlocked.** Do not invent 3B geometry beyond signed references.
 
@@ -93,7 +93,7 @@ Keep Electron `v0.3.x` as production until Gate 3 packaging is **verified**.
 |---|---|
 | Stabilize Windows `go test` TempDir/SQLite cleanup flakes | **not started** |
 | Extend `--capture-ui` to Data + Settings pages | **not started** |
-| Record performance baseline (startup, cold/warm scout, memory) | **not started** |
+| Record performance baseline (startup, cold/warm scout, memory) | **verified** (local fixtures; see `perf-baseline.md`) |
 | Enable Orca Computer Use permissions for interactive WPF QA | **blocked** (OS permissions unsupported in current session) |
 | Keep Electron v0.3.x production until native packaging verified | policy |
 
