@@ -87,10 +87,8 @@ public sealed partial class NativeWindow
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(0, 1, 1, 0)
         };
-        var sidebar = new StackPanel { Margin = new Thickness(6, 15, 6, 10) };
-        var section = Text("МАТЧ", 9, FontWeights.Bold, muted);
-        section.Margin = new Thickness(13, 0, 0, 13);
-        sidebar.Children.Add(section);
+        // D7: flat 3B rail — same five destinations, no MATCH/SYSTEM inventing IA.
+        var sidebar = new StackPanel { Margin = new Thickness(6, 12, 6, 10) };
 
         void AddNavigation(string name, string glyph, string shortcut)
         {
@@ -126,11 +124,8 @@ public sealed partial class NativeWindow
         AddNavigation("Драфт", "◇", "Ctrl+2");
         sidebar.Children.Add(new Border {
             Height = 1, Background = border,
-            Margin = new Thickness(10, 12, 10, 11)
+            Margin = new Thickness(10, 10, 10, 10)
         });
-        var sectionOther = Text("СИСТЕМА", 9, FontWeights.Bold, muted);
-        sectionOther.Margin = new Thickness(13, 0, 0, 13);
-        sidebar.Children.Add(sectionOther);
         AddNavigation("Данные", "▤", "Ctrl+3");
         AddNavigation("Настройки", "⚙", "Ctrl+4");
         AddNavigation("Друзья", "♧", "Ctrl+5");
@@ -140,11 +135,11 @@ public sealed partial class NativeWindow
             Margin = new Thickness(10, 13, 10, 11)
         });
         var tip = new StackPanel();
-        tip.Children.Add(Text("ЛОКАЛЬНЫЙ КЛИЕНТ", 9, FontWeights.Bold, accent));
-        var tipText = Text("Без облачного сервера\nCtrl + 1…5 · разделы", 10, color: muted);
-        tipText.Margin = new Thickness(0, 10, 0, 0);
+        tip.Children.Add(Text("GO CORE · ЛОКАЛЬНО", 9, FontWeights.Bold, accent));
+        var tipText = Text("Без облака\nCtrl+1…5", 10, color: muted);
+        tipText.Margin = new Thickness(0, 8, 0, 0);
         tip.Children.Add(tipText);
-        sidebar.Children.Add(new Border {
+        var tipCard = new Border {
             Background = ThemeBrush("RaisedBrush"),
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1),
@@ -152,7 +147,8 @@ public sealed partial class NativeWindow
             Padding = new Thickness(9),
             Margin = new Thickness(2, 0, 2, 0),
             Child = tip
-        });
+        };
+        sidebar.Children.Add(tipCard);
         aside.Child = new ScrollViewer {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
@@ -195,8 +191,7 @@ public sealed partial class NativeWindow
             bool compact = layout.ActualWidth < 1000;
             content.ColumnDefinitions[0].Width = top.ColumnDefinitions[0].Width = new GridLength(compact ? 64 : 132);
             wordmark.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-            section.Visibility = sectionOther.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-            ((FrameworkElement)tip.Parent).Visibility = compact || layout.ActualHeight < 650 ? Visibility.Collapsed : Visibility.Visible;
+            tipCard.Visibility = compact || layout.ActualHeight < 650 ? Visibility.Collapsed : Visibility.Visible;
             var glyphs = new[] { "◎", "◇", "▤", "⚙", "♧" };
             int i = 0;
             foreach (var pair in navigation) pair.Value.Content = compact ? glyphs[i++] : glyphs[i++] + "    " + pair.Key;

@@ -62,11 +62,12 @@ public sealed partial class NativeWindow
         playersVersion = "";
 
         var pageContent = new Grid { Name = "ScoutingWorkspace" };
-        pageContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        pageContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        pageContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        pageContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // heading
+        pageContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // evidence banner
+        pageContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // metrics
+        pageContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // opponent cards
         pageContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        pageContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        pageContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // activity
 
         var heading = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 11) };
         var actionRow = new StackPanel
@@ -110,15 +111,19 @@ public sealed partial class NativeWindow
         heading.Children.Add(title);
         pageContent.Children.Add(heading);
 
+        scoutEvidenceBanner = BuildEvidenceBanner("ScoutEvidenceBanner");
+        Grid.SetRow(scoutEvidenceBanner, 1);
+        pageContent.Children.Add(scoutEvidenceBanner);
+
         var metrics = new UniformGrid { Name = "ScoutMetricStrip", Rows = 1, Columns = 4, Margin = new Thickness(0, 0, 0, 10) };
         metrics.Children.Add(ScoutMetricCard("найдено", scoutFoundCount, foreground));
         metrics.Children.Add(ScoutMetricCard("данные", scoutReadyCount, accent));
         metrics.Children.Add(ScoutMetricCard("скрыто", scoutLimitedCount, gold));
         metrics.Children.Add(ScoutMetricCard("ошибки", scoutFailureCount, (Brush)FindResource("ErrorBrush")));
-        Grid.SetRow(metrics, 1); pageContent.Children.Add(metrics);
+        Grid.SetRow(metrics, 2); pageContent.Children.Add(metrics);
 
         scoutSignalHost = new StackPanel { Name = "OpponentCards", Margin = new Thickness(0, 0, 0, 10) };
-        Grid.SetRow(scoutSignalHost, 2); pageContent.Children.Add(scoutSignalHost);
+        Grid.SetRow(scoutSignalHost, 3); pageContent.Children.Add(scoutSignalHost);
 
         var split = new Grid { Name = "ScoutIntelSplit" };
         split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.25, GridUnitType.Star) });
@@ -151,7 +156,7 @@ public sealed partial class NativeWindow
         var detailCard = TacticalPanel(details, new Thickness(6, 0, 0, 0));
         Grid.SetColumn(detailCard, 1);
         split.Children.Add(detailCard);
-        Grid.SetRow(split, 3);
+        Grid.SetRow(split, 4);
         pageContent.Children.Add(split);
 
         var activityRow = new DockPanel { Margin = new Thickness(0, 10, 0, 8), LastChildFill = true };
@@ -160,7 +165,7 @@ public sealed partial class NativeWindow
         DockPanel.SetDock(activityCaption, Dock.Left);
         activityRow.Children.Add(activityCaption);
         activityRow.Children.Add(scoutLive);
-        Grid.SetRow(activityRow, 4);
+        Grid.SetRow(activityRow, 5);
         pageContent.Children.Add(activityRow);
 
         // Keep every existing editing action, but out of the primary intel
@@ -222,8 +227,9 @@ public sealed partial class NativeWindow
 
         var editorScroll = Scroll(editor);
         editorScroll.Visibility = Visibility.Collapsed;
+        // Cover evidence + metrics + cards + intel split while editing roster.
         Grid.SetRow(editorScroll, 1);
-        Grid.SetRowSpan(editorScroll, 3);
+        Grid.SetRowSpan(editorScroll, 4);
         pageContent.Children.Add(editorScroll);
         var editToggle = Btn("Составы и адресная книга", async () =>
         {
@@ -231,6 +237,9 @@ public sealed partial class NativeWindow
             editorScroll.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
             metrics.Visibility = scoutSignalHost.Visibility = split.Visibility =
                 editing ? Visibility.Collapsed : Visibility.Visible;
+            if (scoutEvidenceBanner != null)
+                scoutEvidenceBanner.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
+            if (!editing) RefreshEvidenceBanners();
             await System.Threading.Tasks.Task.CompletedTask;
         }, true);
         editToggle.Margin = new Thickness(8, 0, 0, 0);
@@ -251,6 +260,7 @@ public sealed partial class NativeWindow
             compactScout = compact;
             scoutSignalKey = "";
             RefreshScoutSignals();
+            RefreshEvidenceBanners();
         };
         scoutViewport = new ScrollViewer
         {

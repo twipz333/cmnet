@@ -51,10 +51,11 @@ public sealed partial class NativeWindow
         heroRoleFilter = 0;
 
         var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // heading
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // evidence
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // board
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // intel
 
         var heading = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
         var newDraft = Btn("＋ Новый драфт", async () => await RunAction("/api/new-draft"), true);
@@ -63,15 +64,19 @@ public sealed partial class NativeWindow
         heading.Children.Add(Text("CAPTAINS MODE", 12, FontWeights.Bold, accent));
         root.Children.Add(heading);
 
+        draftEvidenceBanner = BuildEvidenceBanner("DraftEvidenceBanner");
+        Grid.SetRow(draftEvidenceBanner, 1);
+        root.Children.Add(draftEvidenceBanner);
+
         draftBoardHost = new StackPanel { Name = "DraftBoard" };
         var board = TacticalPanel(draftBoardHost, new Thickness(0, 0, 0, 8));
-        Grid.SetRow(board, 1); root.Children.Add(board);
+        Grid.SetRow(board, 2); root.Children.Add(board);
 
         var workspace = new Grid { Name = "DraftWorkspace" };
         workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
         workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(230) });
-        Grid.SetRow(workspace, 2); root.Children.Add(workspace);
+        Grid.SetRow(workspace, 3); root.Children.Add(workspace);
 
         // —— Left: recommendations ——
         var recommendations = new Grid();
@@ -191,7 +196,7 @@ public sealed partial class NativeWindow
         signalsPanel.Padding = new Thickness(10, 8, 10, 8);
         Grid.SetColumn(signalsPanel, 1);
         intelRow.Children.Add(signalsPanel);
-        Grid.SetRow(intelRow, 3); root.Children.Add(intelRow);
+        Grid.SetRow(intelRow, 4); root.Children.Add(intelRow);
 
         workspace.SizeChanged += (_, _) =>
         {

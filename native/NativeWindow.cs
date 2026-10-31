@@ -138,9 +138,15 @@ public sealed partial class NativeWindow : Window
         core.StateReceived += snapshot => Dispatcher.BeginInvoke(() => ApplyState(snapshot));
         core.ConnectionChanged += message => Dispatcher.BeginInvoke(() =>
         {
-            connectionBadge.Text = message == "Go-ядро подключено" ? "●  Локально · онлайн" : "●  " + message;
-            connectionBadge.Foreground = message == "Go-ядро подключено" ? good : gold;
+            ApplyConnectionChrome(message);
+            RefreshEvidenceBanners();
         });
+        if (visualPreview)
+        {
+            // Capture/smoke: treat fixture as online unless a scenario flips meta.previewOffline.
+            coreOnline = true;
+            ApplyConnectionChrome("Go-ядро подключено");
+        }
         if (!visualPreview)
             Loaded += async (_, _) => await BootAsync(initialDataDirectory);
         Closed += (_, _) => core.Stop();
@@ -296,6 +302,9 @@ public sealed partial class NativeWindow : Window
     {
         if (state == null) return;
         status.Text = state.At("status").S("Подключено");
+        // Keep connection chrome honest if a fixture/meta flips offline mid-session.
+        if (state.At("meta", "previewOffline").B())
+            ApplyConnectionChrome("SAMPLE · офлайн");
         if (page == "Разведка")
         {
             UpdateScoutRoster();
@@ -303,14 +312,29 @@ public sealed partial class NativeWindow : Window
                 .Where(j => j.At("kind").S() is "scout" or "scout-allies")
                 .ToList();
             if (scoutLive != null)
-                scoutLive.Text = active.Count == 0 ? "Разведка не выполняется" :
+            {
+                var activity = active.Count == 0 ? "Разведка не выполняется" :
                     string.Join("    ·    ", active.Select(j =>
                     $"{(j.At("kind").S() == "scout" ? "Враги" : "Союзники")}: {j.At("lastLine").S("ожидание")}"));
+                // Compact viewports fold Partial/Ready chrome into this line so the
+                // dedicated banner does not steal the intel ScrollViewer height.
+                var kind = ResolveScoutEvidence(out var evTitle, out _);
+                if (compactScout && kind != EvidenceKind.Ready && active.Count == 0)
+                    scoutLive.Text = EvidenceChrome(kind).Label + " · " + evTitle;
+                else
+                    scoutLive.Text = activity;
+                scoutLive.Foreground = kind is EvidenceKind.Error
+                    ? (Brush)FindResource("ErrorBrush")
+                    : kind is EvidenceKind.Partial or EvidenceKind.Stale or EvidenceKind.Offline
+                        ? gold
+                        : kind == EvidenceKind.Loading ? accent : muted;
+            }
             if (cancelScoutButton != null)
             {
                 cancelScoutButton.IsEnabled = active.Count > 0;
                 cancelScoutButton.Opacity = active.Count > 0 ? 1 : 0.45;
             }
+            RefreshEvidenceBanners();
         }
         if (page == "Драфт") UpdateDraft();
         if (page == "Данные" && dataActivity != null)
@@ -1020,6 +1044,7 @@ public sealed partial class NativeWindow : Window
                 draftRecommendations.Items.Add(RecommendationRow(recNodes[i], i + 1));
             recommendationKey = recKey;
         }
+        RefreshEvidenceBanners();
         var key = state.At("heroes")?.ToJsonString() + "|" + state.At("board")?.ToJsonString()
             + "|" + heroAttrFilter + "|" + heroRoleFilter + "|" + heroSearchText;
         if (key != heroCatalogKey)

@@ -514,7 +514,7 @@ public sealed partial class NativeWindow
         if (banCandidate == null)
         {
             banBody.Children.Add(HonestEmpty(
-                "Рекомендованный бан недоступен",
+                "Наблюдаемый бан-кандидат недоступен",
                 "Нужно ≥12 подтверждённых игр по герою в выборке. Модель бана здесь не подставляется."));
         }
         else
@@ -547,7 +547,7 @@ public sealed partial class NativeWindow
             };
             banBody.Children.Add(priority);
         }
-        var banCard = ThreatModule("Рекомендованный бан", banBody);
+        var banCard = ThreatModule("Наблюдаемый бан-кандидат", banBody);
         if (stacked) { Grid.SetRow(banCard, 3); banCard.Margin = new Thickness(0, 8, 0, 0); }
         else
         {

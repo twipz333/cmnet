@@ -292,10 +292,12 @@ public sealed partial class NativeWindow
             WaitPreviewFrame(200);
             var images = PreviewElements(this).OfType<Image>().Where(x => x.IsVisible).ToArray();
             if (images.Length > 0 && images.All(x => x.Source != null)) return;
-            // Draft gallery + board + intel can exceed 100 portraits; accept a
-            // high fill once the deadline is near rather than spinning forever.
-            if (images.Length > 80 && images.Count(x => x.Source != null) >= Math.Ceiling(images.Length * 0.85)
-                && DateTime.UtcNow > deadline.AddSeconds(-8))
+            // Draft gallery + board + intel can exceed 100 portraits. Accept a
+            // high fill immediately — waiting until near the deadline (old
+            // behavior) burned ~42s per Draft capture on CI and blew the 180s
+            // WaitForExit even for the core 33-entry matrix.
+            if (images.Length > 80
+                && images.Count(x => x.Source != null) >= Math.Ceiling(images.Length * 0.85))
                 return;
         }
         var visible = PreviewElements(this).OfType<Image>().Where(x => x.IsVisible).ToArray();
@@ -304,7 +306,7 @@ public sealed partial class NativeWindow
             throw new InvalidOperationException($"Artwork warmup failed: {visible.Count(x => x.Source != null)}/{visible.Length} images loaded.");
     }
 
-    internal JsonObject CaptureVisualPreview(string path, int width = 1440, int height = 900, double simulatedScale = 1)
+    internal JsonObject CaptureVisualPreview(string path, int width = 1440, int height = 900, double simulatedScale = 1, int? artworkWarmSeconds = null)
     {
         // Logical viewport/raster scaling is not a native monitor DPI switch.
         var root = (FrameworkElement)Content;
@@ -317,8 +319,13 @@ public sealed partial class NativeWindow
         root.Arrange(new Rect(0, 0, root.Width, root.Height));
         root.UpdateLayout();
         WaitPreviewFrame(120);
-        // Draft 3B surfaces many simultaneous portraits (board + gallery + intel).
-        WarmPreviewArtwork(page == "Драфт" ? 50 : 20);
+        // Default budgets keep first-load CDN fills honest. Pass 0 to skip a
+        // second warm after Program.cs already filled the per-screen cache
+        // (size/scale variants) — re-warming every Draft raster was the CI
+        // timeout. Negative is treated as skip as well.
+        var warmSeconds = artworkWarmSeconds ?? (page == "Драфт" ? 25 : 15);
+        if (warmSeconds > 0)
+            WarmPreviewArtwork(warmSeconds);
         // Pumping asynchronous image/size events can trigger a native window
         // arrange. Settle the final exact client layout before rasterization.
         root.Measure(new Size(root.Width, root.Height));
@@ -427,18 +434,64 @@ public sealed partial class NativeWindow
     internal void LoadPreviewScenario(string scenario)
     {
         LoadVisualFixture("Разведка");
-        if (scenario == "empty") {
-            state!["team"]!["enemy"] = new JsonArray(); stats!["stats"]!["enemyPlayers"] = new JsonArray(); selectedScoutId = 0;
+        // Reset connection chrome; scenarios may flip offline.
+        state!["meta"]!["previewOffline"] = false;
+        coreOnline = true;
+        ApplyConnectionChrome("Go-ядро подключено");
+
+        if (scenario == "empty")
+        {
+            state!["team"]!["enemy"] = new JsonArray();
+            stats!["stats"]!["enemyPlayers"] = new JsonArray();
+            selectedScoutId = 0;
         }
-        else if (scenario == "loading") state!["ops"]!["active"] = new JsonArray(new JsonObject { ["kind"] = "scout", ["lastLine"] = "SAMPLE · 2 / 5 · ожидание источника" });
-        else if (scenario == "error") foreach (var player in stats!["stats"]!["enemyPlayers"]!.AsArray()) player!["scoutStatus"] = "error";
+        else if (scenario == "loading")
+        {
+            state!["ops"]!["active"] = new JsonArray(new JsonObject
+            {
+                ["kind"] = "scout",
+                ["lastLine"] = "SAMPLE · 2 / 5 · ожидание источника"
+            });
+        }
+        else if (scenario == "error")
+        {
+            foreach (var player in stats!["stats"]!["enemyPlayers"]!.AsArray())
+                player!["scoutStatus"] = "error";
+        }
+        else if (scenario == "partial")
+        {
+            var players = stats!["stats"]!["enemyPlayers"]!.AsArray();
+            if (players.Count > 0) players[0]!["scoutStatus"] = "ok";
+            if (players.Count > 1) players[1]!["scoutStatus"] = "no_stats";
+            if (players.Count > 2) players[2]!["scoutStatus"] = "pending";
+            if (players.Count > 3) players[3]!["scoutStatus"] = "ok";
+            if (players.Count > 4) players[4]!["scoutStatus"] = "unresolved";
+        }
+        else if (scenario == "stale")
+        {
+            foreach (var player in stats!["stats"]!["enemyPlayers"]!.AsArray())
+                player!["scoutStatus"] = "stale";
+        }
+        else if (scenario == "offline")
+        {
+            state!["meta"]!["previewOffline"] = true;
+            coreOnline = false;
+            ApplyConnectionChrome("SAMPLE · офлайн");
+        }
         scoutVersion = ""; scoutSignalKey = "";
-        UpdateLiveState(); RenderScoutDetails(); toast.Text = "SAMPLE DATA · " + scenario;
+        UpdateLiveState(); RenderScoutDetails();
+        toast.Text = "SAMPLE DATA · " + scenario;
     }
 
     internal void LoadDraftPreviewScenario(string scenario)
     {
         LoadVisualFixture("Драфт");
+        state!["meta"]!["previewOffline"] = false;
+        state["meta"]!.AsObject().Remove("draftError");
+        state["modelUpdatePending"] = false;
+        coreOnline = true;
+        ApplyConnectionChrome("Go-ядро подключено");
+
         if (scenario == "empty")
         {
             state!["board"] = new JsonObject
@@ -451,6 +504,7 @@ public sealed partial class NativeWindow
             state["result"]!["recs"] = new JsonArray();
             state["team"]!["enemy"] = new JsonArray();
             stats!["stats"]!["enemyPlayers"] = new JsonArray();
+            state["meta"]!.AsObject().Remove("previewDraftTimerSec");
             selectedHeroId = 0;
         }
         else if (scenario == "loading")
@@ -470,7 +524,30 @@ public sealed partial class NativeWindow
             state["result"]!["recs"] = new JsonArray();
             selectedHeroId = 0;
         }
-        draftBoardKey = recommendationKey = heroCatalogKey = tacticalSelectedKey = draftIntelKey = "";
+        else if (scenario == "partial")
+        {
+            // Keep draftReady + board; degrade enemy scout only.
+            var players = stats!["stats"]!["enemyPlayers"]!.AsArray();
+            if (players.Count > 1) players[1]!["scoutStatus"] = "no_stats";
+            if (players.Count > 2) players[2]!["scoutStatus"] = "error";
+            if (players.Count > 4) players[4]!["scoutStatus"] = "pending";
+        }
+        else if (scenario == "stale")
+        {
+            state!["modelUpdatePending"] = true;
+        }
+        else if (scenario == "offline")
+        {
+            state!["meta"]!["previewOffline"] = true;
+            coreOnline = false;
+            ApplyConnectionChrome("SAMPLE · офлайн");
+            state["result"]!["recs"] = new JsonArray();
+            selectedHeroId = 0;
+        }
+        // Force list rebuild: empty recKey "" would otherwise equal a cleared
+        // recommendationKey and leave the previous fixture rows on screen.
+        draftBoardKey = heroCatalogKey = tacticalSelectedKey = draftIntelKey = "";
+        recommendationKey = "scenario-reset";
         UpdateDraft();
         toast.Text = "SAMPLE DATA · draft-" + scenario;
     }

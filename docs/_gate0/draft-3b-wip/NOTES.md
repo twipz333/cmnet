@@ -27,13 +27,14 @@
 
 ## Remaining gaps vs `draft-approved.png`
 
-1. **Not pixel-identical** — sidebar still uses text nav (MATCH/SYSTEM grouping) rather than icon-only 3B rail; D7 nav chrome not redesigned (low-risk converge deferred).
-2. **Role chips** are a second filter row under search (mock used a dropdown); functional parity, not pixel-matched.
-3. **Hero gallery density / portrait crop** approximate; virtualized grid vs mock’s fixed tiles.
-4. **Enemy intel cards** are compact observational chips, not the full mock player-strip with percentage bars.
+1. ~~**D7 MATCH/SYSTEM nav**~~ — flat rail + `GO CORE · ЛОКАЛЬНО` in Gate 1 close-out (#38); still text+glyph (not icon-only mock). Residual craft **deferred**.
+2. **Role chips** are a second filter row under search (mock used a dropdown); functional parity, not pixel-matched. **Deferred**.
+3. **Hero gallery density / portrait crop** approximate; virtualized grid vs mock’s fixed tiles. **Deferred**.
+4. **Enemy intel cards** are compact observational chips, not the full mock player-strip with percentage bars. **Deferred** (no invented bars).
 5. **Timer** in live play cannot show 0:28 without a GSI draft-clock field — intentional honesty; SAMPLE only.
 6. **Tags / why / WR / popularity** in live mode only appear when core wires `why` / positionMeta / rates — SAMPLE fixture fills the visual contract with labeled demo fields.
 7. Independent visual review by product owner still required before merge.
+8. **State kit** empty/loading/offline/partial/error/stale on Draft (+ shared shell) — **Fixed** in #38; see `docs/_gate0/gate1-closeout/`.
 
 ## Honesty notes
 

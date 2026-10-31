@@ -25,6 +25,9 @@ public static class Program
             dataDir = args[1];
         var smoke = Array.Exists(args, a => a == "--smoke-ui");
         var capture = Array.IndexOf(args, "--capture-ui");
+        // Optional Gate1 honesty PNGs (partial/stale/offline + draft states). Off by
+        // default so CI --capture-ui stays inside the 180s WaitForExit budget.
+        var captureHonesty = Array.Exists(args, a => a == "--capture-honesty");
         var app = new Application
         {
             ShutdownMode = smoke || capture >= 0 ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose
@@ -63,31 +66,53 @@ public static class Program
                 {
                     window.LoadVisualFixture(screen);
                     window.UpdateLayout();
-                    window.WarmPreviewArtwork();
+                    // One full CDN/cache fill per screen; size/scale variants only settle.
+                    window.WarmPreviewArtwork(screen == "Драфт" ? 25 : 15);
                     var prefix = screen == "Разведка" ? "scout" : "draft";
                     foreach (var size in new[] { (1920,1080), (1600,900), (1440,900), (1366,768), (1280,720) })
                     foreach (var scale in new[] { 1d, 1.25d, 1.5d })
                     {
                         var filename = $"{prefix}-{size.Item1}x{size.Item2}-layout{scale * 100:0}.png";
-                        reports.Add(window.CaptureVisualPreview(Path.Combine(destination, filename), size.Item1, size.Item2, scale));
+                        reports.Add(window.CaptureVisualPreview(
+                            Path.Combine(destination, filename), size.Item1, size.Item2, scale,
+                            artworkWarmSeconds: 0));
                         if (size == (1440,900) && scale == 1) File.Copy(Path.Combine(destination, filename), Path.Combine(destination, prefix + ".png"), true);
                     }
                 }
+                // Historical geometry matrix keeps scout empty/loading/error (33 entries total).
                 foreach (var scenario in new[] { "empty", "loading", "error" })
                 {
                     window.LoadPreviewScenario(scenario);
-                    reports.Add(window.CaptureVisualPreview(Path.Combine(destination, "scout-" + scenario + ".png")));
+                    reports.Add(window.CaptureVisualPreview(
+                        Path.Combine(destination, "scout-" + scenario + ".png"),
+                        artworkWarmSeconds: 10));
                 }
-                // Draft honesty fixtures for Gate1 review evidence only. Do NOT add them to
-                // geometry.json — native.yml requires the historical 33-entry matrix
-                // (Draft×5×3 + Scout×5×3 + scout empty/loading/error).
-                foreach (var scenario in new[] { "empty", "loading", "error" })
+                // Gate1 close-out honesty PNGs are opt-in (--capture-honesty). They are
+                // review evidence only and must NOT enter geometry.json (CI Count==33).
+                // Default CI path omits them so WarmPreviewArtwork on Draft states cannot
+                // push total wall clock past the 180s WaitForExit in native.yml.
+                if (captureHonesty)
                 {
-                    window.LoadDraftPreviewScenario(scenario);
-                    window.CaptureVisualPreview(Path.Combine(destination, "draft-" + scenario + ".png"));
+                    foreach (var scenario in new[] { "partial", "stale", "offline" })
+                    {
+                        window.LoadPreviewScenario(scenario);
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, "scout-" + scenario + ".png"),
+                            artworkWarmSeconds: 10);
+                    }
+                    foreach (var scenario in new[] { "empty", "loading", "error", "partial", "stale", "offline" })
+                    {
+                        window.LoadDraftPreviewScenario(scenario);
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, "draft-" + scenario + ".png"),
+                            artworkWarmSeconds: 15);
+                    }
                 }
                 File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                File.WriteAllText(Path.Combine(destination, "checks.txt"), "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.");
+                var checks = "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\ngeometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).";
+                if (captureHonesty)
+                    checks += "\nGate1 honesty kit (--capture-honesty): scout partial/stale/offline + draft empty/loading/error/partial/stale/offline (outside geometry.json).";
+                File.WriteAllText(Path.Combine(destination, "checks.txt"), checks);
             }
             catch (Exception ex)
             {
