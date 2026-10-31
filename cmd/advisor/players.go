@@ -191,7 +191,7 @@ func snapshotMembers(snapshotPath string) map[int64]snapMember {
 // The nickname is looked up when it is cheap and left blank otherwise — a row
 // with an id is still a row the user can select.
 func opAddPlayer(ctx context.Context, dbPath, ref string, ally bool) (string, error) {
-	id, err := scout.ParseAccountID(ref)
+	id, err := scout.ResolveAccountID(ctx, nil, ref)
 	if err != nil {
 		return "", fmt.Errorf("%q: %w", ref, err)
 	}

@@ -937,13 +937,27 @@ public sealed partial class NativeWindow : Window
             BorderThickness = new Thickness(1)
         };
         host.Children.Add(book);
-        host.Children.Add(Text("Или вставь account ID", 13, color: muted));
+        host.Children.Add(Text("Или вставь account ID / ссылку Steam-профиля", 13, color: muted));
         var input = new TextBox { Margin = new Thickness(0, 6, 0, 12), Padding = new Thickness(8) };
         host.Children.Add(input);
         var place = Btn("Назначить", async () =>
         {
-            var id = long.TryParse(input.Text.Trim(), out var parsed) ? parsed : (book.SelectedItem as PlayerRow)?.Id ?? 0;
-            if (id <= 0) return;
+            // Prefer pasted text: vanity URLs are not numeric, so TryParse alone
+            // was a silent no-op (#66). Backend ResolveAccountID handles id/URL.
+            var text = input.Text.Trim();
+            if (text.Length > 0)
+            {
+                toast.Text = "Распознаю игрока…";
+                await RunAction("/api/team/seat", new { side, position, accountId = 0L, @ref = text });
+                dialog.Close();
+                return;
+            }
+            var id = (book.SelectedItem as PlayerRow)?.Id ?? 0;
+            if (id <= 0)
+            {
+                toast.Text = "Выбери игрока из книги или вставь Steam ID / ссылку профиля.";
+                return;
+            }
             await RunAction("/api/team/seat", new { side, position, accountId = id });
             dialog.Close();
         });
