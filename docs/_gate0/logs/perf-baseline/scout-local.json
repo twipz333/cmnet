@@ -1,0 +1,14 @@
+{
+  "cold_ms": 0.528,
+  "cold_us": 528,
+  "methodology": "in-memory fixture Source; no HTTP/disk. cold=first Fetch in process; warm=mean per-call over batched repeats. Product live scout always calls OpenDotaSource (no warm SQLite short-circuit in Fetch).",
+  "not_measured": [
+    "live OpenDota /players/{id}/heroes latency",
+    "STRATZ (token / paid-adjacent)",
+    "SQLite-backed warm scout (opScout Fetch path does not read affinity cache)"
+  ],
+  "players": 5,
+  "warm_iters": 500,
+  "warm_ms": 0.026459,
+  "warm_us": 26.459
+}
