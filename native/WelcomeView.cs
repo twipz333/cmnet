@@ -196,6 +196,23 @@ public sealed partial class NativeWindow
         ClearWelcomeError();
         try
         {
+            if (File.Exists(Path.Combine(dir, "cmnet.db")))
+            {
+                toast.Text = "Проверяю, не занята ли база Electron…";
+                await DataMigrate.EnsureNotLockedAsync(dir);
+                // Same-folder adoption still gets a timestamped backup before first native open.
+                try
+                {
+                    toast.Text = "Создаю migration-backup перед запуском…";
+                    await DataMigrate.BackupAsync(from: dir, to: dir);
+                }
+                catch (Exception backupEx)
+                {
+                    SetWelcomeError("Не удалось создать backup перед запуском: " + backupEx.Message +
+                        " Закройте Electron и повторите, либо выполните: advisor migrate backup");
+                    return;
+                }
+            }
             DesktopSettings.SaveChoice(dir);
             showingWelcome = false;
             toast.Text = "Папка данных выбрана. Запускаю ядро…";

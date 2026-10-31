@@ -1,0 +1,8 @@
+source (Electron/prior): C:\Users\dimag\AppData\Local\Temp\cmnet-mig-demo-5a326dd212c845988b8a22672b6e71c4\electron
+  db=false bundle=false artifacts=[]
+dest (native):           C:\Users\dimag\AppData\Local\Temp\cmnet-mig-demo-5a326dd212c845988b8a22672b6e71c4\native
+  db=false bundle=false artifacts=[]
+desktop.json dataDir:    F:\Projects\Go\cmnet
+sameFolder=false needsMigrate=false dbLocked=false
+backups: (none)
+advice: В исходной папке нет cmnet.db — мигрировать нечего. Укажите --from на папку Electron или выберите её в мастере первого запуска.

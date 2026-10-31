@@ -1,0 +1,4 @@
+=== RUN   TestMigrateCopyBackupRollback
+--- PASS: TestMigrateCopyBackupRollback (3.77s)
+PASS
+ok  	cmnet/internal/datamigrate	4.300s

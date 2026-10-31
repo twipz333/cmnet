@@ -1,0 +1,2 @@
+Gate 2.6 Migration-only capture (--capture-migration-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33).
+Gate 2.6 Migration kit (--capture-migration): migration ready/empty/partial/error/offline (outside geometry.json).
