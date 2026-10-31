@@ -104,6 +104,7 @@ public sealed partial class NativeWindow
             Margin = new Thickness(0, 0, 0, 14)
         };
         settingsTabBar.Children.Add(SettingsTabButton("app", "Приложение"));
+        settingsTabBar.Children.Add(SettingsTabButton("gsi", "GSI"));
         settingsTabBar.Children.Add(SettingsTabButton("about", "О программе"));
         settingsTabBar.Children.Add(SettingsTabButton("deferred", "Вне объёма"));
         host.Children.Add(settingsTabBar);
@@ -153,10 +154,13 @@ public sealed partial class NativeWindow
         {
             "about" => BuildAboutPane(),
             "deferred" => BuildDeferredPane(),
+            "gsi" => BuildGsiPane(),
             _ => BuildAppPaneShell()
         };
         if (id == "app" && configHost != null && configHost.Children.Count == 0 && !settingsLoading)
             _ = LoadSettingsAsync();
+        if (id == "gsi")
+            _ = RefreshGsiStatusAsync();
         RefreshSettingsEvidence();
         if (saveSettingsButton != null)
             saveSettingsButton.Visibility = id == "app" ? Visibility.Visible : Visibility.Collapsed;
@@ -574,6 +578,20 @@ public sealed partial class NativeWindow
             return EvidenceKind.Empty;
         }
         title = "Настройки готовы";
+        if (settingsTab == "gsi")
+        {
+            title = lastGsiEvidence switch
+            {
+                EvidenceKind.Empty => "GSI не готов",
+                EvidenceKind.Partial => "GSI частично готов",
+                EvidenceKind.Loading => "Ожидание события GSI",
+                EvidenceKind.Offline => "GSI недоступен",
+                EvidenceKind.Error => "Ошибка GSI",
+                _ => "GSI"
+            };
+            detail = gsiStatusDetail?.Text ?? "Статус конфига и слушателя.";
+            return lastGsiEvidence == EvidenceKind.Ready ? EvidenceKind.Ready : lastGsiEvidence;
+        }
         detail = settingsTab switch
         {
             "about" => "Версия, путь данных и статус модели. Автообновление — Gate 3.",

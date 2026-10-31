@@ -240,6 +240,7 @@ func (s *Server) routeOps(mux *http.ServeMux) {
 	mux.HandleFunc("/api/config/save", s.mutate(s.saveConfig))
 	mux.HandleFunc("/api/discord-config", s.handleDiscordConfig)
 	mux.HandleFunc("/api/discord-config/save", s.handleDiscordConfigSave)
+	s.routeGSI(mux)
 	s.routeAlerts(mux)
 }
 

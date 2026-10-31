@@ -19,10 +19,13 @@ public sealed partial class NativeWindow
     private void RefreshDraftBoard()
     {
         if (draftBoardHost == null || state == null || page != "Драфт") return;
+        // Omit ephemeral status/clock chatter: GSI posts ~4×/s while only the
+        // clock moves. Rebuilding the board on every frame steals focus/scroll.
         var nextKey = state.At("board")?.ToJsonString() + "|" +
             state.At("step")?.ToJsonString() + "|" +
-            state.At("meta", "previewDraftTimerSec").S() + "|" +
-            state.At("status").S();
+            state.At("meta", "gsiMode").B() + "|" +
+            state.At("meta", "gsiSeen").B() + "|" +
+            state.At("meta", "previewDraftTimerSec").S();
         if (nextKey == draftBoardKey) return;
         draftBoardKey = nextKey;
         draftBoardHost.Children.Clear();

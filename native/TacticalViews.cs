@@ -22,6 +22,9 @@ public sealed partial class NativeWindow
     private TextBlock? draftTurnLabel;
     private TextBlock? draftTimerLabel;
     private TextBlock? draftTimerCaption;
+    private Button? draftUndoButton;
+    private Button? draftRedoButton;
+    private Button? draftNewButton;
     private string draftIntelKey = "";
     private HeroAttributes.Attr heroAttrFilter = HeroAttributes.Attr.All;
     private int heroRoleFilter; // 0 = all; 1-5 = position
@@ -58,9 +61,16 @@ public sealed partial class NativeWindow
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // intel
 
         var heading = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-        var newDraft = Btn("＋ Новый драфт", async () => await RunAction("/api/new-draft"), true);
-        newDraft.VerticalAlignment = VerticalAlignment.Center;
-        DockPanel.SetDock(newDraft, Dock.Right); heading.Children.Add(newDraft);
+        draftNewButton = Btn("＋ Новый драфт", async () => await RunAction("/api/new-draft"), true);
+        draftNewButton.Name = "NewDraft";
+        draftNewButton.VerticalAlignment = VerticalAlignment.Center;
+        draftNewButton.Margin = new Thickness(8, 0, 0, 0);
+        DockPanel.SetDock(draftNewButton, Dock.Right); heading.Children.Add(draftNewButton);
+        draftGsiBadge = Text("●  Ручной режим", 11, FontWeights.SemiBold, muted);
+        draftGsiBadge.Name = "DraftGsiBadge";
+        draftGsiBadge.VerticalAlignment = VerticalAlignment.Center;
+        draftGsiBadge.Margin = new Thickness(8, 0, 0, 0);
+        DockPanel.SetDock(draftGsiBadge, Dock.Right); heading.Children.Add(draftGsiBadge);
         heading.Children.Add(Text("CAPTAINS MODE", 12, FontWeights.Bold, accent));
         root.Children.Add(heading);
 
@@ -88,10 +98,18 @@ public sealed partial class NativeWindow
         draftRecommendations.ItemContainerStyle = (Style)FindResource("CompactListItem");
         Grid.SetRow(draftRecommendations, 1); recommendations.Children.Add(draftRecommendations);
         var actions = new UniformGrid { Columns = 2 };
-        actions.Children.Add(Btn("↶", async () => await RunAction("/api/undo"), true));
-        actions.Children.Add(Btn("↷", async () => await RunAction("/api/redo"), true));
-        ((Button)actions.Children[0]).ToolTip = "Отменить ход";
-        ((Button)actions.Children[1]).ToolTip = "Повторить ход";
+        draftUndoButton = Btn("↶", async () =>
+        {
+            if (!IsGsiReadonly()) await RunAction("/api/undo");
+        }, true);
+        draftRedoButton = Btn("↷", async () =>
+        {
+            if (!IsGsiReadonly()) await RunAction("/api/redo");
+        }, true);
+        draftUndoButton.ToolTip = "Отменить ход";
+        draftRedoButton.ToolTip = "Повторить ход";
+        actions.Children.Add(draftUndoButton);
+        actions.Children.Add(draftRedoButton);
         Grid.SetRow(actions, 2); recommendations.Children.Add(actions);
         var left = TacticalPanel(recommendations, new Thickness(0, 0, 6, 0));
         left.Name = "DraftRecommendations"; workspace.Children.Add(left);
@@ -283,7 +301,9 @@ public sealed partial class NativeWindow
         }
     }
 
-    private bool CanApplyHero(int id) => id > 0 && state.At("meta", "draftReady").B()
+    private bool CanApplyHero(int id) => id > 0
+        && !IsGsiReadonly()
+        && state.At("meta", "draftReady").B()
         && !state.At("step", "done").B()
         && state.At("step", "action").S() is "pick" or "ban"
         && state.At("heroes").Items().Any(h => h.At("id").I() == id)

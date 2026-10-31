@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -39,12 +42,34 @@ internal sealed class HeroCatalog : ListBox
 
     public void SetHeroes(int[] ids, Func<int, Button> factory)
     {
+        // Same ordered ids → keep virtualized rows (preserves scroll + selection chrome).
+        if (createTile != null && heroes.Length == ids.Length && heroes.SequenceEqual(ids))
+        {
+            createTile = factory;
+            return;
+        }
+        var offset = ReadScrollOffset();
         heroes = ids;
         createTile = factory;
         RebuildRows();
+        if (offset > 0)
+            Dispatcher.BeginInvoke(() => WriteScrollOffset(offset), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private void RebuildRows() => ItemsSource = heroes.Chunk(columns).ToArray();
+
+    private double ReadScrollOffset()
+    {
+        if (Template?.FindName("PART_ScrollViewer", this) is ScrollViewer part)
+            return part.VerticalOffset;
+        return 0;
+    }
+
+    private void WriteScrollOffset(double offset)
+    {
+        if (Template?.FindName("PART_ScrollViewer", this) is ScrollViewer part)
+            part.ScrollToVerticalOffset(offset);
+    }
 
     protected override void PrepareContainerForItemOverride(DependencyObject element, object item)
     {
