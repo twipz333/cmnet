@@ -7,6 +7,24 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>Cmnet.Native</AssemblyName>
-    <ApplicationIcon></ApplicationIcon>
+    <RootNamespace>Cmnet.Native</RootNamespace>
+    <!-- Friend-facing identity (Gate 3.1). Override at publish: -p:Version=… -p:InformationalVersion=… -->
+    <Product>CMNET</Product>
+    <AssemblyTitle>CMNET Match Intelligence</AssemblyTitle>
+    <AssemblyProduct>CMNET</AssemblyProduct>
+    <Company>cmnet</Company>
+    <Authors>cmnet</Authors>
+    <Description>Local-first Dota 2 draft advisor for Windows (native WPF). Not a Released installer build.</Description>
+    <Copyright>Local-first non-commercial</Copyright>
+    <Version>0.4.0</Version>
+    <AssemblyVersion>0.4.0.0</AssemblyVersion>
+    <FileVersion>0.4.0.0</FileVersion>
+    <InformationalVersion>0.4.0-native</InformationalVersion>
+    <ApplicationIcon>Assets\cmnet.ico</ApplicationIcon>
+    <ApplicationTitle>CMNET · Match Intelligence</ApplicationTitle>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Also as Resource so Window.Icon can load via pack URI. -->
+    <Resource Include="Assets\cmnet.ico" />
+  </ItemGroup>
 </Project>
