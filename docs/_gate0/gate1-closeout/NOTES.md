@@ -4,7 +4,7 @@
 **Issue:** #38  
 **Base:** `origin/master` @ `fba7271` (Scout #33 + Draft #37)  
 **Evidence:** `dotnet publish` win-x64 self-contained + `--smoke-ui` + `--capture-ui` → this folder  
-**geometry.json:** **33** entries (unchanged CI matrix). Extra state PNGs are review evidence only.
+**geometry.json:** **33** entries (unchanged CI matrix). Extra honesty PNGs require `--capture-honesty` (not in default CI capture; keeps wall clock under 180s).
 
 ## Outcome
 
@@ -59,4 +59,6 @@
 dotnet publish native/Cmnet.Native.csproj -c Release -r win-x64 --self-contained true -o native/out
 native/out/Cmnet.Native.exe --smoke-ui
 native/out/Cmnet.Native.exe --capture-ui docs/_gate0/gate1-closeout
+# optional Gate1 honesty PNGs (outside geometry.json / CI matrix):
+native/out/Cmnet.Native.exe --capture-ui docs/_gate0/gate1-closeout --capture-honesty
 ```

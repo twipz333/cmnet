@@ -25,6 +25,9 @@ public static class Program
             dataDir = args[1];
         var smoke = Array.Exists(args, a => a == "--smoke-ui");
         var capture = Array.IndexOf(args, "--capture-ui");
+        // Optional Gate1 honesty PNGs (partial/stale/offline + draft states). Off by
+        // default so CI --capture-ui stays inside the 180s WaitForExit budget.
+        var captureHonesty = Array.Exists(args, a => a == "--capture-honesty");
         var app = new Application
         {
             ShutdownMode = smoke || capture >= 0 ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose
@@ -79,22 +82,28 @@ public static class Program
                     window.LoadPreviewScenario(scenario);
                     reports.Add(window.CaptureVisualPreview(Path.Combine(destination, "scout-" + scenario + ".png")));
                 }
-                // Gate1 close-out evidence only — NOT counted in geometry.json.
-                foreach (var scenario in new[] { "partial", "stale", "offline" })
+                // Gate1 close-out honesty PNGs are opt-in (--capture-honesty). They are
+                // review evidence only and must NOT enter geometry.json (CI Count==33).
+                // Default CI path omits them so WarmPreviewArtwork on Draft states cannot
+                // push total wall clock past the 180s WaitForExit in native.yml.
+                if (captureHonesty)
                 {
-                    window.LoadPreviewScenario(scenario);
-                    window.CaptureVisualPreview(Path.Combine(destination, "scout-" + scenario + ".png"));
-                }
-                // Draft honesty fixtures for Gate1 review evidence only. Do NOT add them to
-                // geometry.json — native.yml requires the historical 33-entry matrix
-                // (Draft×5×3 + Scout×5×3 + scout empty/loading/error).
-                foreach (var scenario in new[] { "empty", "loading", "error", "partial", "stale", "offline" })
-                {
-                    window.LoadDraftPreviewScenario(scenario);
-                    window.CaptureVisualPreview(Path.Combine(destination, "draft-" + scenario + ".png"));
+                    foreach (var scenario in new[] { "partial", "stale", "offline" })
+                    {
+                        window.LoadPreviewScenario(scenario);
+                        window.CaptureVisualPreview(Path.Combine(destination, "scout-" + scenario + ".png"));
+                    }
+                    foreach (var scenario in new[] { "empty", "loading", "error", "partial", "stale", "offline" })
+                    {
+                        window.LoadDraftPreviewScenario(scenario);
+                        window.CaptureVisualPreview(Path.Combine(destination, "draft-" + scenario + ".png"));
+                    }
                 }
                 File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                File.WriteAllText(Path.Combine(destination, "checks.txt"), "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\nGate1 state kit: empty/loading/error/partial/stale/offline captured for Scout+Draft (extra scenarios outside geometry.json).");
+                var checks = "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\ngeometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).";
+                if (captureHonesty)
+                    checks += "\nGate1 honesty kit (--capture-honesty): scout partial/stale/offline + draft empty/loading/error/partial/stale/offline (outside geometry.json).";
+                File.WriteAllText(Path.Combine(destination, "checks.txt"), checks);
             }
             catch (Exception ex)
             {
