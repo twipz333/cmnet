@@ -273,6 +273,15 @@ public sealed partial class NativeWindow
             ApplyCorpusPayload(previewCorpus!);
             UpdateDataView();
         }
+        else if (target == "История")
+        {
+            previewHistoryDrafts ??= SampleHistoryDrafts();
+            ApplyHistoryPreviewPayload();
+        }
+        else if (target is "Настройки" or "Друзья")
+        {
+            // Shell-only fixtures; dedicated Load*PreviewScenario fills content.
+        }
         else
         {
             UpdateScoutRoster();

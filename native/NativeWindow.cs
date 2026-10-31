@@ -116,9 +116,9 @@ public sealed partial class NativeWindow : Window
             {
                 Key.D1 or Key.NumPad1 => 0, Key.D2 or Key.NumPad2 => 1,
                 Key.D3 or Key.NumPad3 => 2, Key.D4 or Key.NumPad4 => 3,
-                Key.D5 or Key.NumPad5 => 4, _ => -1
+                Key.D5 or Key.NumPad5 => 4, Key.D6 or Key.NumPad6 => 5, _ => -1
             };
-            var pages = new[] { "Разведка", "Драфт", "Данные", "Настройки", "Друзья" };
+            var pages = new[] { "Разведка", "Драфт", "Данные", "История", "Настройки", "Друзья" };
             if (n >= 0) { e.Handled = true; await OpenPageAsync(pages[n]); }
             else if (e.Key == Key.F && page == "Драфт" && heroSearchBox != null)
             {
@@ -131,6 +131,7 @@ public sealed partial class NativeWindow : Window
                 e.Handled = true;
                 if (page == "Разведка") await LoadScoutAsync();
                 else if (page == "Данные") await LoadDataAsync();
+                else if (page == "История") await LoadHistoryAsync();
                 else if (page == "Настройки") await LoadSettingsAsync();
             }
         };
@@ -260,6 +261,7 @@ public sealed partial class NativeWindow : Window
         if (page != name) return; // construction failed; keep current view
         if (name == "Разведка") await LoadScoutAsync();
         else if (name == "Данные") await LoadDataAsync();
+        else if (name == "История") await LoadHistoryAsync();
         else if (name == "Настройки") await LoadSettingsAsync();
     }
     private void RenderPage()
@@ -276,6 +278,7 @@ public sealed partial class NativeWindow : Window
                 "Разведка" => BuildScoutView(),
                 "Драфт" => BuildDraftView(),
                 "Данные" => BuildDataView(),
+                "История" => BuildHistoryView(),
                 "Настройки" => BuildSettingsView(),
                 "Друзья" => BuildShareView(),
                 _ => Text(target)
@@ -294,6 +297,7 @@ public sealed partial class NativeWindow : Window
             "Разведка" => "Команды, игроки и информация о противниках",
             "Драфт" => "Предложения модели и управление выбором героев",
             "Данные" => "Корпус матчей и обучение модели",
+            "История" => "Сохранённые драфты и журнал решений после матча",
             "Настройки" => "Конфиг ядра · о программе · честный cut-list",
             _ => "Совместная работа и приглашения"
         };
@@ -1266,7 +1270,7 @@ public sealed partial class NativeWindow : Window
     // parent reuse, page/header mismatch and broken view construction.
     internal void AssertNavigationWorks()
     {
-        foreach (var target in new[] { "Драфт", "Разведка", "Данные", "Разведка", "Драфт", "Настройки", "Друзья" })
+        foreach (var target in new[] { "Драфт", "Разведка", "Данные", "История", "Разведка", "Драфт", "Настройки", "Друзья" })
         {
             var previous = body.Content;
             RenderPage(target);
@@ -1291,6 +1295,11 @@ public sealed partial class NativeWindow : Window
                  trainDataButton == null || cancelDataButton == null ||
                  dataJobsHost == null || dataLogList == null || dataTopPicks == null))
                 throw new InvalidOperationException("Data maintain surface controls missing.");
+            if (target == "История" &&
+                (historyEvidenceBanner == null || historyDraftList == null ||
+                 historyDetailHost == null || historyListHint == null ||
+                 historyDetailTitle == null))
+                throw new InvalidOperationException("History after-match surface controls missing.");
             if (target == "Настройки" &&
                 (settingsEvidenceBanner == null || settingsTabBar == null ||
                  settingsBodyHost == null || saveSettingsButton == null ||

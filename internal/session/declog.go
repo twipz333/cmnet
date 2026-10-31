@@ -386,6 +386,16 @@ func (s *Session) Logging() bool {
 	return s.cfg.Log != nil
 }
 
+// LogPath returns the on-disk decision log path when logging is wired, else "".
+func (s *Session) LogPath() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cfg.Log == nil {
+		return ""
+	}
+	return s.cfg.Log.Path()
+}
+
 
 // ReviewChoices returns our logged decisions for the current draft (copy).
 // Used by the post-draft survey; callers must not hold mu (it locks).

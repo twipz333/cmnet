@@ -382,6 +382,12 @@ public sealed partial class NativeWindow
             lastDataEvidence = ResolveDataEvidence(out var title, out var detail);
             SetEvidenceBanner(dataEvidenceBanner, lastDataEvidence, title, detail, forceShowReady);
         }
+        if (page == "История" && historyEvidenceBanner != null)
+        {
+            lastHistoryEvidence = ResolveHistoryEvidence(out var title, out var detail);
+            SetEvidenceBanner(historyEvidenceBanner, lastHistoryEvidence, title, detail,
+                forceShow: forceShowReady || lastHistoryEvidence != EvidenceKind.Ready);
+        }
         if (page == "Настройки" && settingsEvidenceBanner != null)
         {
             lastSettingsEvidence = ResolveSettingsEvidence(out var title, out var detail);
