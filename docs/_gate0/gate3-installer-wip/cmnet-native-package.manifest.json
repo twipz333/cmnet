@@ -1,0 +1,19 @@
+{
+  "gate": "3.2",
+  "version": "0.4.0",
+  "informational": "0.4.0-native",
+  "unsigned": true,
+  "released_claim": false,
+  "electron_channel_preserved": true,
+  "electron_artifact_pattern": "cmnet-setup-*.exe (desktop.yml v0.3.x)",
+  "native_setup": "cmnet-native-setup-0.4.0.exe",
+  "native_zip": "cmnet-native-0.4.0-win-x64.zip",
+  "payload": [
+    "Cmnet.Native.exe",
+    "advisor.exe",
+    "advisor.version"
+  ],
+  "install_dir_default": "%LOCALAPPDATA%\\Programs\\CMNET",
+  "data_dir": "%APPDATA%\\cmnet (preserved on uninstall)",
+  "built_utc": "2026-10-31T19:33:05.2732795Z"
+}

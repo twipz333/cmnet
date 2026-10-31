@@ -25,6 +25,21 @@ dotnet publish native/Cmnet.Native.csproj -c Release -r win-x64 --self-contained
 Or download the `cmnet-native-preview-win-x64` artifact from the
 `native-windows` GitHub Actions run and unzip it before launching.
 
+### Friend package (Gate 3.2, unsigned)
+
+On a builder machine (SDK required only here):
+
+```powershell
+pwsh -File native/installer/Build-NativeInstaller.ps1
+```
+
+Artifacts (distinct from Electron `cmnet-setup-*.exe`):
+
+- `native/dist/cmnet-native-setup-0.4.0.exe` — NSIS per-user installer + Start Menu/Desktop «CMNET»
+- `native/dist/cmnet-native-0.4.0-win-x64.zip` — portable fallback
+
+End users need neither Go nor .NET SDK. Package is **unsigned**; signing/update channel is Gate 3.3. Not Released. Electron `desktop.yml` / v0.3.x channel is unchanged.
+
 ## Implemented in this preview
 
 - Native window, navigation, WPF list virtualization, Windows high-DPI scaling
