@@ -61,10 +61,11 @@ public sealed partial class NativeWindow
             Margin = new Thickness(0, 0, 0, 14)
         };
         var installCol = new StackPanel();
-        installCol.Children.Add(Text("Что будет после установщика", 13, FontWeights.SemiBold));
+        installCol.Children.Add(Text("Установка и ярлык", 13, FontWeights.SemiBold));
         installCol.Children.Add(Text(
-            "Gate 3.2 добавит один Windows-установщик и ярлык: друг откроет " + ProductIdentity.ShortName +
-            " и попадёт на этот же экран. Сейчас это preview-сборка без подписи (Gate 3.3) и без автообновлений — не «Released». Данные остаются в %APPDATA%\\cmnet.",
+            "Друг ставит cmnet-native-setup (NSIS) или распаковывает portable zip — без SDK/CLI — и ярлык «" +
+            ProductIdentity.ShortName +
+            "» открывает этот же экран. Сборка пока без цифровой подписи и без автообновлений (Gate 3.3) — не «Released». Данные остаются в %APPDATA%\\cmnet (uninstall их не трогает).",
             12, color: muted));
         installNote.Child = installCol;
         host.Children.Add(installNote);

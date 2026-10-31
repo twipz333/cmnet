@@ -8,6 +8,7 @@ on:
     branches: [master]
     paths:
       - 'native/**'
+      - 'native/installer/**'
       - 'internal/web/**'
       - 'internal/session/**'
       - 'internal/cache/**'
@@ -15,6 +16,7 @@ on:
   pull_request:
     paths:
       - 'native/**'
+      - 'native/installer/**'
       - 'internal/web/**'
       - 'internal/session/**'
       - 'internal/cache/**'
@@ -111,4 +113,29 @@ jobs:
         with:
           name: cmnet-native-preview-win-x64
           path: native/cmnet-native-preview-win-x64.zip
+          if-no-files-found: error
+      # Gate 3.2 friend package (NSIS + portable zip). Does NOT publish to GitHub
+      # Releases and does NOT touch desktop.yml / Electron cmnet-setup-*.exe.
+      - name: Build native NSIS installer + portable package
+        shell: pwsh
+        run: |
+          # Prefer system/winget NSIS so CI produces setup EXE (not zip-only).
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            winget install --id NSIS.NSIS -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+          }
+          pwsh -File native/installer/Build-NativeInstaller.ps1 -SkipPublish -SkipSmoke
+          if (-not (Test-Path native/dist/cmnet-native-0.4.0-win-x64.zip)) {
+            throw 'Missing native portable zip'
+          }
+          if (-not (Test-Path native/dist/cmnet-native-setup-0.4.0.exe)) {
+            throw 'Missing NSIS setup EXE (Gate 3.2 requires cmnet-native-setup-0.4.0.exe)'
+          }
+          Get-ChildItem native/dist | Format-Table Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cmnet-native-setup
+          path: |
+            native/dist/cmnet-native-setup-0.4.0.exe
+            native/dist/cmnet-native-0.4.0-win-x64.zip
+            native/dist/cmnet-native-package.manifest.json
           if-no-files-found: error

@@ -70,6 +70,10 @@ tmp-*
 # Native build and local visual QA
 native/obj/
 native/out/
+native/dist/
 .artifacts/
 native/ui-snapshots/
 native/qa-audit/
+# Portable NSIS toolchain cached by Build-NativeInstaller.ps1
+tools/nsis/
+tools/nsis-*/
