@@ -94,7 +94,13 @@ public sealed partial class NativeWindow : Window
     {
         isVisualPreview = visualPreview;
         artwork = new HeroArtwork(() => visualPreview ? Path.Combine(Path.GetTempPath(), "cmnet-visual-fixture") : core.DataDirectory);
-        Title = "CMNET · Match Intelligence";
+        Title = ProductIdentity.WindowTitle;
+        try
+        {
+            Icon = System.Windows.Media.Imaging.BitmapFrame.Create(
+                new Uri("pack://application:,,,/Assets/cmnet.ico", UriKind.Absolute));
+        }
+        catch { /* icon missing in odd host — exe ApplicationIcon still applies */ }
         Width = 1460;
         Height = 860;
         MinWidth = 820;

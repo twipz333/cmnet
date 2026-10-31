@@ -28,18 +28,18 @@ public sealed partial class NativeWindow
     {
         showingWelcome = true;
         heading.Text = "Первый запуск";
-        subtitle.Text = "Выберите папку данных · без консоли и SDK";
+        subtitle.Text = ProductIdentity.ShortName + " · без консоли и SDK";
 
         var host = new StackPanel { Name = "WelcomeWorkspace", MaxWidth = 720 };
         host.HorizontalAlignment = HorizontalAlignment.Left;
 
-        host.Children.Add(Text("ПЕРВЫЙ ЗАПУСК", 10, FontWeights.Bold, accent));
+        host.Children.Add(Text("ПЕРВЫЙ ЗАПУСК · " + ProductIdentity.ShortName, 10, FontWeights.Bold, accent));
         var title = Text("Где лежат ваши данные?", 26, FontWeights.Bold);
         title.Margin = new Thickness(0, 10, 0, 8);
         title.FontFamily = new FontFamily("Segoe UI Variable Display");
         host.Children.Add(title);
         host.Children.Add(Text(
-            "Если cmnet уже работал на этом компьютере, у вас есть папка с cmnet.db: собранные матчи и обученная модель. Выберите её — и всё продолжится с того же места. Не нужны терминал, Go или .NET SDK.",
+            "Если CMNET уже работал на этом компьютере (native или Electron), у вас есть папка с cmnet.db: собранные матчи и обученная модель. Выберите её — и всё продолжится с того же места. Не нужны терминал, Go или .NET SDK.",
             13, color: muted));
 
         var banner = BuildEvidenceBanner("WelcomeEvidenceBanner");
@@ -50,6 +50,24 @@ public sealed partial class NativeWindow
         banner.Visibility = Visibility.Visible;
         banner.Margin = new Thickness(0, 18, 0, 14);
         host.Children.Add(banner);
+
+        var installNote = new Border
+        {
+            Background = ThemeBrush("RaisedBrush"),
+            BorderBrush = border,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(14, 12, 14, 12),
+            Margin = new Thickness(0, 0, 0, 14)
+        };
+        var installCol = new StackPanel();
+        installCol.Children.Add(Text("Что будет после установщика", 13, FontWeights.SemiBold));
+        installCol.Children.Add(Text(
+            "Gate 3.2 добавит один Windows-установщик и ярлык: друг откроет " + ProductIdentity.ShortName +
+            " и попадёт на этот же экран. Сейчас это preview-сборка без подписи (Gate 3.3) и без автообновлений — не «Released». Данные остаются в %APPDATA%\\cmnet.",
+            12, color: muted));
+        installNote.Child = installCol;
+        host.Children.Add(installNote);
 
         welcomeList = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
         welcomeList.Children.Add(Text("Ищу папки с cmnet.db…", 13, color: muted));
@@ -79,7 +97,8 @@ public sealed partial class NativeWindow
         host.Children.Add(welcomeError);
 
         var foot = Text(
-            $"По умолчанию новая папка: {DesktopSettings.DefaultDataDirectory()}",
+            $"По умолчанию новая папка: {DesktopSettings.DefaultDataDirectory()}\n" +
+            ProductIdentity.ProductVersionSummary() + " · не Released",
             11, color: muted);
         foot.Margin = new Thickness(0, 22, 0, 0);
         host.Children.Add(foot);

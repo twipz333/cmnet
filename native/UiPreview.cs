@@ -715,6 +715,8 @@ public sealed partial class NativeWindow
         if (scenario == "welcome")
         {
             // First-run overlay without touching desktop.json or starting Go.
+            // Leave Draft/Scout page asserts: Welcome replaces body and detaches those visuals.
+            page = "Настройки";
             body.Content = BuildWelcomeView();
             heading.Text = "Первый запуск";
             subtitle.Text = "SAMPLE · выбор папки данных";
@@ -725,7 +727,7 @@ public sealed partial class NativeWindow
                     "SAMPLE · найденная папка C:\\Users\\…\\cmnet\\data · 42 МБ, обновлено сегодня, модель обучена",
                     13, color: muted));
             }
-            toast.Text = "SAMPLE DATA · settings-welcome";
+            toast.Text = "SAMPLE DATA · naming-welcome · " + ProductIdentity.ProductVersionSummary();
             return;
         }
 
@@ -786,7 +788,10 @@ public sealed partial class NativeWindow
         {
             previewConfig = SampleSettingsConfig(true);
             ShowSettingsTab("about");
+            RefreshAboutFacts();
             RefreshSettingsEvidence();
+            toast.Text = "SAMPLE DATA · naming-about · " + ProductIdentity.AppVersionLabel();
+            return;
         }
         else if (scenario == "deferred")
         {

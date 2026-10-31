@@ -35,9 +35,12 @@ public sealed partial class NativeWindow
         ((TextBlock)symbol.Child).HorizontalAlignment = HorizontalAlignment.Center;
         brand.Children.Add(symbol);
         var wordmark = new StackPanel { Margin = new Thickness(10, 3, 0, 0) };
-        var logo = Text("CMNET", 16, FontWeights.Bold, foreground);
+        var logo = Text(ProductIdentity.ShortName, 16, FontWeights.Bold, foreground);
         logo.FontFamily = new FontFamily("Segoe UI Variable Display");
         wordmark.Children.Add(logo);
+        var mark = Text(ProductIdentity.Tagline, 9, FontWeights.Medium, muted);
+        mark.Margin = new Thickness(0, 1, 0, 0);
+        wordmark.Children.Add(mark);
         
         brand.Children.Add(wordmark);
         top.Children.Add(brand);

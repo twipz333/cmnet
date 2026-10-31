@@ -173,21 +173,7 @@ internal static class DesktopSettings
         return $"обновлено {days} дн. назад";
     }
 
-    public static string AppVersionLabel()
-    {
-        try
-        {
-            var path = Environment.ProcessPath;
-            if (!string.IsNullOrEmpty(path))
-            {
-                var info = FileVersionInfo.GetVersionInfo(path);
-                if (!string.IsNullOrWhiteSpace(info.ProductVersion))
-                    return info.ProductVersion;
-                if (!string.IsNullOrWhiteSpace(info.FileVersion))
-                    return info.FileVersion;
-            }
-        }
-        catch { /* preview / unpackaged */ }
-        return "native preview";
-    }
+    public static string AppVersionLabel() => ProductIdentity.AppVersionLabel();
+
+    public static string CoreVersionLabel() => ProductIdentity.CoreVersionLabel();
 }

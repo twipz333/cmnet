@@ -47,14 +47,20 @@ jobs:
           GOARCH: amd64
         run: |
           mkdir -p native/out
-          go build -trimpath -ldflags "-s -w" -o native/out/advisor.exe ./cmd/advisor
+          NATIVE_VER="${NATIVE_VERSION:-0.4.0-native}"
+          go build -trimpath -ldflags "-s -w -X main.version=${NATIVE_VER}" -o native/out/advisor.exe ./cmd/advisor
+          printf '%s\n' "${NATIVE_VER}" > native/out/advisor.version
       - name: Compile and publish WPF app (self-contained, no browser)
         shell: pwsh
         run: |
-          dotnet publish native/Cmnet.Native.csproj -c Release -r win-x64 --self-contained true -o native/out -p:PublishSingleFile=true -p:PublishTrimmed=false
+          $nativeVer = if ($env:NATIVE_VERSION) { $env:NATIVE_VERSION } else { '0.4.0-native' }
+          dotnet publish native/Cmnet.Native.csproj -c Release -r win-x64 --self-contained true -o native/out `
+            -p:PublishSingleFile=true -p:PublishTrimmed=false `
+            -p:Version=0.4.0 -p:InformationalVersion=$nativeVer
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path native/out/Cmnet.Native.exe)) { throw 'Missing WPF executable' }
           if (-not (Test-Path native/out/advisor.exe)) { throw 'Missing Go sidecar' }
+          if (-not (Test-Path native/out/advisor.version)) { Set-Content -Path native/out/advisor.version -Value $nativeVer }
       - name: Smoke-test WPF view navigation on Windows
         shell: pwsh
         run: |

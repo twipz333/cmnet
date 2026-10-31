@@ -335,19 +335,23 @@ public sealed partial class NativeWindow
     {
         var box = new StackPanel();
         box.Children.Add(Text("О ПРОГРАММЕ", 10, FontWeights.Bold, muted));
-        var title = Text("CMNET · Match Intelligence", 18, FontWeights.SemiBold);
-        title.Margin = new Thickness(0, 8, 0, 10);
+        var title = Text(ProductIdentity.AboutHeading, 18, FontWeights.SemiBold);
+        title.Margin = new Thickness(0, 8, 0, 4);
         box.Children.Add(title);
+        box.Children.Add(Text(
+            "Исполняемый файл: " + ProductIdentity.ExeFileName + " · ядро: " + ProductIdentity.CoreFileName,
+            12, color: muted));
 
         aboutFacts ??= new TextBlock();
         aboutFacts.FontSize = 13;
         aboutFacts.TextWrapping = TextWrapping.Wrap;
         aboutFacts.LineHeight = 22;
+        aboutFacts.Margin = new Thickness(0, 12, 0, 0);
         RefreshAboutFacts();
         box.Children.Add(aboutFacts);
 
         var note = Text(
-            "Автообновления и подписанный установщик — Gate 3. Эта native-сборка не проверяет канал обновлений и не устанавливает патчи сама.",
+            "Подписанный установщик и канал обновлений — Gate 3.2–3.3. Эта native-сборка не проверяет обновления, не подписывает бинарь и не является Released.",
             12, color: muted);
         note.Margin = new Thickness(0, 16, 0, 0);
         box.Children.Add(note);
@@ -386,9 +390,11 @@ public sealed partial class NativeWindow
             : "не обучена (см. раздел «Данные»)";
         aboutFacts.Text =
             $"Версия приложения\t{DesktopSettings.AppVersionLabel()}\n" +
+            $"Версия ядра (advisor)\t{DesktopSettings.CoreVersionLabel()}\n" +
             $"Папка данных\t{core.DataDirectory}\n" +
             $"Модель\t{model}\n" +
             $"Локальный режим\tда (CMNET_LOCAL_ONLY, Discord выключен)\n" +
+            $"Статус релиза\tне Released (Gate 3.1 identity / preview)\n" +
             $"Перезапуск\tчасть полей config.yaml применяется только после перезапуска ядра";
     }
 
@@ -420,7 +426,7 @@ public sealed partial class NativeWindow
         CutRow("Советы по предметам (Rules)",
             "Редактор item-rules остаётся в Electron; native фокус — драфт / разведка / данные / ядро.");
         CutRow("Канал автообновлений",
-            "Подписанный установщик и update/rollback — Gate 3. В «О программе» нет кнопки «Проверить обновления».");
+            "Подписанный установщик и update/rollback — Gate 3.2–3.3. В «О программе» нет кнопки «Проверить обновления».");
 
         return Surface(box, new Thickness(0));
     }
