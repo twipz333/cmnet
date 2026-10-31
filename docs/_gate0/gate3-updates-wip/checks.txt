@@ -1,0 +1,2 @@
+Gate 3.3 Updates-only capture (--capture-updates-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33).
+Gate 3.3 Updates kit (--capture-updates): about-updates-unsigned + about-updates-unavailable (outside geometry.json).

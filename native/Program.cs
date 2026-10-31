@@ -18,6 +18,39 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Gate 3.3 — headless update fixtures / check (no WPF window required).
+        var selfTestIdx = Array.IndexOf(args, "--self-test-updates");
+        if (selfTestIdx >= 0)
+        {
+            var fixtures = selfTestIdx + 1 < args.Length && !args[selfTestIdx + 1].StartsWith("--", StringComparison.Ordinal)
+                ? args[selfTestIdx + 1]
+                : null;
+            Environment.ExitCode = UpdateSelfTest.RunAsync(fixtures).GetAwaiter().GetResult();
+            return;
+        }
+        var checkIdx = Array.IndexOf(args, "--check-updates");
+        if (checkIdx >= 0)
+        {
+            string? manifest = null;
+            string? trust = null;
+            for (var i = checkIdx + 1; i < args.Length; i++)
+            {
+                if (args[i] == "--manifest" && i + 1 < args.Length) { manifest = args[++i]; continue; }
+                if (args[i] == "--trust" && i + 1 < args.Length) { trust = args[++i]; continue; }
+                if (!args[i].StartsWith("--", StringComparison.Ordinal) && manifest == null)
+                    manifest = args[i];
+            }
+            var result = UpdateChannel.CheckAsync(
+                ProductIdentity.AppVersionLabel(),
+                manifestUrlOrPath: manifest,
+                trustPemPath: trust).GetAwaiter().GetResult();
+            Console.Out.WriteLine(UpdateChannel.FormatCheckLine(result));
+            Environment.ExitCode = result.Kind is UpdateChannel.CheckKind.Error or UpdateChannel.CheckKind.Rejected
+                ? 2
+                : 0;
+            return;
+        }
+
         // Explicit override for users whose Electron data folder is elsewhere.
         // The default still reads the existing Electron desktop.json dataDir.
         string? dataDir = null;
@@ -58,6 +91,10 @@ public static class Program
         var captureNaming = Array.Exists(args, a => a == "--capture-naming");
         var captureNamingOnly = Array.Exists(args, a => a == "--capture-naming-only");
         if (captureNamingOnly) captureNaming = true;
+        // Gate 3.3 update About honesty — outside geometry.json (Count stays 33).
+        var captureUpdates = Array.Exists(args, a => a == "--capture-updates");
+        var captureUpdatesOnly = Array.Exists(args, a => a == "--capture-updates-only");
+        if (captureUpdatesOnly) captureUpdates = true;
         var app = new Application
         {
             ShutdownMode = smoke || capture >= 0 ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose
@@ -92,7 +129,7 @@ public static class Program
             var reports = new JsonArray();
             try
             {
-                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly)
+                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly && !captureUpdatesOnly)
                 {
                     window.AssertPreviewInteractions();
                     foreach (var screen in new[] { "Разведка", "Драфт" })
@@ -273,12 +310,25 @@ public static class Program
                     File.Copy(Path.Combine(destination, "naming-about.png"),
                         Path.Combine(destination, "settings-about.png"), true);
                 }
-                // Data/Settings/GSI/History/Friends/Migration/Naming-only must not wipe a prior CI matrix geometry.json (Count==33).
-                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly)
+                // Gate 3.3 native update channel honesty — outside geometry.json.
+                if (captureUpdates)
+                {
+                    foreach (var scenario in new[] { "about-updates-unsigned", "about-updates-unavailable" })
+                    {
+                        window.LoadSettingsPreviewScenario(scenario);
+                        window.CaptureVisualPreview(
+                            Path.Combine(destination, scenario + ".png"),
+                            artworkWarmSeconds: 0);
+                    }
+                }
+                // Data/Settings/GSI/History/Friends/Migration/Naming/Updates-only must not wipe a prior CI matrix geometry.json (Count==33).
+                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly && !captureUpdatesOnly)
                 {
                     File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 }
-                var checks = captureNamingOnly
+                var checks = captureUpdatesOnly
+                    ? "Gate 3.3 Updates-only capture (--capture-updates-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
+                    : captureNamingOnly
                     ? "Gate 3.1 Naming-only capture (--capture-naming-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
                     : captureMigrationOnly
                     ? "Gate 2.6 Migration-only capture (--capture-migration-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
@@ -293,7 +343,7 @@ public static class Program
                     : captureDataOnly
                     ? "Gate 2.1 Data-only capture (--capture-data-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
                     : "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\ngeometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).";
-                if (captureHonesty && !captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly)
+                if (captureHonesty && !captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly && !captureUpdatesOnly)
                     checks += "\nGate1 honesty kit (--capture-honesty): scout partial/stale/offline + draft empty/loading/error/partial/stale/offline (outside geometry.json).";
                 if (captureData)
                     checks += "\nGate 2.1 Data kit (--capture-data): data ready/empty/loading/error/partial/stale/offline (outside geometry.json).";
@@ -309,6 +359,8 @@ public static class Program
                     checks += "\nGate 2.6 Migration kit (--capture-migration): migration ready/empty/partial/error/offline (outside geometry.json).";
                 if (captureNaming)
                     checks += "\nGate 3.1 Naming kit (--capture-naming): naming-welcome + naming-about (outside geometry.json).";
+                if (captureUpdates)
+                    checks += "\nGate 3.3 Updates kit (--capture-updates): about-updates-unsigned + about-updates-unavailable (outside geometry.json).";
                 File.WriteAllText(Path.Combine(destination, "checks.txt"), checks);
             }
             catch (Exception ex)

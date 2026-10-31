@@ -14,8 +14,8 @@ namespace Cmnet.Native;
 
 /// <summary>
 /// Gate 2.2 Maintain / Settings. Typed config editor with validation + save
-/// confirmation, About without auto-update, and an honest cut-list for tabs
-/// that stay out of native local-first (Discord / Alerts / Rules / updates).
+/// confirmation, About with Gate 3.3 fail-closed update check, and an honest
+/// cut-list for tabs that stay out of native local-first (Discord / Alerts / Rules).
 /// Evidence states share StateKit with Scout/Draft/Data.
 /// </summary>
 public sealed partial class NativeWindow
@@ -27,6 +27,9 @@ public sealed partial class NativeWindow
     private TextBlock? settingsSaveBanner;
     private TextBlock? settingsPathLine;
     private TextBlock? aboutFacts;
+    private TextBlock? updateStatusText;
+    private Button? checkUpdatesButton;
+    private Button? applyUpdateButton;
     private TextBlock? migrateStatusText;
     private Button? saveSettingsButton;
     private Button? reloadSettingsButton;
@@ -42,6 +45,9 @@ public sealed partial class NativeWindow
     private string? settingsLoadError;
     private JsonObject? previewConfig;
     private readonly List<ConfigField> configEditors = new();
+    private UpdateChannel.CheckResult? lastUpdateCheck;
+    private string? lastStagedUpdatePath;
+    private bool updateCheckBusy;
 
     private UIElement BuildSettingsView()
     {
@@ -347,11 +353,56 @@ public sealed partial class NativeWindow
         aboutFacts.TextWrapping = TextWrapping.Wrap;
         aboutFacts.LineHeight = 22;
         aboutFacts.Margin = new Thickness(0, 12, 0, 0);
+        DetachUi(aboutFacts);
         RefreshAboutFacts();
         box.Children.Add(aboutFacts);
 
+        var updateHead = Text("КАНАЛ ОБНОВЛЕНИЙ (NATIVE)", 10, FontWeights.Bold, muted);
+        updateHead.Margin = new Thickness(0, 20, 0, 6);
+        box.Children.Add(updateHead);
+        box.Children.Add(Text(
+            "Отдельный манифест cmnet-native-update/v1. Не использует Electron latest.yml / desktop.yml. " +
+            "Без публичного ключа apply fail-closed. Не Released.",
+            12, color: muted));
+
+        updateStatusText ??= new TextBlock
+        {
+            FontSize = 13,
+            TextWrapping = TextWrapping.Wrap,
+            LineHeight = 20,
+            Margin = new Thickness(0, 10, 0, 0),
+            Foreground = muted
+        };
+        DetachUi(updateStatusText);
+        if (lastUpdateCheck == null && !isVisualPreview)
+            updateStatusText.Text = "Проверка ещё не выполнялась. Нажмите «Проверить обновления».";
+        else if (lastUpdateCheck == null && isVisualPreview)
+            updateStatusText.Text = "SAMPLE · состояние обновлений задаётся preview-сценарием.";
+        box.Children.Add(updateStatusText);
+
+        var updateRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 12, 0, 0)
+        };
+        checkUpdatesButton = Btn("Проверить обновления", CheckUpdatesAsync, true);
+        checkUpdatesButton.HorizontalAlignment = HorizontalAlignment.Left;
+        System.Windows.Automation.AutomationProperties.SetName(checkUpdatesButton, "Проверить обновления");
+        updateRow.Children.Add(checkUpdatesButton);
+
+        applyUpdateButton = Btn("Скачать в staging…", StageUpdateAsync);
+        applyUpdateButton.Margin = new Thickness(8, 0, 0, 0);
+        applyUpdateButton.HorizontalAlignment = HorizontalAlignment.Left;
+        applyUpdateButton.IsEnabled = lastUpdateCheck?.CanApply == true;
+        applyUpdateButton.ToolTip =
+            "Только после успешной проверки подписи. Пишет в %LOCALAPPDATA%\\CMNET\\updates\\staging; текущую установку не трогает.";
+        System.Windows.Automation.AutomationProperties.SetName(applyUpdateButton, "Скачать обновление в staging");
+        updateRow.Children.Add(applyUpdateButton);
+        box.Children.Add(updateRow);
+
         var note = Text(
-            "Подписанный установщик и канал обновлений — Gate 3.2–3.3. Эта native-сборка не проверяет обновления, не подписывает бинарь и не является Released.",
+            UpdateTrust.PlugInInstructionsRu() +
+            " NSIS при сбое: переустановите предыдущий cmnet-native-setup; %APPDATA%\\cmnet сохраняется.",
             12, color: muted);
         note.Margin = new Thickness(0, 16, 0, 0);
         box.Children.Add(note);
@@ -388,14 +439,143 @@ public sealed partial class NativeWindow
         var model = draftReady
             ? $"патч {patch}, {bundle}"
             : "не обучена (см. раздел «Данные»)";
+        var trust = UpdateTrust.TryLoad();
         aboutFacts.Text =
             $"Версия приложения\t{DesktopSettings.AppVersionLabel()}\n" +
             $"Версия ядра (advisor)\t{DesktopSettings.CoreVersionLabel()}\n" +
             $"Папка данных\t{core.DataDirectory}\n" +
             $"Модель\t{model}\n" +
             $"Локальный режим\tда (CMNET_LOCAL_ONLY, Discord выключен)\n" +
-            $"Статус релиза\tне Released (Gate 3.1 identity / preview)\n" +
+            $"Статус релиза\tне Released (Gate 3.3 update channel / preview)\n" +
+            $"Ключ обновлений\t{(trust == null ? "не настроен (fail-closed)" : trust.Source)}\n" +
             $"Перезапуск\tчасть полей config.yaml применяется только после перезапуска ядра";
+        RefreshUpdateStatusUi();
+    }
+
+    private void RefreshUpdateStatusUi()
+    {
+        if (updateStatusText == null) return;
+        if (lastUpdateCheck == null)
+        {
+            if (!isVisualPreview)
+                updateStatusText.Text = "Проверка ещё не выполнялась. Нажмите «Проверить обновления».";
+            if (applyUpdateButton != null) applyUpdateButton.IsEnabled = false;
+            return;
+        }
+        var r = lastUpdateCheck;
+        updateStatusText.Text = $"{r.TitleRu}\n{r.DetailRu}";
+        updateStatusText.Foreground = r.Kind switch
+        {
+            UpdateChannel.CheckKind.UpToDate => good,
+            UpdateChannel.CheckKind.Available => accent,
+            UpdateChannel.CheckKind.Unsigned => gold,
+            UpdateChannel.CheckKind.Unavailable => gold,
+            _ => (Brush)FindResource("ErrorBrush")
+        };
+        if (applyUpdateButton != null)
+            applyUpdateButton.IsEnabled = r.CanApply && !updateCheckBusy;
+    }
+
+    private async Task CheckUpdatesAsync()
+    {
+        if (updateCheckBusy) return;
+        updateCheckBusy = true;
+        try
+        {
+            if (checkUpdatesButton != null) checkUpdatesButton.IsEnabled = false;
+            if (applyUpdateButton != null) applyUpdateButton.IsEnabled = false;
+            if (updateStatusText != null)
+            {
+                updateStatusText.Foreground = muted;
+                updateStatusText.Text = "Проверяю манифест…";
+            }
+
+            if (isVisualPreview)
+            {
+                // Preview path uses injected lastUpdateCheck from LoadSettingsPreviewScenario.
+                if (lastUpdateCheck == null)
+                {
+                    lastUpdateCheck = UpdateChannel.Evaluate(
+                        ProductIdentity.AppVersionLabel(),
+                        null,
+                        UpdateTrust.TryLoad());
+                }
+                RefreshUpdateStatusUi();
+                toast.Text = "SAMPLE DATA · update-check";
+                return;
+            }
+
+            lastUpdateCheck = await UpdateChannel.CheckAsync(ProductIdentity.AppVersionLabel());
+            lastStagedUpdatePath = null;
+            RefreshUpdateStatusUi();
+            RefreshSettingsEvidence();
+            toast.Text = lastUpdateCheck.TitleRu;
+        }
+        finally
+        {
+            updateCheckBusy = false;
+            if (checkUpdatesButton != null) checkUpdatesButton.IsEnabled = true;
+            RefreshUpdateStatusUi();
+        }
+    }
+
+    private async Task StageUpdateAsync()
+    {
+        if (lastUpdateCheck?.CanApply != true || lastUpdateCheck.Manifest == null)
+        {
+            toast.Text = "Скачивание недоступно — нет проверенного обновления.";
+            return;
+        }
+        if (isVisualPreview)
+        {
+            toast.Text = "SAMPLE · staging пропущен в preview.";
+            return;
+        }
+
+        var trust = UpdateTrust.TryLoad();
+        if (trust == null)
+        {
+            toast.Text = "Нет ключа доверия — apply fail-closed.";
+            return;
+        }
+
+        updateCheckBusy = true;
+        try
+        {
+            if (updateStatusText != null)
+                updateStatusText.Text = "Качаю в staging (установка не трогается)…";
+            var staged = await UpdateChannel.StageDownloadAsync(lastUpdateCheck.Manifest, trust);
+            if (updateStatusText != null)
+            {
+                updateStatusText.Text = staged.TitleRu + "\n" + staged.DetailRu;
+                updateStatusText.Foreground = staged.Ok ? good : (Brush)FindResource("ErrorBrush");
+            }
+            lastStagedUpdatePath = staged.StagedPath;
+            toast.Text = staged.TitleRu;
+            if (staged.Ok && staged.StagedPath != null)
+            {
+                var launch = MessageBox.Show(
+                    this,
+                    "Файл в staging. Запустить NSIS-установщик сейчас?\n\n" +
+                    "При сбое переустановите предыдущий cmnet-native-setup. Данные в %APPDATA%\\cmnet сохраняются.",
+                    ProductIdentity.ShortName,
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                if (launch == MessageBoxResult.Yes)
+                {
+                    if (UpdateChannel.TryLaunchStagedInstaller(
+                            staged.StagedPath, lastUpdateCheck.Manifest, trust, out var detail))
+                        toast.Text = detail;
+                    else
+                        toast.Text = detail;
+                }
+            }
+        }
+        finally
+        {
+            updateCheckBusy = false;
+            RefreshUpdateStatusUi();
+        }
     }
 
     private UIElement BuildDeferredPane()
@@ -425,8 +605,9 @@ public sealed partial class NativeWindow
             "Отдельная вкладка Electron не перенесена. Ключи alert-* в config.yaml скрыты здесь же, чтобы не дублировать мёртвый редактор.");
         CutRow("Советы по предметам (Rules)",
             "Редактор item-rules остаётся в Electron; native фокус — драфт / разведка / данные / ядро.");
-        CutRow("Канал автообновлений",
-            "Подписанный установщик и update/rollback — Gate 3.2–3.3. В «О программе» нет кнопки «Проверить обновления».");
+        CutRow("Автоприменение без ключа / Electron latest.yml",
+            "Gate 3.3: проверка манифеста есть в «О программе», но apply fail-closed без update-trust.pem. " +
+            "Канал Electron (desktop.yml / latest.yml / guest.yml) не используется native-клиентом.");
 
         return Surface(box, new Thickness(0));
     }
@@ -692,6 +873,12 @@ public sealed partial class NativeWindow
         settingsSaveBanner.Text = "";
     }
 
+    private static void DetachUi(FrameworkElement? el)
+    {
+        if (el?.Parent is Panel panel)
+            panel.Children.Remove(el);
+    }
+
     private void RefreshSettingsEvidence()
     {
         if (settingsEvidenceBanner == null || page != "Настройки") return;
@@ -744,10 +931,16 @@ public sealed partial class NativeWindow
             detail = gsiStatusDetail?.Text ?? "Статус конфига и слушателя.";
             return lastGsiEvidence == EvidenceKind.Ready ? EvidenceKind.Ready : lastGsiEvidence;
         }
+        if (settingsTab == "about" && lastUpdateCheck != null)
+        {
+            title = lastUpdateCheck.TitleRu;
+            detail = lastUpdateCheck.DetailRu;
+            return UpdateChannel.ToEvidence(lastUpdateCheck.Kind);
+        }
         detail = settingsTab switch
         {
-            "about" => "Версия, путь данных и статус модели. Автообновление — Gate 3.",
-            "deferred" => "Cut-list без мёртвых контролов: Discord / Alerts / Rules / updates.",
+            "about" => "Версия, путь данных, модель; проверка обновлений fail-closed без ключа. Не Released.",
+            "deferred" => "Cut-list: Discord / Alerts / Rules; Electron update channel не смешан с native.",
             _ => $"Редактируемых полей: {configEditors.Count}. Сохранение с проверкой типов."
         };
         return EvidenceKind.Ready;

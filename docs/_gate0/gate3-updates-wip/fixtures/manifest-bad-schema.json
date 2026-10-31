@@ -1,0 +1,12 @@
+{
+  "schema": "cmnet-native-update/v0-legacy",
+  "channel": "native",
+  "version": "0.4.1",
+  "artifact": {
+    "kind": "nsis-setup",
+    "fileName": "x.exe",
+    "url": "https://example.invalid/x.exe",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sizeBytes": 1
+  }
+}

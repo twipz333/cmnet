@@ -1,0 +1,12 @@
+PASS  parse-unsigned
+PASS  reject-bad-schema
+PASS  reject-electron-shape
+PASS  fail-closed-no-key
+PASS  verify-signed
+PASS  evaluate-available
+PASS  evaluate-up-to-date
+PASS  reject-bad-signature
+PASS  unsigned-with-key-no-apply
+PASS  check-async-file
+PASS  unavailable-no-url
+RESULT OK — Gate 3.3 update fixtures
