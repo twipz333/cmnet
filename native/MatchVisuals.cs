@@ -20,7 +20,9 @@ public sealed partial class NativeWindow
     {
         if (draftBoardHost == null || state == null || page != "Драфт") return;
         var nextKey = state.At("board")?.ToJsonString() + "|" +
-            state.At("step")?.ToJsonString();
+            state.At("step")?.ToJsonString() + "|" +
+            state.At("meta", "previewDraftTimerSec").S() + "|" +
+            state.At("status").S();
         if (nextKey == draftBoardKey) return;
         draftBoardKey = nextKey;
         draftBoardHost.Children.Clear();
@@ -37,14 +39,65 @@ public sealed partial class NativeWindow
         var teams = new Grid();
         teams.ColumnDefinitions.Add(new ColumnDefinition {
             Width = new GridLength(1, GridUnitType.Star) });
+        teams.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
         teams.ColumnDefinitions.Add(new ColumnDefinition {
             Width = new GridLength(1, GridUnitType.Star) });
+
         var radiant = DraftBoardSide("RADIANT", radiantPicks, radiantBans, accent);
         radiant.Margin = new Thickness(0, 0, 6, 0);
-        var dire = DraftBoardSide("DIRE", direPicks, direBans, gold);
-        dire.Margin = new Thickness(6, 0, 0, 0);
         teams.Children.Add(radiant);
-        Grid.SetColumn(dire, 1);
+
+        var stepTeam = state.At("step", "team").S("—");
+        var stepAction = state.At("step", "action").S("—");
+        var turnTone = stepTeam.Equals("dire", StringComparison.OrdinalIgnoreCase)
+            ? (Brush)FindResource("ErrorBrush") : accent;
+        draftTimerLabel = Text("—", 22, FontWeights.Bold, foreground);
+        draftTimerLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        draftTimerCaption = Text("таймер хода недоступен", 9, color: muted);
+        draftTimerCaption.HorizontalAlignment = HorizontalAlignment.Center;
+        draftTimerCaption.TextWrapping = TextWrapping.Wrap;
+        draftTimerCaption.TextAlignment = TextAlignment.Center;
+        // Honest timer: only SAMPLE/PREVIEW fixtures may ship previewDraftTimerSec.
+        // Live GSI does not expose a captains-mode pick clock in the wire DTO.
+        var previewTimer = state.At("meta", "previewDraftTimerSec").I();
+        var isPreview = state.At("status").S().Contains("PREVIEW", StringComparison.OrdinalIgnoreCase)
+            || state.At("status").S().Contains("SAMPLE", StringComparison.OrdinalIgnoreCase);
+        if (isPreview && previewTimer > 0)
+        {
+            draftTimerLabel.Text = $"{previewTimer / 60}:{previewTimer % 60:D2}";
+            draftTimerCaption.Text = "SAMPLE · демо-таймер";
+            draftTimerCaption.Foreground = gold;
+        }
+        draftTurnLabel = Text(
+            stepTeam.Equals("—", StringComparison.Ordinal) ? "Ход —" :
+            "Ход " + char.ToUpperInvariant(stepTeam[0]) + stepTeam[1..] +
+            (string.IsNullOrWhiteSpace(stepAction) || stepAction == "—" ? "" : " · " + stepAction),
+            11, FontWeights.Bold, turnTone);
+        draftTurnLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        draftTurnLabel.Margin = new Thickness(0, 4, 0, 0);
+        var center = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        center.Children.Add(draftTimerLabel);
+        center.Children.Add(draftTimerCaption);
+        center.Children.Add(draftTurnLabel);
+        var centerFrame = new Border
+        {
+            Child = center,
+            Background = ThemeBrush("RaisedBrush"),
+            BorderBrush = border,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(8, 10, 8, 10),
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+        Grid.SetColumn(centerFrame, 1);
+        teams.Children.Add(centerFrame);
+
+        var dire = DraftBoardSide("DIRE", direPicks, direBans, gold);
+        Grid.SetColumn(dire, 2);
         teams.Children.Add(dire);
         draftBoardHost.Children.Add(teams);
     }
@@ -53,10 +106,10 @@ public sealed partial class NativeWindow
     {
         var host = new StackPanel();
         var line = new DockPanel { LastChildFill = true };
-        var banned = Text($"БАНЫ  {bans.Length}", 10, FontWeights.SemiBold, muted);
+        var banned = Text($"Баны {bans.Length}/5", 10, FontWeights.SemiBold, muted);
         DockPanel.SetDock(banned, Dock.Right);
         line.Children.Add(banned);
-        line.Children.Add(Text($"{team}  ·  {picks.Length}/5", 11,
+        line.Children.Add(Text($"{team}  ·  пики {picks.Length}/5", 11,
             FontWeights.Bold, color));
         host.Children.Add(line);
 

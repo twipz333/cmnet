@@ -78,6 +78,11 @@ public static class Program
                     window.LoadPreviewScenario(scenario);
                     reports.Add(window.CaptureVisualPreview(Path.Combine(destination, "scout-" + scenario + ".png")));
                 }
+                foreach (var scenario in new[] { "empty", "loading", "error" })
+                {
+                    window.LoadDraftPreviewScenario(scenario);
+                    reports.Add(window.CaptureVisualPreview(Path.Combine(destination, "draft-" + scenario + ".png")));
+                }
                 File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 File.WriteAllText(Path.Combine(destination, "checks.txt"), "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.");
             }

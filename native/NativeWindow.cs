@@ -935,37 +935,61 @@ public sealed partial class NativeWindow : Window
         }
     }
 
-    private UIElement RecommendationRow(int id, double score, int rank)
+    private UIElement RecommendationRow(JsonNode? rec, int rank)
     {
-        var row = new Grid { MinHeight = 44 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+        var id = rec.At("heroId").I();
+        var score = rec.At("score").D();
+        var integer = ScoreToInteger(score);
+        var row = new Grid { MinHeight = 52 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var order = Text(rank.ToString("D2"), 11, FontWeights.Bold,
-            rank == 1 ? accent : muted);
-        row.Children.Add(order);
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var portrait = HeroPortrait(id, 36, 26);
-        Grid.SetColumn(portrait, 1);
         row.Children.Add(portrait);
-        var content = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        var content = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 4, 0) };
         var name = Text(HeroName(id), 12, FontWeights.SemiBold);
         name.TextWrapping = TextWrapping.NoWrap;
         name.TextTrimming = TextTrimming.CharacterEllipsis;
         content.Children.Add(name);
-        content.Children.Add(Text(score.ToString("0.000"), 10,
-            FontWeights.SemiBold, accent));
-        Grid.SetColumn(content, 2);
+        var tags = DeriveRecTags(rec);
+        if (tags.Count > 0)
+        {
+            var tagRow = new WrapPanel { Margin = new Thickness(0, 3, 0, 0) };
+            foreach (var tag in tags)
+            {
+                var chip = new Border
+                {
+                    Margin = new Thickness(0, 0, 4, 0),
+                    Background = ThemeBrush("RaisedBrush"),
+                    BorderBrush = border,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(5, 1, 5, 1),
+                    Child = Text(tag, 9, FontWeights.SemiBold, muted)
+                };
+                tagRow.Children.Add(chip);
+            }
+            content.Children.Add(tagRow);
+        }
+        Grid.SetColumn(content, 1);
         row.Children.Add(content);
+        var scoreBlock = Text(integer.ToString(), 16, FontWeights.Bold,
+            rank == 1 ? accent : foreground);
+        scoreBlock.VerticalAlignment = VerticalAlignment.Center;
+        scoreBlock.Margin = new Thickness(4, 0, 2, 0);
+        Grid.SetColumn(scoreBlock, 2);
+        row.Children.Add(scoreBlock);
         var button = Btn("", async () =>
         {
             SelectTacticalHero(id);
             await Task.CompletedTask;
         }, true);
         button.Content = row;
-        button.Padding = new Thickness(3);
-        button.Margin = new Thickness(0, 0, 0, 3);
+        button.Padding = new Thickness(4, 5, 4, 5);
+        button.Margin = new Thickness(0, 0, 0, 4);
         button.ToolTip = "Выбрать " + HeroName(id) +
-            " · оценка модели " + score.ToString("0.000");
+            " · оценка модели " + integer +
+            (string.IsNullOrWhiteSpace(rec.At("why").S()) ? "" : " · " + rec.At("why").S());
         button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         return button;
     }
@@ -984,18 +1008,20 @@ public sealed partial class NativeWindow : Window
                   (state.At("modelUpdatePending").B() ? "\nНовая модель активируется в следующем драфте" : "");
         }
         RefreshDraftBoard();
-        var recs = state.At("result","recs").Items().Take(6)
-            .Select(x => (id: x.At("heroId").I(), score: x.At("score").D()))
-            .Where(x => x.id > 0).ToList();
-        var recKey = string.Join("|", recs.Select(x => x.id + ":" + x.score));
+        var recNodes = state.At("result", "recs").Items()
+            .Where(x => x.At("heroId").I() > 0).Take(6).ToList();
+        var recKey = string.Join("|", recNodes.Select(x =>
+            x.At("heroId").I() + ":" + x.At("score").D() + ":" + x.At("why").S() + ":" +
+            string.Join(",", DeriveRecTags(x))));
         if (draftRecommendations != null && recKey != recommendationKey)
         {
             draftRecommendations.Items.Clear();
-            for (int i = 0; i < recs.Count; i++)
-                draftRecommendations.Items.Add(RecommendationRow(recs[i].id, recs[i].score, i + 1));
+            for (int i = 0; i < recNodes.Count; i++)
+                draftRecommendations.Items.Add(RecommendationRow(recNodes[i], i + 1));
             recommendationKey = recKey;
         }
-        var key = state.At("heroes")?.ToJsonString() + "|" + state.At("board")?.ToJsonString();
+        var key = state.At("heroes")?.ToJsonString() + "|" + state.At("board")?.ToJsonString()
+            + "|" + heroAttrFilter + "|" + heroRoleFilter + "|" + heroSearchText;
         if (key != heroCatalogKey)
         {
             heroCatalogKey = key;
@@ -1003,7 +1029,9 @@ public sealed partial class NativeWindow : Window
         }
         if (applyDraftButton != null) applyDraftButton.IsEnabled = CanApplyHero(selectedHeroId);
         RefreshSelectedHeroDetail();
+        RefreshDraftEnemyIntel();
         HighlightDraftSelection();
+        SyncDraftFilterChips();
     }
 
     private string HeroName(int id) => state.At("names",id.ToString()).S("Неизвестный герой");
@@ -1013,10 +1041,25 @@ public sealed partial class NativeWindow : Window
         var taken = new HashSet<int>(new[] { "radiantPicks","direPicks","radiantBans","direBans" }
             .SelectMany(key => state.At("board",key).Items().Select(x=>x.I())));
         var all = state.At("heroes").Items()
-            .Select(x=>x.At("id").I()).Where(x=>x>0 && !taken.Contains(x))
-            .Distinct().Select(id => new HeroRow { Id = id, Name = HeroName(id) })
-            .Where(h => h.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
-            .OrderBy(h=>h.Name).ToList();
+            .Select(x => x)
+            .Where(x =>
+            {
+                var id = x.At("id").I();
+                if (id <= 0 || taken.Contains(id)) return false;
+                if (!HeroAttributes.Matches(id, heroAttrFilter)) return false;
+                if (heroRoleFilter > 0)
+                {
+                    var roles = x.At("roles").Items()
+                        .Select(r => r is JsonValue jv && jv.TryGetValue<int>(out var n) ? n : 0)
+                        .Where(n => n > 0).ToHashSet();
+                    // No role data → keep visible (honest: filter cannot invent eligibility).
+                    if (roles.Count > 0 && !roles.Contains(heroRoleFilter)) return false;
+                }
+                return HeroName(id).Contains(filter, StringComparison.CurrentCultureIgnoreCase);
+            })
+            .Select(x => new HeroRow { Id = x.At("id").I(), Name = HeroName(x.At("id").I()) })
+            .GroupBy(h => h.Id).Select(g => g.First())
+            .OrderBy(h => h.Name).ToList();
         if (heroResultsCount != null)
             heroResultsCount.Text = $"{all.Count} доступно";
         if (selectedHeroId > 0 && taken.Contains(selectedHeroId))

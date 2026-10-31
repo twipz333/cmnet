@@ -152,11 +152,12 @@ public sealed partial class NativeWindow
           "meta": {
             "draftReady": true,
             "ourTeam": "radiant",
-            "patchTag": "DEMO"
+            "patchTag": "DEMO",
+            "previewDraftTimerSec": 28
           },
-          "step": { "team": "radiant", "action": "pick" },
+          "step": { "team": "dire", "action": "pick", "isOurs": false },
           "board": {
-            "radiantPicks": [13, 100, 120],
+            "radiantPicks": [13, 51, 18],
             "direPicks": [74, 14],
             "radiantBans": [44, 41],
             "direBans": [8, 67]
@@ -167,11 +168,27 @@ public sealed partial class NativeWindow
           },
           "result": {
             "recs": [
-              { "heroId": 1, "score": 0.923 },
-              { "heroId": 2, "score": 0.875 },
-              { "heroId": 39, "score": 0.841 },
-              { "heroId": 97, "score": 0.817 },
-              { "heroId": 110, "score": 0.785 }
+              { "heroId": 120, "score": 0.92, "role": 3,
+                "why": "Поз. 3 · вин ~54% · из наших",
+                "tags": ["Комфорт", "Синергия"],
+                "winRate": 0.542, "pickRate": 0.128,
+                "whyLines": ["Высокая мобильность", "Урон по области", "Комфорт в пуле союзника"] },
+              { "heroId": 100, "score": 0.88, "role": 4,
+                "why": "Поз. 4 · вин ~53%",
+                "tags": ["Геймплей"],
+                "winRate": 0.531, "pickRate": 0.091,
+                "whyLines": ["Инициация", "Контроль"] },
+              { "heroId": 39, "score": 0.84, "role": 2,
+                "why": "мид · вин ~52% · контр к пулу",
+                "tags": ["Контрпик"],
+                "winRate": 0.518, "pickRate": 0.074,
+                "whyLines": ["Burst в миде", "Контр к частому пулу"] },
+              { "heroId": 97, "score": 0.82, "role": 3,
+                "why": "оффлейн · вин ~51%",
+                "winRate": 0.511, "pickRate": 0.066 },
+              { "heroId": 110, "score": 0.79, "role": 5,
+                "why": "саппорт · вин ~50%",
+                "winRate": 0.503, "pickRate": 0.055 }
             ]
           },
           "ops": { "active": [] },
@@ -179,6 +196,23 @@ public sealed partial class NativeWindow
           "names": {}
         }
         """)!;
+        // SAMPLE roles for filter strip demos — not live meta strength.
+        var sampleRoles = new Dictionary<int, int[]>
+        {
+            [1] = [1], [2] = [3], [39] = [2], [97] = [3, 4], [100] = [4, 5],
+            [110] = [5], [120] = [3], [14] = [4], [74] = [2], [13] = [2]
+        };
+        foreach (var node in heroArray)
+        {
+            if (node is not JsonObject hero) continue;
+            var id = hero["id"]!.GetValue<int>();
+            if (sampleRoles.TryGetValue(id, out var roles))
+            {
+                var arr = new JsonArray();
+                foreach (var r in roles) arr.Add(r);
+                hero["roles"] = arr;
+            }
+        }
         state["heroes"] = heroArray;
         state["names"] = names;
         players = (JsonObject)JsonNode.Parse("""
@@ -217,7 +251,7 @@ public sealed partial class NativeWindow
         RenderPage(target);
         if (target == "Драфт")
         {
-            SelectTacticalHero(39);
+            SelectTacticalHero(120);
             UpdateDraft();
         }
         else
@@ -258,9 +292,15 @@ public sealed partial class NativeWindow
             WaitPreviewFrame(200);
             var images = PreviewElements(this).OfType<Image>().Where(x => x.IsVisible).ToArray();
             if (images.Length > 0 && images.All(x => x.Source != null)) return;
+            // Draft gallery + board + intel can exceed 100 portraits; accept a
+            // high fill once the deadline is near rather than spinning forever.
+            if (images.Length > 80 && images.Count(x => x.Source != null) >= Math.Ceiling(images.Length * 0.85)
+                && DateTime.UtcNow > deadline.AddSeconds(-8))
+                return;
         }
         var visible = PreviewElements(this).OfType<Image>().Where(x => x.IsVisible).ToArray();
-        if (visible.Length > 0 && visible.Count(x => x.Source != null) < Math.Ceiling(visible.Length * 0.9))
+        var need = visible.Length > 80 ? 0.85 : 0.9;
+        if (visible.Length > 0 && visible.Count(x => x.Source != null) < Math.Ceiling(visible.Length * need))
             throw new InvalidOperationException($"Artwork warmup failed: {visible.Count(x => x.Source != null)}/{visible.Length} images loaded.");
     }
 
@@ -277,7 +317,8 @@ public sealed partial class NativeWindow
         root.Arrange(new Rect(0, 0, root.Width, root.Height));
         root.UpdateLayout();
         WaitPreviewFrame(120);
-        WarmPreviewArtwork(12);
+        // Draft 3B surfaces many simultaneous portraits (board + gallery + intel).
+        WarmPreviewArtwork(page == "Драфт" ? 50 : 20);
         // Pumping asynchronous image/size events can trigger a native window
         // arrange. Settle the final exact client layout before rasterization.
         root.Measure(new Size(root.Width, root.Height));
@@ -370,14 +411,14 @@ public sealed partial class NativeWindow
 
     internal void AssertPreviewInteractions()
     {
-        LoadVisualFixture("Драфт"); SelectTacticalHero(39);
-        if (selectedHeroId != 39 || applyDraftButton?.IsEnabled != true) throw new InvalidOperationException("Valid hero selection failed.");
+        LoadVisualFixture("Драфт"); SelectTacticalHero(120);
+        if (selectedHeroId != 120 || applyDraftButton?.IsEnabled != true) throw new InvalidOperationException("Valid hero selection failed.");
         RenderPage("Разведка"); ShowScoutDetails("enemy", 10002);
         if (selectedScoutId != 10002) throw new InvalidOperationException("Player selection failed.");
         RenderPage("Драфт");
-        if (selectedHeroId != 39) throw new InvalidOperationException("Selection lost after reopening.");
-        state!["board"]!["radiantPicks"]!.AsArray().Add(39); UpdateDraft();
-        if (applyDraftButton?.IsEnabled == true || selectedHeroId == 39) throw new InvalidOperationException("Taken hero remains applicable.");
+        if (selectedHeroId != 120) throw new InvalidOperationException("Selection lost after reopening.");
+        state!["board"]!["radiantPicks"]!.AsArray().Add(120); UpdateDraft();
+        if (applyDraftButton?.IsEnabled == true || selectedHeroId == 120) throw new InvalidOperationException("Taken hero remains applicable.");
         state["meta"]!["draftReady"] = false; UpdateDraft(); SelectTacticalHero(1);
         if (selectedHeroId != 1) throw new InvalidOperationException("Hero selection blocked when model is not ready.");
         if (applyDraftButton?.IsEnabled == true) throw new InvalidOperationException("Apply enabled without ready model.");
@@ -393,5 +434,44 @@ public sealed partial class NativeWindow
         else if (scenario == "error") foreach (var player in stats!["stats"]!["enemyPlayers"]!.AsArray()) player!["scoutStatus"] = "error";
         scoutVersion = ""; scoutSignalKey = "";
         UpdateLiveState(); RenderScoutDetails(); toast.Text = "SAMPLE DATA · " + scenario;
+    }
+
+    internal void LoadDraftPreviewScenario(string scenario)
+    {
+        LoadVisualFixture("Драфт");
+        if (scenario == "empty")
+        {
+            state!["board"] = new JsonObject
+            {
+                ["radiantPicks"] = new JsonArray(),
+                ["direPicks"] = new JsonArray(),
+                ["radiantBans"] = new JsonArray(),
+                ["direBans"] = new JsonArray()
+            };
+            state["result"]!["recs"] = new JsonArray();
+            state["team"]!["enemy"] = new JsonArray();
+            stats!["stats"]!["enemyPlayers"] = new JsonArray();
+            selectedHeroId = 0;
+        }
+        else if (scenario == "loading")
+        {
+            state!["ops"]!["active"] = new JsonArray(new JsonObject
+            {
+                ["kind"] = "recommend",
+                ["lastLine"] = "SAMPLE · пересчёт рекомендаций"
+            });
+            state["result"]!["recs"] = new JsonArray();
+            selectedHeroId = 0;
+        }
+        else if (scenario == "error")
+        {
+            state!["meta"]!["draftReady"] = false;
+            state["meta"]!["draftError"] = "SAMPLE · модель недоступна (fixture)";
+            state["result"]!["recs"] = new JsonArray();
+            selectedHeroId = 0;
+        }
+        draftBoardKey = recommendationKey = heroCatalogKey = tacticalSelectedKey = draftIntelKey = "";
+        UpdateDraft();
+        toast.Text = "SAMPLE DATA · draft-" + scenario;
     }
 }
