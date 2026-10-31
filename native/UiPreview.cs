@@ -834,6 +834,17 @@ public sealed partial class NativeWindow
             toast.Text = "SAMPLE DATA · about-updates-unavailable";
             return;
         }
+        else if (scenario is "about-diagnostics" or "diagnostics")
+        {
+            // Gate 3.4 — About shows diagnostics path + open-folder affordance.
+            previewConfig = SampleSettingsConfig(true);
+            lastUpdateCheck = null;
+            ShowSettingsTab("about");
+            RefreshAboutFacts();
+            RefreshSettingsEvidence();
+            toast.Text = "SAMPLE DATA · about-diagnostics · " + DiagnosticsPaths.Root();
+            return;
+        }
         else if (scenario == "deferred")
         {
             ShowSettingsTab("deferred");

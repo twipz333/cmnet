@@ -100,7 +100,9 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\CMNET\CMNET.lnk"
   RMDir "$SMPROGRAMS\CMNET"
 
-  ; Remove install tree only. NEVER delete %APPDATA%\cmnet user data.
+  ; Remove install tree only. NEVER delete %APPDATA%\cmnet user data
+  ; (cmnet.db, desktop.json, diagnostics\, import-backup\, …). Gate 3.2 / 3.4.
+  ; Do NOT add RMDir / Delete targeting $APPDATA\cmnet or $APPDATA\cmnet\*.
   RMDir /r "$INSTDIR"
 
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\CMNET-Native"

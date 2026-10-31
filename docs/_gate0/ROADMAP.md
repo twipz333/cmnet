@@ -63,7 +63,7 @@ Each ticket: one user-visible outcome, non-overlapping ownership, automated acce
 | 3.1 | Naming, icon, versioning, polished first-run | 2.x journeys | **verified** (merged #55) |
 | 3.2 | Self-contained Windows installer (no SDK for friends) | 3.1 | **in progress** (#56 evidence `gate3-installer-wip/`) |
 | 3.3 | Update channel: manifest, signature, failure recovery, rollback | 3.2 | **in progress** (#58 / this PR) — fail-closed unsigned; not Released |
-| 3.4 | Crash/diagnostics without secrets; uninstall preserves data | 3.2 | **not started** |
+| 3.4 | Crash/diagnostics without secrets; uninstall preserves data | 3.2 | **in PR** (#60) |
 | 3.5 | Clean-VM install/upgrade/uninstall script + **two friend tests** | 3.3 | **not started** |
 | 3.6 | Release review vs full PRODUCT-BAR matrix | 3.5 | **not started** |
 

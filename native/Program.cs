@@ -18,6 +18,24 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Gate 3.4 — local crash breadcrumbs (redacted). Skip for headless self-tests
+        // that only exercise redaction/update fixtures without a full app session.
+        var isHeadlessSelfTest = Array.Exists(args, a =>
+            a is "--self-test-updates" or "--self-test-diagnostics" or "--check-updates");
+        if (!isHeadlessSelfTest)
+            CrashBreadcrumbs.InstallHandlers();
+
+        // Gate 3.4 — headless redaction + breadcrumb + NSIS preserve contract.
+        var diagTestIdx = Array.IndexOf(args, "--self-test-diagnostics");
+        if (diagTestIdx >= 0)
+        {
+            var evidence = diagTestIdx + 1 < args.Length && !args[diagTestIdx + 1].StartsWith("--", StringComparison.Ordinal)
+                ? args[diagTestIdx + 1]
+                : null;
+            Environment.ExitCode = DiagnosticsSelfTest.RunAsync(evidence).GetAwaiter().GetResult();
+            return;
+        }
+
         // Gate 3.3 — headless update fixtures / check (no WPF window required).
         var selfTestIdx = Array.IndexOf(args, "--self-test-updates");
         if (selfTestIdx >= 0)
@@ -95,10 +113,15 @@ public static class Program
         var captureUpdates = Array.Exists(args, a => a == "--capture-updates");
         var captureUpdatesOnly = Array.Exists(args, a => a == "--capture-updates-only");
         if (captureUpdatesOnly) captureUpdates = true;
+        // Gate 3.4 diagnostics About honesty — outside geometry.json (Count stays 33).
+        var captureDiagnostics = Array.Exists(args, a => a == "--capture-diagnostics");
+        var captureDiagnosticsOnly = Array.Exists(args, a => a == "--capture-diagnostics-only");
+        if (captureDiagnosticsOnly) captureDiagnostics = true;
         var app = new Application
         {
             ShutdownMode = smoke || capture >= 0 ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose
         };
+        CrashBreadcrumbs.InstallDispatcher(app);
         app.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
             Source = new Uri("pack://application:,,,/Theme.xaml", UriKind.Absolute)
@@ -129,7 +152,7 @@ public static class Program
             var reports = new JsonArray();
             try
             {
-                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly && !captureUpdatesOnly)
+                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly && !captureUpdatesOnly && !captureDiagnosticsOnly)
                 {
                     window.AssertPreviewInteractions();
                     foreach (var screen in new[] { "Разведка", "Драфт" })
@@ -321,12 +344,22 @@ public static class Program
                             artworkWarmSeconds: 0);
                     }
                 }
-                // Data/Settings/GSI/History/Friends/Migration/Naming/Updates-only must not wipe a prior CI matrix geometry.json (Count==33).
-                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly && !captureUpdatesOnly)
+                // Gate 3.4 diagnostics About honesty — outside geometry.json.
+                if (captureDiagnostics)
+                {
+                    window.LoadSettingsPreviewScenario("about-diagnostics");
+                    window.CaptureVisualPreview(
+                        Path.Combine(destination, "about-diagnostics.png"),
+                        artworkWarmSeconds: 0);
+                }
+                // Data/Settings/GSI/History/Friends/Migration/Naming/Updates/Diagnostics-only must not wipe a prior CI matrix geometry.json (Count==33).
+                if (!captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly && !captureUpdatesOnly && !captureDiagnosticsOnly)
                 {
                     File.WriteAllText(Path.Combine(destination, "geometry.json"), reports.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 }
-                var checks = captureUpdatesOnly
+                var checks = captureDiagnosticsOnly
+                    ? "Gate 3.4 Diagnostics-only capture (--capture-diagnostics-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
+                    : captureUpdatesOnly
                     ? "Gate 3.3 Updates-only capture (--capture-updates-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
                     : captureNamingOnly
                     ? "Gate 3.1 Naming-only capture (--capture-naming-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
@@ -343,7 +376,7 @@ public static class Program
                     : captureDataOnly
                     ? "Gate 2.1 Data-only capture (--capture-data-only). Left geometry.json untouched; CI matrix requires default --capture-ui (Count==33)."
                     : "PASS: hero/player selection, retained draft selection, taken hero, model readiness, three columns and Apply viewport containment.\nDPI cases simulate logical viewport/raster scaling; native monitor DPI requires separate validation.\nActual WPF SAMPLE DATA fixtures; no Go process or user database.\ngeometry.json Count==33 (Draft×5×3 + Scout×5×3 + scout empty/loading/error).";
-                if (captureHonesty && !captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly && !captureUpdatesOnly)
+                if (captureHonesty && !captureDataOnly && !captureSettingsOnly && !captureGsiOnly && !captureHistoryOnly && !captureFriendsOnly && !captureMigrationOnly && !captureNamingOnly && !captureUpdatesOnly && !captureDiagnosticsOnly)
                     checks += "\nGate1 honesty kit (--capture-honesty): scout partial/stale/offline + draft empty/loading/error/partial/stale/offline (outside geometry.json).";
                 if (captureData)
                     checks += "\nGate 2.1 Data kit (--capture-data): data ready/empty/loading/error/partial/stale/offline (outside geometry.json).";
@@ -361,6 +394,8 @@ public static class Program
                     checks += "\nGate 3.1 Naming kit (--capture-naming): naming-welcome + naming-about (outside geometry.json).";
                 if (captureUpdates)
                     checks += "\nGate 3.3 Updates kit (--capture-updates): about-updates-unsigned + about-updates-unavailable (outside geometry.json).";
+                if (captureDiagnostics)
+                    checks += "\nGate 3.4 Diagnostics kit (--capture-diagnostics): about-diagnostics (outside geometry.json).";
                 File.WriteAllText(Path.Combine(destination, "checks.txt"), checks);
             }
             catch (Exception ex)

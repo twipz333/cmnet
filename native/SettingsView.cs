@@ -14,8 +14,9 @@ namespace Cmnet.Native;
 
 /// <summary>
 /// Gate 2.2 Maintain / Settings. Typed config editor with validation + save
-/// confirmation, About with Gate 3.3 fail-closed update check, and an honest
-/// cut-list for tabs that stay out of native local-first (Discord / Alerts / Rules).
+/// confirmation, About with Gate 3.3 fail-closed update check + Gate 3.4
+/// local diagnostics folder entry, and an honest cut-list for tabs that stay
+/// out of native local-first (Discord / Alerts / Rules).
 /// Evidence states share StateKit with Scout/Draft/Data.
 /// </summary>
 public sealed partial class NativeWindow
@@ -30,6 +31,7 @@ public sealed partial class NativeWindow
     private TextBlock? updateStatusText;
     private Button? checkUpdatesButton;
     private Button? applyUpdateButton;
+    private Button? openDiagnosticsButton;
     private TextBlock? migrateStatusText;
     private Button? saveSettingsButton;
     private Button? reloadSettingsButton;
@@ -407,6 +409,34 @@ public sealed partial class NativeWindow
         note.Margin = new Thickness(0, 16, 0, 0);
         box.Children.Add(note);
 
+        var diagHead = Text("ЛОКАЛЬНАЯ ДИАГНОСТИКА", 10, FontWeights.Bold, muted);
+        diagHead.Margin = new Thickness(0, 20, 0, 6);
+        box.Children.Add(diagHead);
+        box.Children.Add(Text(
+            "Сбои пишут redacted-хлебные крошки в %APPDATA%\\cmnet\\diagnostics (без облака, без токенов в файле). " +
+            "Удаление «CMNET (native)» не трогает эту папку и остальные данные.",
+            12, color: muted));
+
+        openDiagnosticsButton = Btn("Папка диагностики", () =>
+        {
+            if (isVisualPreview)
+            {
+                toast.Text = "SAMPLE · " + DiagnosticsPaths.Root();
+                return Task.CompletedTask;
+            }
+            if (DiagnosticsPaths.TryOpenInExplorer(out var detail))
+                toast.Text = "Диагностика: " + detail;
+            else
+                toast.Text = "Диагностика: " + detail;
+            return Task.CompletedTask;
+        }, true);
+        openDiagnosticsButton.Margin = new Thickness(0, 12, 0, 0);
+        openDiagnosticsButton.HorizontalAlignment = HorizontalAlignment.Left;
+        openDiagnosticsButton.ToolTip =
+            "Открыть %APPDATA%\\cmnet\\diagnostics (локальные crash breadcrumbs, секреты вырезаны)";
+        System.Windows.Automation.AutomationProperties.SetName(openDiagnosticsButton, "Открыть папку диагностики");
+        box.Children.Add(openDiagnosticsButton);
+
         var change = Btn("Сменить папку данных…", async () =>
         {
             var dialog = new OpenFolderDialog { Title = "Папка с cmnet.db и bundle.json" };
@@ -444,9 +474,10 @@ public sealed partial class NativeWindow
             $"Версия приложения\t{DesktopSettings.AppVersionLabel()}\n" +
             $"Версия ядра (advisor)\t{DesktopSettings.CoreVersionLabel()}\n" +
             $"Папка данных\t{core.DataDirectory}\n" +
+            $"Диагностика\t{DiagnosticsPaths.Root()}\n" +
             $"Модель\t{model}\n" +
             $"Локальный режим\tда (CMNET_LOCAL_ONLY, Discord выключен)\n" +
-            $"Статус релиза\tне Released (Gate 3.3 update channel / preview)\n" +
+            $"Статус релиза\tне Released (Gate 3.4 diagnostics / preview)\n" +
             $"Ключ обновлений\t{(trust == null ? "не настроен (fail-closed)" : trust.Source)}\n" +
             $"Перезапуск\tчасть полей config.yaml применяется только после перезапуска ядра";
         RefreshUpdateStatusUi();

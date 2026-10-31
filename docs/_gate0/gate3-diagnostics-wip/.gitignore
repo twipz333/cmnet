@@ -1,0 +1,3 @@
+# Local capture PNGs / machine-specific paths may appear; keep text evidence tracked.
+*.png
+!README.md
