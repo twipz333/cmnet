@@ -73,10 +73,14 @@ public static class Program
                     window.AssertPreviewInteractions();
                     foreach (var screen in new[] { "Разведка", "Драфт" })
                     {
+                        window.FreezePreviewCatalogColumns(false);
                         window.LoadVisualFixture(screen);
                         window.UpdateLayout();
-                        // One full CDN/cache fill per screen; size/scale variants only settle.
-                        window.WarmPreviewArtwork(screen == "Драфт" ? 25 : 15);
+                        // One CDN/cache fill per screen; size/scale variants only settle.
+                        // Budgets tightened vs Gate1 (25/15): windows-latest still timed
+                        // out mid-Draft matrix on Gate 2.1 when gallery rebound on resize.
+                        window.WarmPreviewArtwork(screen == "Драфт" ? 15 : 10);
+                        window.FreezePreviewCatalogColumns(true);
                         var prefix = screen == "Разведка" ? "scout" : "draft";
                         foreach (var size in new[] { (1920,1080), (1600,900), (1440,900), (1366,768), (1280,720) })
                         foreach (var scale in new[] { 1d, 1.25d, 1.5d })
@@ -88,13 +92,15 @@ public static class Program
                             if (size == (1440,900) && scale == 1) File.Copy(Path.Combine(destination, filename), Path.Combine(destination, prefix + ".png"), true);
                         }
                     }
+                    window.FreezePreviewCatalogColumns(false);
                     // Historical geometry matrix keeps scout empty/loading/error (33 entries total).
+                    // Artwork already cached from the Scout pass — do not burn another 10s×3.
                     foreach (var scenario in new[] { "empty", "loading", "error" })
                     {
                         window.LoadPreviewScenario(scenario);
                         reports.Add(window.CaptureVisualPreview(
                             Path.Combine(destination, "scout-" + scenario + ".png"),
-                            artworkWarmSeconds: 10));
+                            artworkWarmSeconds: 0));
                     }
                     // Gate1 close-out honesty PNGs are opt-in (--capture-honesty). They are
                     // review evidence only and must NOT enter geometry.json (CI Count==33).

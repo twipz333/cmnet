@@ -4,7 +4,7 @@
 **Issue:** #40  
 **Base:** `origin/master` @ `338fbc5` (Gate1 close-out StateKit)  
 **Evidence:** `dotnet publish` win-x64 self-contained + `--smoke-ui` + `--capture-ui` (+ `--capture-data`) → this folder  
-**geometry.json:** **33** entries (unchanged CI matrix). Data honesty PNGs are **outside** geometry (same pattern as Gate1 `--capture-honesty`).
+**geometry.json:** **33** entries (unchanged CI matrix). Data honesty PNGs are **outside** geometry (same pattern as Gate1 `--capture-honesty`). Default CI `--capture-ui` must stay under 180s: Data kit is opt-in (`--capture-data` / `--capture-data-only`); catalog column rebuild is frozen during the size/scale matrix.
 
 ## Outcome
 
