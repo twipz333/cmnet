@@ -1,0 +1,35 @@
+{
+  "gate": "3.5",
+  "script": "native/installer/Test-CleanVmFriendInstall.ps1",
+  "started_utc": "2026-10-31T20:43:38.3421847Z",
+  "version": "0.4.0",
+  "setup_path": "C:\\Users\\dimag\\orca\\workspaces\\cmnet\\cmnet-gate35-friend-trial\\native\\dist\\cmnet-native-setup-0.4.0.exe",
+  "install_dir": "C:\\Users\\dimag\\AppData\\Local\\Temp\\cmnet-gate35-cleanvm-install",
+  "appdata_cmnet": "C:\\Users\\dimag\\AppData\\Roaming\\cmnet",
+  "marker_path": "C:\\Users\\dimag\\AppData\\Roaming\\cmnet\\gate35-cleanvm-marker.txt",
+  "steps": {
+    "resolve_setup": "PASS",
+    "snapshot": {
+      "uninstall_key": true,
+      "native_key": true,
+      "desktop_lnk": true,
+      "start_lnk": true
+    },
+    "silent_install": "PASS",
+    "smoke_ui": "PASS",
+    "silent_upgrade": "PASS",
+    "marker_create": "PASS",
+    "silent_uninstall": "PASS",
+    "appdata_preserved": "PASS",
+    "restore": "PASS"
+  },
+  "released_claim": false,
+  "electron_preserved": true,
+  "human_friend_trials": "BLOCKED — pending real friends (see NOTES.md)",
+  "pass": true,
+  "setup_sha256": "E877B529786AFBD8AC552952430CEBDACC3AD7FB5B9A78D6DA9084B423A4066E",
+  "setup_bytes": 51058842,
+  "marker_sha256_before": "DF63ACD3785F2438FD91C7B6ADC94F76AC16E0DF4D22FE80B59DD803518F8BA9",
+  "marker_sha256_after": "DF63ACD3785F2438FD91C7B6ADC94F76AC16E0DF4D22FE80B59DD803518F8BA9",
+  "finished_utc": "2026-10-31T20:44:02.1257086Z"
+}
